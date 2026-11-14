@@ -5,7 +5,305 @@
     "name": "Orbit",
     "summary": "Orbit is a local-first desktop app for modeling, visualizing, and comparing what a software product does."
   },
-  "entities": [],
+  "entities": [
+    {
+      "id": "cap.authoring",
+      "kind": "capability",
+      "parentId": null,
+      "name": "Contract Authoring",
+      "summary": "Open, create, edit and safely save a product contract file.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.authoring.open-create",
+      "kind": "capability",
+      "parentId": "cap.authoring",
+      "name": "Open and Create Contracts",
+      "summary": "Open an existing contract JSON or create a new valid one, with recent files and a no-file empty state.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.authoring.validation",
+      "kind": "capability",
+      "parentId": "cap.authoring",
+      "name": "Validation and Diagnostics",
+      "summary": "Surface structural and semantic problems with actionable, located diagnostics and never auto-repair.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.authoring.raw-json",
+      "kind": "capability",
+      "parentId": "cap.authoring",
+      "name": "Raw JSON Editing",
+      "summary": "Edit the contract as raw JSON with live validation; invalid text is never applied.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.authoring.safe-save",
+      "kind": "capability",
+      "parentId": "cap.authoring",
+      "name": "Safe Saving and Conflict Protection",
+      "summary": "Save atomically to the selected file only and never silently overwrite external changes.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.authoring.undo-redo",
+      "kind": "capability",
+      "parentId": "cap.authoring",
+      "name": "Undoable Editing",
+      "summary": "All edits are in-memory and undoable until saved, with a modified indicator.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.modeling",
+      "kind": "capability",
+      "parentId": null,
+      "name": "Product Modeling",
+      "summary": "Describe what a product does as entities, behaviors, relationships, tests and evidence.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.modeling.entities",
+      "kind": "capability",
+      "parentId": "cap.modeling",
+      "name": "Capabilities and Systems",
+      "summary": "Create, edit, reparent and delete capabilities and internal systems in same-kind hierarchies.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.modeling.behaviors",
+      "kind": "capability",
+      "parentId": "cap.modeling",
+      "name": "Behavior Contracts",
+      "summary": "Define stable, identifiable behavior guarantees owned by exactly one entity.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.modeling.relationships",
+      "kind": "capability",
+      "parentId": "cap.modeling",
+      "name": "Typed Relationships",
+      "summary": "Model directed dependsOn, uses and implementedBy edges between entities.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.modeling.verification-metadata",
+      "kind": "capability",
+      "parentId": "cap.modeling",
+      "name": "Tests and Evidence Records",
+      "summary": "Define test references, map them to behaviors, and record externally produced evidence.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.exploration",
+      "kind": "capability",
+      "parentId": null,
+      "name": "Product and Engineering Exploration",
+      "summary": "Navigate the capability and system models to understand what exists and how it fits together.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.exploration.tree",
+      "kind": "capability",
+      "parentId": "cap.exploration",
+      "name": "Hierarchy Navigation and Search",
+      "summary": "Searchable, keyboard-navigable trees for capabilities (Product) and systems (Engineering).",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.exploration.detail",
+      "kind": "capability",
+      "parentId": "cap.exploration",
+      "name": "Entity Detail",
+      "summary": "Show summary, behaviors, mapped tests, relationships and evidence for the selected entity.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.exploration.graph",
+      "kind": "capability",
+      "parentId": "cap.exploration",
+      "name": "Focused Relationship Graph",
+      "summary": "One-hop labeled, directed graph of an entity with an accessible textual alternative.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.assurance",
+      "kind": "capability",
+      "parentId": null,
+      "name": "Verification Assurance",
+      "summary": "Show how well behaviors are backed by tests and evidence, conservatively and by commit.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.assurance.rollups",
+      "kind": "capability",
+      "parentId": "cap.assurance",
+      "name": "Assurance Rollups",
+      "summary": "Count each behavior once across an entity subtree and classify test and evidence gaps.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.assurance.freshness",
+      "kind": "capability",
+      "parentId": "cap.assurance",
+      "name": "Evidence Freshness by Commit",
+      "summary": "Classify evidence as current, potentially outdated or unknown for a chosen inspected commit.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.assurance.library",
+      "kind": "capability",
+      "parentId": "cap.assurance",
+      "name": "Tests and Evidence Library",
+      "summary": "Browse and manage test definitions and evidence history independent of the tree.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.impact",
+      "kind": "capability",
+      "parentId": null,
+      "name": "Change Comparison and Impact",
+      "summary": "Compare contract revisions semantically and infer potential downstream impact.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.impact.revisions",
+      "kind": "capability",
+      "parentId": "cap.impact",
+      "name": "Git Revision Comparison",
+      "summary": "Choose base and target from branches, commits, HEAD or working tree, read-only, with graceful non-Git use.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.impact.semantic-diff",
+      "kind": "capability",
+      "parentId": "cap.impact",
+      "name": "Semantic Diff",
+      "summary": "ID-based field-level changes that ignore formatting and ordering and separate guarantees from verification metadata.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.impact.propagation",
+      "kind": "capability",
+      "parentId": "cap.impact",
+      "name": "Potential Impact Analysis",
+      "summary": "Traverse reverse relationship edges transitively to list potentially affected dependents with paths.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.impact.highlighting",
+      "kind": "capability",
+      "parentId": "cap.impact",
+      "name": "In-Tree Change Highlighting",
+      "summary": "Mark added, modified, removed (ghost) and potentially affected entities in the Product and Engineering trees.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.impact.workspace",
+      "kind": "capability",
+      "parentId": "cap.impact",
+      "name": "Impact Workspace",
+      "summary": "Dedicated view with change totals, categorized change list, before/after details and impact chains.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.ai-access",
+      "kind": "capability",
+      "parentId": null,
+      "name": "AI Agent Access",
+      "summary": "Let external AI agents do everything a user can in the running app, under the same safeguards.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.ai-access.connection",
+      "kind": "capability",
+      "parentId": "cap.ai-access",
+      "name": "Secure Local Connection",
+      "summary": "Opt-in, localhost-only MCP endpoint with token management, client setup snippets and a stdio bridge.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.ai-access.query",
+      "kind": "capability",
+      "parentId": "cap.ai-access",
+      "name": "Agent Querying",
+      "summary": "Read-only tools to inspect status, contract, entities, assurance, tests, evidence, diagnostics and refs.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.ai-access.editing",
+      "kind": "capability",
+      "parentId": "cap.ai-access",
+      "name": "Agent Editing",
+      "summary": "Validated, dry-runnable, undoable edits including atomic multi-operation batches and guarded saves.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.ai-access.visibility",
+      "kind": "capability",
+      "parentId": "cap.ai-access",
+      "name": "Live Visibility and Navigation",
+      "summary": "Agent actions show as toasts and an activity log, and agents can steer the user's view and comparison.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.interop",
+      "kind": "capability",
+      "parentId": null,
+      "name": "Contract Interoperability",
+      "summary": "Keep the contract usable by external tools and agents without Orbit's GUI.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.interop.schema",
+      "kind": "capability",
+      "parentId": "cap.interop",
+      "name": "Public Schema and CLI Validation",
+      "summary": "Ship a JSON Schema and a validate command with human and machine-readable diagnostics.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.interop.evidence-producers",
+      "kind": "capability",
+      "parentId": "cap.interop",
+      "name": "External Evidence Production",
+      "summary": "Convert external test reports into evidence records without Orbit running tests.",
+      "description": "",
+      "behaviors": []
+    }
+  ],
   "relationships": [],
   "tests": [],
   "evidence": []
