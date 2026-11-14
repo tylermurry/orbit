@@ -69,6 +69,17 @@ export type Prompt =
   | { type: 'conflict'; current: FileStat }
   | { type: 'reload' };
 
+/**
+ * A filter applied to the explorer views (usually by the AI via `filter_view`): only the listed entities and the
+ * owners of the listed behaviors are shown, with their ancestors for context. `description` is the plain-English
+ * explanation shown in the banner.
+ */
+export interface ViewFilter {
+  description: string;
+  entityIds: string[];
+  behaviorIds: string[];
+}
+
 export interface ReviewState {
   title: string;
   diff: SemanticDiff;
@@ -96,8 +107,11 @@ export interface AppState {
   rawMode: boolean;
   selected: Record<EntityKind, string | null>;
   focusBehaviorId: string | null;
+  /** Behaviors highlighted and expanded together (from a hierarchy count badge). */
+  focusBehaviorIds: string[];
   expanded: Record<string, boolean>;
   search: string;
+  viewFilter: ViewFilter | null;
 
   // comparison
   compare: Comparison | null;
@@ -117,6 +131,8 @@ export interface AppState {
   productDialog: boolean;
   newDialog: boolean;
   shortcutsOpen: boolean;
+  /** The bottom terminal panel is shown (the preference outlives files). */
+  terminalOpen: boolean;
   prompt: Prompt | null;
   review: ReviewState | null;
   toasts: Toast[];

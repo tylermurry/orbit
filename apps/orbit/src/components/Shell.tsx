@@ -1,5 +1,5 @@
-import { Button, Callout, Flex } from '@radix-ui/themes';
-import { ExclamationTriangleIcon } from '@radix-ui/react-icons';
+import { Button, Callout, Flex, IconButton, Tooltip } from '@radix-ui/themes';
+import { Cross2Icon, ExclamationTriangleIcon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import { useAppState, useCtrl, useDiagnostics, useDispatch } from '../state/context';
 import { requestRaw } from './TopBar';
 
@@ -11,6 +11,21 @@ export function Banners() {
   const errors = diagnostics.filter((x) => x.severity === 'error').length;
   return (
     <div className="banners">
+      {s.viewFilter && s.contract && !s.rawMode && (
+        <Callout.Root color="yellow" variant="soft" size="1" role="status" data-testid="banner-filter" className="filter-banner">
+          <Callout.Icon>
+            <MixerHorizontalIcon />
+          </Callout.Icon>
+          <Flex justify="between" align="center" gap="3" width="100%">
+            <Callout.Text>{s.viewFilter.description}</Callout.Text>
+            <Tooltip content="Clear filter">
+              <IconButton size="1" variant="ghost" color="gray" aria-label="Clear filter" onClick={() => d({ type: 'setViewFilter', filter: null })}>
+                <Cross2Icon />
+              </IconButton>
+            </Tooltip>
+          </Flex>
+        </Callout.Root>
+      )}
       {s.externalChange?.kind === 'modified' && (
         <Callout.Root color="amber" variant="surface" size="1" role="alert" data-testid="banner-external">
           <Callout.Icon>

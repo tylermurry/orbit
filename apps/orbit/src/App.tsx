@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { Flex } from '@radix-ui/themes';
 import { Banners } from './components/Shell';
+import { TerminalPanel, setTerminalOpen } from './components/TerminalPanel';
 import { NewContractDialog, ProductDialog, ShortcutsDialog } from './components/Dialogs';
 import { Prompts } from './components/Prompts';
 import { TopBar, registerNavHandlers, requestView } from './components/TopBar';
@@ -72,6 +73,13 @@ export function App() {
       const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
       const k = e.key.toLowerCase();
       const st = store.getState();
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'Backquote') {
+        e.preventDefault();
+        setTerminalOpen(d, !st.terminalOpen);
+        return;
+      }
+      // Keys typed into the terminal belong to the shell / Claude Code (Ctrl+F, Ctrl+O, ... mean something there).
+      if (t?.closest?.('.terminal-panel')) return;
       const hasFile = !!st.filePath;
       if (mod && k === 'o') {
         e.preventDefault();
@@ -118,6 +126,7 @@ export function App() {
       <TopBar />
       <Banners />
       <div className="app-body">{body}</div>
+      <TerminalPanel />
       <Toasts />
       <ProductDialog />
       <NewContractDialog />

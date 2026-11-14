@@ -6,6 +6,7 @@ import { activePreset, presetComparison } from '../state/compare';
 import { isDirty } from '../state/store';
 import type { AppState, LifecyclePreset, ViewId } from '../state/types';
 import { AiButton } from './AiAccess';
+import { TerminalIcon, setTerminalOpen } from './TerminalPanel';
 import { ValidateButton } from './Validation';
 
 export function OrbitMark({ size = 22 }: { size?: number }) {
@@ -29,6 +30,7 @@ export function TopBar() {
   const dirty = isDirty(s);
   const hasFile = !!s.filePath && (!!s.contract || s.loadedInvalid);
   const recent = useApp((x) => x.recent);
+  const terminalOpen = s.terminalOpen;
   const productName = s.contract?.product.name ?? (hasFile ? 'Invalid contract' : 'Orbit');
 
   return (
@@ -91,6 +93,11 @@ export function TopBar() {
             Unsaved changes
           </Text>
         )}
+        <Tooltip content={terminalOpen ? 'Hide terminal (Ctrl+`)' : 'Claude Code terminal (Ctrl+`)'}>
+          <IconButton variant={terminalOpen ? 'soft' : 'surface'} color="gray" size="2" aria-label="Toggle terminal" aria-pressed={terminalOpen} onClick={() => setTerminalOpen(d, !terminalOpen)}>
+            <TerminalIcon />
+          </IconButton>
+        </Tooltip>
         <AiButton />
         {(
           <DropdownMenu.Root>

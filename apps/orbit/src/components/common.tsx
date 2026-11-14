@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AlertDialog, Badge, Button, Code, Dialog, Flex, IconButton, Text, TextArea, TextField, Tooltip } from '@radix-ui/themes';
-import { CheckCircledIcon, CheckIcon, CircleIcon, Cross2Icon, CrossCircledIcon, CopyIcon, ExclamationTriangleIcon, MinusCircledIcon } from '@radix-ui/react-icons';
+import { CheckCircledIcon, CheckIcon, CircleIcon, Cross2Icon, CrossCircledIcon, CopyIcon, ExclamationTriangleIcon, MinusCircledIcon, ClockIcon } from '@radix-ui/react-icons';
 import type { BehaviorStatus, Entity, EntityChangeStatus, EntityKind, TestResult, TestStatus } from '@orbit/contract';
 import { KIND_LABEL, STATUS_LABEL } from '../lib/model';
 import { relativeTime } from '../lib/format';
@@ -51,7 +51,7 @@ const TEST_BADGE: Record<TestStatus, { label: string; color: 'green' | 'red' | '
   passing: { label: 'Passing', color: 'green', icon: <CheckIcon aria-hidden /> },
   failing: { label: 'Failing', color: 'red', icon: <Cross2Icon aria-hidden /> },
   unconfirmed: { label: 'Unconfirmed', color: 'amber', icon: <MinusCircledIcon aria-hidden /> },
-  planned: { label: 'Planned', color: 'violet', icon: null },
+  planned: { label: 'Planned', color: 'violet', icon: <ClockIcon aria-hidden /> },
   undefined: { label: 'Undefined', color: 'amber', icon: <ExclamationTriangleIcon aria-hidden /> },
 };
 

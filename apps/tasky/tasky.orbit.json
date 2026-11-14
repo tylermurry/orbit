@@ -12,165 +12,18 @@
       "kind": "capability",
       "parentId": null,
       "name": "Task Management",
-      "summary": "Create, maintain, finish and remove personal tasks",
+      "summary": "Create, edit, complete and delete personal tasks",
       "description": "Everything a person does to keep their own to-do items up to date: capturing a task, changing its details, ticking it off and deleting it when it no longer matters.",
       "behaviors": []
-    },
-    {
-      "id": "cap.task-management.create-edit",
-      "kind": "capability",
-      "parentId": "cap.task-management",
-      "name": "Create and Edit Tasks",
-      "summary": "A task needs a title; notes a due date and the list it belongs to are optional. People can come back later and change any of those details in an accessible dialog without",
-      "description": "A task needs a title; notes a due date and the list it belongs to are optional. People can come back later and change any of those details in an accessible dialog without",
-      "behaviors": [
-        {
-          "id": "behavior.tasks.create",
-          "name": "Create a task",
-          "expected": "Create a task",
-          "testIds": [
-            "test.tasky.tasks.create"
-          ]
-        },
-        {
-          "id": "behavior.tasks.reject-blank-title",
-          "name": "Reject blank titles",
-          "expected": "Submitting an empty or whitespace-only title keeps the dialog open, explains that a title is required next to the field, and saves nothing.",
-          "testIds": [
-            "test.tasky.tasks.create-validation"
-          ]
-        },
-        {
-          "id": "behavior.tasks.edit",
-          "name": "Edit task details",
-          "expected": "Title, notes, due date and list of an existing task can be changed in one dialog, and the changes are visible in the list immediately and when the task is reopened.",
-          "testIds": [
-            "test.tasky.tasks.edit"
-          ]
-        },
-        {
-          "id": "behavior.tasks.dialog-accessible",
-          "name": "Accessible task dialog",
-          "expected": "The task dialog moves keyboard focus into itself, keeps Tab and Shift+Tab inside it, closes on Escape, and returns focus to the control that opened it.",
-          "testIds": [
-            "test.tasky.tasks.dialog-accessibility"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "cap.task-management.complete-delete",
-      "kind": "capability",
-      "parentId": "cap.task-management",
-      "name": "Complete and Delete Tasks",
-      "summary": "Tick tasks off, reopen them, or delete them for good",
-      "description": "Finishing a task is a single action that can be undone; deleting is permanent, so it always asks first. Every control has a spoken label that names the task.",
-      "behaviors": [
-        {
-          "id": "behavior.tasks.complete-toggle",
-          "name": "Complete and reopen a task",
-          "expected": "Marking a task complete removes it from the default list view (it stays reachable with \"Show completed\"), and marking it incomplete again restores it.",
-          "testIds": [
-            "test.tasky.tasks.complete"
-          ]
-        },
-        {
-          "id": "behavior.tasks.delete-confirm",
-          "name": "Delete only after confirmation",
-          "expected": "Choosing delete opens a confirmation naming the task; cancelling leaves the task untouched and only confirming removes it permanently.",
-          "testIds": [
-            "test.tasky.tasks.delete"
-          ]
-        },
-        {
-          "id": "behavior.tasks.labeled-controls",
-          "name": "Labeled, keyboard-operable task controls",
-          "expected": "Each task exposes controls named after it (\"Mark 'Buy milk' complete\", \"Delete 'Buy milk'\") that work with the keyboard alone.",
-          "testIds": [
-            "test.tasky.tasks.keyboard-operable"
-          ]
-        }
-      ]
     },
     {
       "id": "cap.task-organization",
       "kind": "capability",
       "parentId": null,
-      "name": "Task Organization",
-      "summary": "Group tasks into lists and decide which list each task lives in",
+      "name": "Lists",
+      "summary": "Create, rename and delete lists, and assign tasks to them",
       "description": "Tasks always belong to exactly one list: the built-in Inbox or a custom list the person created.",
       "behaviors": []
-    },
-    {
-      "id": "cap.task-organization.custom-lists",
-      "kind": "capability",
-      "parentId": "cap.task-organization",
-      "name": "Custom Lists",
-      "summary": "A user groups related tasks into list (e.g. Work, Errands, etc). Inbox is a built-in list where all new tasks go by default if they aren’t assigned to another list.",
-      "description": "A user groups related tasks into list (e.g. Work, Errands, etc). Inbox is a built-in list where all new tasks go by default if they aren’t assigned to another list.",
-      "behaviors": [
-        {
-          "id": "behavior.lists.create-rename",
-          "name": "Create and rename lists",
-          "expected": "A new list can be created and an existing list renamed from the list view; the sidebar and heading update immediately and the list keeps its tasks.",
-          "testIds": [
-            "test.tasky.lists.create-rename"
-          ]
-        },
-        {
-          "id": "behavior.lists.name-validation",
-          "name": "Reject blank and duplicate list names",
-          "expected": "A list name must contain visible text and must differ (ignoring case) from every other list name and from \"Inbox\"; otherwise an inline message explains why and nothing is saved.",
-          "testIds": [
-            "test.tasky.lists.name-validation"
-          ]
-        },
-        {
-          "id": "behavior.lists.inbox-protected",
-          "name": "Inbox cannot be renamed or deleted",
-          "expected": "The Inbox view offers no rename or delete action, and attempts to rename or delete Inbox programmatically are refused.",
-          "testIds": [
-            "test.tasky.lists.inbox-protected",
-            "test.tasky.list-repository.inbox-protected"
-          ]
-        },
-        {
-          "id": "behavior.lists.delete-moves-tasks",
-          "name": "Deleting a list moves its tasks to Inbox",
-          "expected": "Before a list is deleted the confirmation states how many tasks will move to Inbox; after confirming, every task of that list (completed ones included) is in Inbox and none are lost.",
-          "testIds": [
-            "test.tasky.lists.delete-moves-tasks"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "cap.task-organization.assignment",
-      "kind": "capability",
-      "parentId": "cap.task-organization",
-      "name": "Task Assignment",
-      "summary": "Decide which list a task belongs to, by default and later",
-      "description": "A new task lands in Inbox unless it is created while viewing a custom list. A task can be moved to another list at any time by editing it.",
-      "behaviors": [
-        {
-          "id": "behavior.assignment.default-inbox",
-          "name": "New tasks default to Inbox",
-          "expected": "A task created from Inbox, Today or All Tasks is placed in Inbox, while a task created inside a custom list view is placed in that list.",
-          "testIds": [
-            "test.tasky.tasks.default-inbox",
-            "test.tasky.tasks.create"
-          ]
-        },
-        {
-          "id": "behavior.assignment.reassign",
-          "name": "Move a task between lists",
-          "expected": "Changing the list of a task in the edit dialog removes it from its old list view and shows it in the new one.",
-          "testIds": [
-            "test.tasky.lists.assign-task",
-            "test.tasky.tasks.edit"
-          ]
-        }
-      ]
     },
     {
       "id": "cap.task-discovery",
@@ -179,89 +32,7 @@
       "name": "Task Discovery",
       "summary": "Find the right tasks through Inbox, Today, All Tasks and lists",
       "description": "Views that answer \"what is in this list?\", \"what needs attention today?\" and \"what do I have in total?\".",
-      "behaviors": [
-        {
-          "id": "behavior.discovery.responsive-layout",
-          "name": "Navigation stays reachable on narrow screens",
-          "expected": "Below 720px wide the sidebar collapses behind a Menu button that opens and closes it, and every view and list remains reachable.",
-          "testIds": []
-        }
-      ]
-    },
-    {
-      "id": "cap.task-discovery.inbox-all",
-      "kind": "capability",
-      "parentId": "cap.task-discovery",
-      "name": "Inbox and All Tasks",
-      "summary": "See what is in Inbox, a list, or everything at once",
-      "description": "Inbox and each custom list show only their own tasks and hide finished ones unless asked. All Tasks shows every task, with finished tasks after open ones, and each view has a helpful empty state.",
-      "behaviors": [
-        {
-          "id": "behavior.discovery.inbox-own-tasks",
-          "name": "Inbox shows only Inbox tasks",
-          "expected": "The Inbox view lists only tasks in Inbox, hides completed tasks until \"Show completed\" is switched on, and its sidebar count equals the number of open Inbox tasks.",
-          "testIds": [
-            "test.tasky.views.inbox"
-          ]
-        },
-        {
-          "id": "behavior.discovery.all-tasks",
-          "name": "All Tasks includes completed tasks last",
-          "expected": "All Tasks lists every task from every list, open tasks first ordered by due date (undated last) and completed tasks after them.",
-          "testIds": [
-            "test.tasky.views.all-tasks"
-          ]
-        },
-        {
-          "id": "behavior.discovery.empty-states",
-          "name": "Helpful empty states",
-          "expected": "An empty Inbox, Today, All Tasks or custom list each says in plain words why it is empty and what to do next.",
-          "testIds": [
-            "test.tasky.views.empty-states"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "cap.task-discovery.today-overdue",
-      "kind": "capability",
-      "parentId": "cap.task-discovery",
-      "name": "Today and Overdue",
-      "summary": "See everything due today or already late, across all lists",
-      "description": "Today gathers incomplete tasks due today or earlier from every list. Late tasks are clearly marked in words, and the view stays correct when the day changes.",
-      "behaviors": [
-        {
-          "id": "behavior.today.due-today",
-          "name": "Today lists tasks due today or earlier",
-          "expected": "Today shows incomplete tasks whose due date is today or earlier from every list; tasks due later, without a due date, or already completed are not shown.",
-          "testIds": [
-            "test.tasky.views.today-overdue"
-          ]
-        },
-        {
-          "id": "behavior.today.overdue-labeled",
-          "name": "Overdue tasks are labeled in words",
-          "expected": "A task whose due date is before today shows the word \"Overdue\" next to its due date, so lateness never depends on color alone.",
-          "testIds": [
-            "test.tasky.views.today-overdue"
-          ]
-        },
-        {
-          "id": "behavior.today.rollover",
-          "name": "Today follows the local calendar day",
-          "expected": "When the local date changes (at midnight, or when the window or tab is revisited) Today re-evaluates: yesterday's due tasks become Overdue and tasks due on the new day appear without reloading.",
-          "testIds": [
-            "test.tasky.views.today-rollover",
-            "test.tasky.views.today-midnight-timer"
-          ]
-        },
-        {
-          "id": "behavior.today.timezone-change",
-          "name": "Today follows a changed time zone",
-          "expected": "After the device time zone changes, Today and Overdue are computed against the new local date as soon as the window regains focus.",
-          "testIds": []
-        }
-      ]
+      "behaviors": []
     },
     {
       "id": "sys.local-data",
@@ -458,79 +229,649 @@
       ]
     },
     {
-      "id": "cap.test-capabitlity",
+      "id": "cap.task-management.create",
       "kind": "capability",
-      "parentId": "cap.task-discovery.inbox-all",
-      "name": "Test capabitlity",
-      "summary": "asdf",
-      "description": "",
-      "behaviors": []
+      "parentId": "cap.task-management",
+      "name": "Create Task",
+      "summary": "Add a new task to Tasky with a title and optional details.",
+      "description": "A person captures a to-do item from the New task dialog. Only a title is required; notes, a due date and the list are optional, and the task lands in Inbox unless a custom list is being viewed.",
+      "behaviors": [
+        {
+          "id": "behavior.task-create.user-can-create",
+          "name": "User can create a new task",
+          "expected": "Opening \"New task\", entering a title and choosing \"Add task\" adds the task to the list and closes the dialog.",
+          "testIds": [
+            "test.tasky.tasks.create"
+          ]
+        },
+        {
+          "id": "behavior.task-create.user-can-add-details",
+          "name": "User can add notes and a due date when creating a task",
+          "expected": "The New task dialog accepts optional notes and a due date, and the task keeps both once added.",
+          "testIds": [
+            "test.tasky.tasks.create",
+            "test.tasky.task-repository.create"
+          ]
+        },
+        {
+          "id": "behavior.task-create.user-new-task-in-current-list",
+          "name": "User will find a new task in the list they are viewing",
+          "expected": "A task created while viewing a custom list is added to that list, and the List field is pre-filled with it.",
+          "testIds": [
+            "test.tasky.tasks.create"
+          ]
+        },
+        {
+          "id": "behavior.task-create.user-new-task-defaults-inbox",
+          "name": "User will find a new task in Inbox when not viewing a custom list",
+          "expected": "A task created from Inbox, Today or All Tasks is added to Inbox, and the List field defaults to Inbox.",
+          "testIds": [
+            "test.tasky.tasks.default-inbox"
+          ]
+        },
+        {
+          "id": "behavior.task-create.user-sees-blank-title-error",
+          "name": "User will see an error message when they try to add a task with a blank title",
+          "expected": "Submitting an empty or whitespace-only title shows \"Enter a title for the task.\" beside the Title field, keeps the dialog open and adds nothing; the user can then enter a title and add the task.",
+          "testIds": [
+            "test.tasky.tasks.create-validation",
+            "test.tasky.task-repository.validation"
+          ]
+        },
+        {
+          "id": "behavior.task-create.user-sees-long-title-error",
+          "name": "User will see an error message when they try to add a task with a title that is too long",
+          "expected": "A title longer than 200 characters shows \"Keep the title under 200 characters.\" beside the Title field and adds nothing.",
+          "testIds": [
+            "test.tasky.tasks.create-title-too-long"
+          ]
+        },
+        {
+          "id": "behavior.task-create.user-title-trimmed",
+          "name": "User will see their task title saved without leading or trailing spaces",
+          "expected": "Spaces around the title are removed when the task is created.",
+          "testIds": [
+            "test.tasky.task-repository.create"
+          ]
+        },
+        {
+          "id": "behavior.task-create.user-task-persists",
+          "name": "User can come back later and find the task they created",
+          "expected": "Created tasks are kept in the browser and are still present after reloading the page.",
+          "testIds": [
+            "test.tasky.task-repository.persist"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-management.edit",
+      "kind": "capability",
+      "parentId": "cap.task-management",
+      "name": "Edit Task",
+      "summary": "Change the details of a task that already exists.",
+      "description": "A person reopens a task from its Edit control and updates its title, notes, due date or list in one accessible dialog.",
+      "behaviors": [
+        {
+          "id": "behavior.task-edit.user-can-edit-details",
+          "name": "User can change the title, notes and due date of a task",
+          "expected": "Choosing \"Edit '<task>'\" opens the Edit task dialog with the current values; choosing \"Save changes\" updates the task in the list immediately and the new values show when it is reopened.",
+          "testIds": [
+            "test.tasky.tasks.edit"
+          ]
+        },
+        {
+          "id": "behavior.task-edit.user-can-move-list",
+          "name": "User can move a task to a different list",
+          "expected": "Changing the List field in the Edit task dialog removes the task from its old list view and shows it in the new one.",
+          "testIds": [
+            "test.tasky.tasks.edit",
+            "test.tasky.lists.assign-task"
+          ]
+        },
+        {
+          "id": "behavior.task-edit.user-can-clear-due-date",
+          "name": "User can remove a task's due date",
+          "expected": "Clearing the Due date field and saving leaves the task with no due date.",
+          "testIds": [
+            "test.tasky.task-repository.update-complete-delete"
+          ]
+        },
+        {
+          "id": "behavior.task-edit.user-sees-blank-title-error",
+          "name": "User will see an error message when they try to save a task with a blank title",
+          "expected": "Saving an edit with an empty or whitespace-only title shows an error beside the Title field, keeps the dialog open and leaves the task unchanged.",
+          "testIds": [
+            "test.tasky.tasks.edit-blank-title",
+            "test.tasky.task-repository.validation"
+          ]
+        },
+        {
+          "id": "behavior.task-edit.user-dialog-keyboard",
+          "name": "User can edit a task using only the keyboard",
+          "expected": "The Edit task dialog moves focus to the Title field, keeps Tab and Shift+Tab inside the dialog, closes on Escape and returns focus to the Edit control that opened it.",
+          "testIds": [
+            "test.tasky.tasks.dialog-accessibility"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-management.complete",
+      "kind": "capability",
+      "parentId": "cap.task-management",
+      "name": "Complete Task",
+      "summary": "Tick a task off, and reopen it if it was not really finished.",
+      "description": "Completing a task is a single, reversible action. Finished tasks leave the default views but can be shown again.",
+      "behaviors": [
+        {
+          "id": "behavior.task-complete.user-can-complete",
+          "name": "User can mark a task complete",
+          "expected": "Ticking \"Mark '<task>' complete\" removes the task from the default list view.",
+          "testIds": [
+            "test.tasky.tasks.complete"
+          ]
+        },
+        {
+          "id": "behavior.task-complete.user-can-show-completed",
+          "name": "User can show completed tasks again",
+          "expected": "Switching on \"Show completed\" lists finished tasks after the open ones, marked as complete.",
+          "testIds": [
+            "test.tasky.tasks.complete",
+            "test.tasky.filtering.completed-toggle"
+          ]
+        },
+        {
+          "id": "behavior.task-complete.user-can-reopen",
+          "name": "User can reopen a completed task",
+          "expected": "Unticking \"Mark '<task>' incomplete\" returns the task to its list as an open task.",
+          "testIds": [
+            "test.tasky.tasks.complete",
+            "test.tasky.task-repository.update-complete-delete"
+          ]
+        },
+        {
+          "id": "behavior.task-complete.user-no-completed-in-today",
+          "name": "User will not see completed tasks in Today",
+          "expected": "A completed task is hidden from Today, even if it is due today or overdue, unless \"Show completed\" is on.",
+          "testIds": [
+            "test.tasky.filtering.completed-toggle",
+            "test.tasky.filtering.today-view"
+          ]
+        },
+        {
+          "id": "behavior.task-complete.user-complete-keyboard",
+          "name": "User can complete and reopen tasks using only the keyboard",
+          "expected": "Each task checkbox is named after its task (\"Mark 'Buy milk' complete\") and toggles with the Space key.",
+          "testIds": [
+            "test.tasky.tasks.keyboard-operable"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-management.delete",
+      "kind": "capability",
+      "parentId": "cap.task-management",
+      "name": "Delete Task",
+      "summary": "Permanently remove a task after confirming.",
+      "description": "Deleting is permanent, so it always asks first and names the task being removed.",
+      "behaviors": [
+        {
+          "id": "behavior.task-delete.user-asked-to-confirm",
+          "name": "User will be asked to confirm before a task is deleted",
+          "expected": "Choosing \"Delete '<task>'\" opens a \"Delete task?\" confirmation that names the task; nothing is removed yet.",
+          "testIds": [
+            "test.tasky.tasks.delete"
+          ]
+        },
+        {
+          "id": "behavior.task-delete.user-can-cancel",
+          "name": "User can cancel a deletion and keep the task",
+          "expected": "Choosing Cancel closes the confirmation and leaves the task in its list untouched.",
+          "testIds": [
+            "test.tasky.tasks.delete"
+          ]
+        },
+        {
+          "id": "behavior.task-delete.user-can-delete",
+          "name": "User can permanently delete a task",
+          "expected": "Confirming with \"Delete task\" removes the task from every view and it cannot be restored.",
+          "testIds": [
+            "test.tasky.tasks.delete",
+            "test.tasky.task-repository.update-complete-delete"
+          ]
+        },
+        {
+          "id": "behavior.task-delete.user-delete-keyboard",
+          "name": "User can delete a task using only the keyboard",
+          "expected": "The Delete control is named after its task, opens the confirmation with Enter and puts keyboard focus on Cancel so a stray keypress cannot delete.",
+          "testIds": [
+            "test.tasky.tasks.keyboard-operable"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-organization.create",
+      "kind": "capability",
+      "parentId": "cap.task-organization",
+      "name": "Create List",
+      "summary": "Add a custom list to group related tasks.",
+      "description": "A person creates a list (e.g. Work, Errands) from the New list dialog. Names must contain visible text and be unique, and the new list opens straight away.",
+      "behaviors": [
+        {
+          "id": "behavior.list-create.user-can-create",
+          "name": "User can create a new list",
+          "expected": "Choosing \"New list\", entering a name and choosing \"Create list\" adds the list to the sidebar and closes the dialog.",
+          "testIds": [
+            "test.tasky.lists.create-rename",
+            "test.tasky.list-repository.create-rename"
+          ]
+        },
+        {
+          "id": "behavior.list-create.user-lands-in-new-list",
+          "name": "User will be taken to the new list as soon as it is created",
+          "expected": "The new list opens with its name as the page heading and is highlighted as the current item in the sidebar.",
+          "testIds": [
+            "test.tasky.lists.create-rename"
+          ]
+        },
+        {
+          "id": "behavior.list-create.user-sees-blank-name-error",
+          "name": "User will see an error message when they try to create a list with a blank name",
+          "expected": "Submitting an empty or whitespace-only name shows \"Enter a name for the list.\" beside the List name field, keeps the dialog open and creates nothing.",
+          "testIds": [
+            "test.tasky.lists.name-validation",
+            "test.tasky.list-repository.create-rename"
+          ]
+        },
+        {
+          "id": "behavior.list-create.user-sees-duplicate-name-error",
+          "name": "User will see an error message when they try to create a list with a name that is already used",
+          "expected": "A name matching another list, ignoring upper and lower case, shows \"A list with that name already exists.\" and creates nothing.",
+          "testIds": [
+            "test.tasky.lists.name-validation",
+            "test.tasky.list-repository.create-rename"
+          ]
+        },
+        {
+          "id": "behavior.list-create.user-cannot-name-list-inbox",
+          "name": "User will see an error message when they try to name a list \"Inbox\"",
+          "expected": "Using \"Inbox\" in any letter case shows \"A list with that name already exists.\" because Inbox is reserved.",
+          "testIds": [
+            "test.tasky.lists.name-validation",
+            "test.tasky.list-repository.create-rename"
+          ]
+        },
+        {
+          "id": "behavior.list-create.user-sees-long-name-error",
+          "name": "User will see an error message when they try to create a list with a name that is too long",
+          "expected": "A name longer than 60 characters shows \"Keep the name under 60 characters.\" and creates nothing.",
+          "testIds": [
+            "test.tasky.lists.create-name-too-long"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-organization.rename",
+      "kind": "capability",
+      "parentId": "cap.task-organization",
+      "name": "Rename List",
+      "summary": "Change the name of a custom list.",
+      "description": "A person renames a custom list from its list view. The built-in Inbox cannot be renamed.",
+      "behaviors": [
+        {
+          "id": "behavior.list-rename.user-can-rename",
+          "name": "User can rename a list",
+          "expected": "Choosing \"Rename list\" opens a dialog pre-filled with the current name; choosing \"Save name\" updates the sidebar and the page heading immediately and the old name disappears.",
+          "testIds": [
+            "test.tasky.lists.create-rename",
+            "test.tasky.list-repository.create-rename"
+          ]
+        },
+        {
+          "id": "behavior.list-rename.user-keeps-tasks-on-rename",
+          "name": "User will still see all of the list's tasks after renaming it",
+          "expected": "Renaming changes only the name; the list keeps its identity and every task in it.",
+          "testIds": [
+            "test.tasky.list-repository.create-rename"
+          ]
+        },
+        {
+          "id": "behavior.list-rename.user-sees-name-error-on-rename",
+          "name": "User will see an error message when they rename a list to a blank or already used name",
+          "expected": "A blank, whitespace-only or duplicate name (ignoring case) shows an inline message, keeps the dialog open and leaves the list name unchanged.",
+          "testIds": [
+            "test.tasky.lists.rename-validation",
+            "test.tasky.list-repository.create-rename"
+          ]
+        },
+        {
+          "id": "behavior.list-rename.user-cannot-rename-inbox",
+          "name": "User will not be offered a way to rename Inbox",
+          "expected": "The Inbox view has no \"Rename list\" control, while every custom list does; renaming Inbox programmatically is refused.",
+          "testIds": [
+            "test.tasky.lists.inbox-protected",
+            "test.tasky.list-repository.inbox-protected"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-organization.delete",
+      "kind": "capability",
+      "parentId": "cap.task-organization",
+      "name": "Delete List",
+      "summary": "Remove a custom list without losing its tasks.",
+      "description": "Deleting a list always asks first, says how many tasks will move, and sends them to Inbox. The built-in Inbox cannot be deleted.",
+      "behaviors": [
+        {
+          "id": "behavior.list-delete.user-told-tasks-will-move",
+          "name": "User will be told how many tasks will move to Inbox before a list is deleted",
+          "expected": "Choosing \"Delete list\" opens a confirmation naming the list and stating, e.g., \"3 tasks will be moved to Inbox, not deleted\"; nothing is removed yet.",
+          "testIds": [
+            "test.tasky.lists.delete-moves-tasks"
+          ]
+        },
+        {
+          "id": "behavior.list-delete.user-can-cancel-delete",
+          "name": "User can cancel deleting a list and keep it",
+          "expected": "Choosing Cancel closes the confirmation and the list stays in the sidebar unchanged.",
+          "testIds": [
+            "test.tasky.lists.delete-moves-tasks"
+          ]
+        },
+        {
+          "id": "behavior.list-delete.user-can-delete",
+          "name": "User can delete a list",
+          "expected": "Confirming with \"Delete list\" removes the list from the sidebar and takes the user to Inbox.",
+          "testIds": [
+            "test.tasky.lists.delete-moves-tasks",
+            "test.tasky.list-repository.delete-moves-tasks"
+          ]
+        },
+        {
+          "id": "behavior.list-delete.user-keeps-tasks-in-inbox",
+          "name": "User will find every task from a deleted list in Inbox",
+          "expected": "Open and completed tasks of the deleted list move to Inbox and none are lost; tasks in other lists are not affected.",
+          "testIds": [
+            "test.tasky.lists.delete-moves-tasks",
+            "test.tasky.list-repository.delete-moves-tasks"
+          ]
+        },
+        {
+          "id": "behavior.list-delete.user-cannot-delete-inbox",
+          "name": "User will not be offered a way to delete Inbox",
+          "expected": "The Inbox view has no \"Delete list\" control, while every custom list does; deleting Inbox programmatically is refused.",
+          "testIds": [
+            "test.tasky.lists.inbox-protected",
+            "test.tasky.list-repository.inbox-protected"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-organization.assign",
+      "kind": "capability",
+      "parentId": "cap.task-organization",
+      "name": "Assign Task to List",
+      "summary": "Decide which list a task belongs to, by default and later.",
+      "description": "A new task lands in Inbox unless it is created while viewing a custom list. A task can be moved to another list at any time by editing it.",
+      "behaviors": [
+        {
+          "id": "behavior.list-assign.user-new-task-in-current-list",
+          "name": "User will find a new task in the custom list they are viewing",
+          "expected": "A task created inside a custom list is added to that list.",
+          "testIds": [
+            "test.tasky.lists.assign-task",
+            "test.tasky.tasks.create"
+          ]
+        },
+        {
+          "id": "behavior.list-assign.user-new-task-defaults-inbox",
+          "name": "User will find a new task in Inbox when they create it outside a custom list",
+          "expected": "A task created from Inbox, Today or All Tasks is added to Inbox.",
+          "testIds": [
+            "test.tasky.tasks.default-inbox"
+          ]
+        },
+        {
+          "id": "behavior.list-assign.user-can-move-task",
+          "name": "User can move a task to a different list",
+          "expected": "Changing the List field in the Edit task dialog removes the task from its old list view and shows it in the new list.",
+          "testIds": [
+            "test.tasky.lists.assign-task",
+            "test.tasky.tasks.edit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-discovery.inbox-lists",
+      "kind": "capability",
+      "parentId": "cap.task-discovery",
+      "name": "Browse Inbox and Lists",
+      "summary": "See what is in Inbox or in a single custom list.",
+      "description": "Inbox and each custom list show only their own tasks, hide finished ones unless asked, and show how many open tasks they hold.",
+      "behaviors": [
+        {
+          "id": "behavior.discovery-inbox-lists.user-sees-only-inbox-tasks",
+          "name": "User can see only the tasks in Inbox when they open Inbox",
+          "expected": "The Inbox view lists only tasks in Inbox, not tasks from custom lists.",
+          "testIds": [
+            "test.tasky.views.inbox",
+            "test.tasky.filtering.list-views"
+          ]
+        },
+        {
+          "id": "behavior.discovery-inbox-lists.user-sees-only-list-tasks",
+          "name": "User can open a custom list and see only the tasks in that list",
+          "expected": "Selecting a list in the sidebar shows only that list's tasks under its name.",
+          "testIds": [
+            "test.tasky.filtering.list-views"
+          ]
+        },
+        {
+          "id": "behavior.discovery-inbox-lists.user-completed-hidden",
+          "name": "User will not see completed tasks until they turn on \"Show completed\"",
+          "expected": "Inbox and custom lists hide completed tasks by default, and \"Show completed\" lists them after the open ones.",
+          "testIds": [
+            "test.tasky.views.inbox",
+            "test.tasky.filtering.completed-toggle",
+            "test.tasky.filtering.list-views"
+          ]
+        },
+        {
+          "id": "behavior.discovery-inbox-lists.user-sees-open-count",
+          "name": "User can see how many open tasks each list has in the sidebar",
+          "expected": "The sidebar count next to Inbox or a list equals its number of open tasks; completed tasks are not counted.",
+          "testIds": [
+            "test.tasky.views.inbox"
+          ]
+        },
+        {
+          "id": "behavior.discovery-inbox-lists.user-sees-tasks-by-due-date",
+          "name": "User will see open tasks ordered by due date, with undated tasks last",
+          "expected": "Within a view, open tasks come first, earliest due date first, then tasks without a due date, in the order they were created.",
+          "testIds": [
+            "test.tasky.filtering.ordering"
+          ]
+        },
+        {
+          "id": "behavior.discovery-inbox-lists.user-sees-empty-message",
+          "name": "User will see a helpful message when Inbox or a list has no tasks",
+          "expected": "An empty Inbox says \"Inbox is empty\" and an empty list says \"No tasks in <list>\", each with what to do next.",
+          "testIds": [
+            "test.tasky.views.empty-states"
+          ]
+        },
+        {
+          "id": "behavior.discovery-inbox-lists.user-sees-all-done-message",
+          "name": "User will see an \"All done here\" message when every task in a view is completed",
+          "expected": "If all tasks in the view are completed and hidden, the view says \"All done here\" and tells the user to turn on \"Show completed\".",
+          "testIds": [
+            "test.tasky.views.all-done-message"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-discovery.all-tasks",
+      "kind": "capability",
+      "parentId": "cap.task-discovery",
+      "name": "Browse All Tasks",
+      "summary": "See every task from every list in one place.",
+      "description": "All Tasks shows every task, open ones first by due date, with finished tasks after them.",
+      "behaviors": [
+        {
+          "id": "behavior.discovery-all-tasks.user-sees-every-task",
+          "name": "User can see every task from every list in All Tasks",
+          "expected": "All Tasks lists tasks from Inbox and every custom list together.",
+          "testIds": [
+            "test.tasky.views.all-tasks",
+            "test.tasky.filtering.all-tasks"
+          ]
+        },
+        {
+          "id": "behavior.discovery-all-tasks.user-open-tasks-by-due-date",
+          "name": "User will see open tasks ordered by due date, with undated tasks last",
+          "expected": "Open tasks are listed earliest due date first, and tasks without a due date follow them.",
+          "testIds": [
+            "test.tasky.views.all-tasks",
+            "test.tasky.filtering.ordering"
+          ]
+        },
+        {
+          "id": "behavior.discovery-all-tasks.user-completed-last",
+          "name": "User will see completed tasks after all open tasks without having to turn anything on",
+          "expected": "All Tasks always includes completed tasks, listed after the open ones, and offers no \"Show completed\" switch.",
+          "testIds": [
+            "test.tasky.views.all-tasks",
+            "test.tasky.filtering.all-tasks"
+          ]
+        },
+        {
+          "id": "behavior.discovery-all-tasks.user-sees-empty-message",
+          "name": "User will see a helpful message when they have no tasks yet",
+          "expected": "With no tasks, All Tasks says \"No tasks yet\" and tells the user to use New task to add one.",
+          "testIds": [
+            "test.tasky.views.empty-states"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-discovery.today",
+      "kind": "capability",
+      "parentId": "cap.task-discovery",
+      "name": "Browse Today and Overdue",
+      "summary": "See everything due today or already late, across all lists.",
+      "description": "Today gathers incomplete tasks due today or earlier from every list. Late tasks are marked in words, and the view stays correct when the day changes.",
+      "behaviors": [
+        {
+          "id": "behavior.discovery-today.user-sees-due-today",
+          "name": "User can see every incomplete task due today or earlier in Today",
+          "expected": "Today lists incomplete tasks from every list whose due date is today or before.",
+          "testIds": [
+            "test.tasky.views.today-overdue",
+            "test.tasky.filtering.today-view"
+          ]
+        },
+        {
+          "id": "behavior.discovery-today.user-not-see-others",
+          "name": "User will not see tasks due later, without a due date, or already completed in Today",
+          "expected": "Tasks due after today, tasks with no due date and completed tasks are left out of Today.",
+          "testIds": [
+            "test.tasky.views.today-overdue",
+            "test.tasky.filtering.today-view",
+            "test.tasky.filtering.completed-toggle"
+          ]
+        },
+        {
+          "id": "behavior.discovery-today.user-sees-overdue-label",
+          "name": "User will see the word \"Overdue\" next to tasks that are late",
+          "expected": "A task due before today shows \"Overdue\" beside its due date, so lateness never depends on colour alone; tasks due today do not.",
+          "testIds": [
+            "test.tasky.views.today-overdue",
+            "test.tasky.local-date.overdue"
+          ]
+        },
+        {
+          "id": "behavior.discovery-today.user-sees-overdue-first",
+          "name": "User will see the oldest overdue tasks first",
+          "expected": "Overdue tasks are listed before tasks due today, earliest due date first.",
+          "testIds": [
+            "test.tasky.views.today-overdue",
+            "test.tasky.filtering.ordering"
+          ]
+        },
+        {
+          "id": "behavior.discovery-today.user-sees-task-list-name",
+          "name": "User can see which list each task in Today belongs to",
+          "expected": "Each task in Today shows the name of its list.",
+          "testIds": [
+            "test.tasky.views.today-overdue"
+          ]
+        },
+        {
+          "id": "behavior.discovery-today.user-sees-empty-message",
+          "name": "User will see a helpful message when nothing is due",
+          "expected": "With nothing due or overdue, Today says \"Nothing due today\" and explains what will appear there.",
+          "testIds": [
+            "test.tasky.views.empty-states"
+          ]
+        },
+        {
+          "id": "behavior.discovery-today.user-today-updates-at-midnight",
+          "name": "User will see Today update at midnight without reloading the page",
+          "expected": "When the local day changes while Tasky is open, tasks due the previous day become Overdue and tasks due on the new day appear.",
+          "testIds": [
+            "test.tasky.views.today-midnight-timer",
+            "test.tasky.local-date.midnight-timer"
+          ]
+        },
+        {
+          "id": "behavior.discovery-today.user-today-updates-on-return",
+          "name": "User will see Today update when they come back to the window after the day has changed",
+          "expected": "Returning to the window or tab re-checks the local date, so Today and Overdue are never a day out of date.",
+          "testIds": [
+            "test.tasky.views.today-rollover",
+            "test.tasky.local-date.rollover",
+            "test.tasky.local-date.local-date"
+          ]
+        },
+        {
+          "id": "behavior.discovery-today.user-today-follows-timezone",
+          "name": "User will see Today follow their device time zone when it changes",
+          "expected": "After the device time zone changes, Today and Overdue use the new local date once the window regains focus.",
+          "testIds": [
+            "test.tasky.views.today-timezone-change"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap.task-discovery.navigation",
+      "kind": "capability",
+      "parentId": "cap.task-discovery",
+      "name": "Navigate on Narrow Screens",
+      "summary": "Reach every view and list on a small screen.",
+      "description": "Below 720px wide the sidebar collapses behind a Menu button.",
+      "behaviors": [
+        {
+          "id": "behavior.discovery-navigation.user-can-use-menu",
+          "name": "User can open and close the navigation menu on a narrow screen",
+          "expected": "Below 720px wide the sidebar is hidden behind a Menu button that opens and closes it, and every view and list stays reachable.",
+          "testIds": [
+            "test.tasky.views.narrow-menu"
+          ]
+        }
+      ]
     }
   ],
   "relationships": [
-    {
-      "id": "rel.create-edit.implemented-by.task-repository",
-      "type": "implementedBy",
-      "sourceId": "cap.task-management.create-edit",
-      "targetId": "sys.task-repository",
-      "description": "Creating and editing tasks is carried out by TaskRepository.create and TaskRepository.update, which validate and persist the change."
-    },
-    {
-      "id": "rel.complete-delete.implemented-by.task-repository",
-      "type": "implementedBy",
-      "sourceId": "cap.task-management.complete-delete",
-      "targetId": "sys.task-repository",
-      "description": "Completing and deleting tasks call TaskRepository.setCompleted and TaskRepository.remove."
-    },
-    {
-      "id": "rel.custom-lists.implemented-by.list-repository",
-      "type": "implementedBy",
-      "sourceId": "cap.task-organization.custom-lists",
-      "targetId": "sys.list-repository",
-      "description": "List creation, renaming and deletion (including moving tasks to Inbox) are performed by ListRepository."
-    },
-    {
-      "id": "rel.assignment.implemented-by.task-repository",
-      "type": "implementedBy",
-      "sourceId": "cap.task-organization.assignment",
-      "targetId": "sys.task-repository",
-      "description": "A task's list is stored on the task record and validated by TaskRepository on create and update."
-    },
-    {
-      "id": "rel.today-overdue.implemented-by.filtering-sorting",
-      "type": "implementedBy",
-      "sourceId": "cap.task-discovery.today-overdue",
-      "targetId": "sys.filtering-sorting",
-      "description": "The Today view is the \"today\" filter in filtering.ts, ordered by the shared comparator."
-    },
-    {
-      "id": "rel.today-overdue.depends-on.create-edit",
-      "type": "dependsOn",
-      "sourceId": "cap.task-discovery.today-overdue",
-      "targetId": "cap.task-management.create-edit",
-      "description": "Today can only show tasks that exist and carry the due dates entered through create and edit."
-    },
-    {
-      "id": "rel.assignment.depends-on.custom-lists",
-      "type": "dependsOn",
-      "sourceId": "cap.task-organization.assignment",
-      "targetId": "cap.task-organization.custom-lists",
-      "description": "Assigning a task to a list requires lists to exist and be managed by Custom Lists."
-    },
-    {
-      "id": "rel.inbox-all.depends-on.assignment",
-      "type": "dependsOn",
-      "sourceId": "cap.task-discovery.inbox-all",
-      "targetId": "cap.task-organization.assignment",
-      "description": "What Inbox contains is decided by assignment: the Inbox default and tasks moved there from deleted lists."
-    },
-    {
-      "id": "rel.today-overdue.uses.local-date",
-      "type": "uses",
-      "sourceId": "cap.task-discovery.today-overdue",
-      "targetId": "sys.local-date",
-      "description": "The Today view and the Overdue label use the local date and the midnight rollover timer from Local Date Evaluation."
-    },
     {
       "id": "rel.filtering-sorting.uses.local-date",
       "type": "uses",
@@ -539,27 +880,153 @@
       "description": "filterTasks calls isDueTodayOrOverdue to decide Today membership."
     },
     {
-      "id": "rel.inbox-all.uses.filtering-sorting",
+      "id": "rel.create-task.implemented-by.task-repository",
+      "type": "implementedBy",
+      "sourceId": "cap.task-management.create",
+      "targetId": "sys.task-repository",
+      "description": "Creating a task is carried out by TaskRepository.create, which validates and persists it."
+    },
+    {
+      "id": "rel.edit-task.implemented-by.task-repository",
+      "type": "implementedBy",
+      "sourceId": "cap.task-management.edit",
+      "targetId": "sys.task-repository",
+      "description": "Editing a task is carried out by TaskRepository.update, which validates and persists the change."
+    },
+    {
+      "id": "rel.complete-task.implemented-by.task-repository",
+      "type": "implementedBy",
+      "sourceId": "cap.task-management.complete",
+      "targetId": "sys.task-repository",
+      "description": "Completing and reopening a task call TaskRepository.setCompleted."
+    },
+    {
+      "id": "rel.delete-task.implemented-by.task-repository",
+      "type": "implementedBy",
+      "sourceId": "cap.task-management.delete",
+      "targetId": "sys.task-repository",
+      "description": "Deleting a task calls TaskRepository.remove."
+    },
+    {
+      "id": "rel.list-create.implemented-by.list-repository",
+      "type": "implementedBy",
+      "sourceId": "cap.task-organization.create",
+      "targetId": "sys.list-repository",
+      "description": "Creating a list is carried out by ListRepository.create, which validates and persists it."
+    },
+    {
+      "id": "rel.list-rename.implemented-by.list-repository",
+      "type": "implementedBy",
+      "sourceId": "cap.task-organization.rename",
+      "targetId": "sys.list-repository",
+      "description": "Renaming a list is carried out by ListRepository.rename, which validates and persists the change."
+    },
+    {
+      "id": "rel.list-delete.implemented-by.list-repository",
+      "type": "implementedBy",
+      "sourceId": "cap.task-organization.delete",
+      "targetId": "sys.list-repository",
+      "description": "Deleting a list calls ListRepository.remove, which moves its tasks to Inbox."
+    },
+    {
+      "id": "rel.list-assign.implemented-by.task-repository",
+      "type": "implementedBy",
+      "sourceId": "cap.task-organization.assign",
+      "targetId": "sys.task-repository",
+      "description": "Moving a task between lists is carried out by TaskRepository.update."
+    },
+    {
+      "id": "rel.list-rename.depends-on.create",
+      "type": "dependsOn",
+      "sourceId": "cap.task-organization.rename",
+      "targetId": "cap.task-organization.create",
+      "description": "A list must exist before it can be renamed."
+    },
+    {
+      "id": "rel.list-delete.depends-on.create",
+      "type": "dependsOn",
+      "sourceId": "cap.task-organization.delete",
+      "targetId": "cap.task-organization.create",
+      "description": "A list must exist before it can be deleted."
+    },
+    {
+      "id": "rel.list-assign.depends-on.create",
+      "type": "dependsOn",
+      "sourceId": "cap.task-organization.assign",
+      "targetId": "cap.task-organization.create",
+      "description": "A task can only be assigned to a list that has been created."
+    },
+    {
+      "id": "rel.discovery-inbox-lists.uses.filtering-sorting",
       "type": "uses",
-      "sourceId": "cap.task-discovery.inbox-all",
+      "sourceId": "cap.task-discovery.inbox-lists",
       "targetId": "sys.filtering-sorting",
-      "description": "Inbox, custom list and All Tasks views are produced by filterTasks and sorted by compareTasks."
+      "description": "Inbox and list views are selected, filtered and ordered by the filtering logic."
+    },
+    {
+      "id": "rel.discovery-inbox-lists.depends-on.list-assign",
+      "type": "dependsOn",
+      "sourceId": "cap.task-discovery.inbox-lists",
+      "targetId": "cap.task-organization.assign",
+      "description": "Inbox and list views show only the tasks assigned to them."
+    },
+    {
+      "id": "rel.discovery-all-tasks.uses.filtering-sorting",
+      "type": "uses",
+      "sourceId": "cap.task-discovery.all-tasks",
+      "targetId": "sys.filtering-sorting",
+      "description": "All Tasks is ordered by the sorting logic."
+    },
+    {
+      "id": "rel.discovery-today.implemented-by.filtering-sorting",
+      "type": "implementedBy",
+      "sourceId": "cap.task-discovery.today",
+      "targetId": "sys.filtering-sorting",
+      "description": "Today is selected and ordered by the filtering logic."
+    },
+    {
+      "id": "rel.discovery-today.uses.local-date",
+      "type": "uses",
+      "sourceId": "cap.task-discovery.today",
+      "targetId": "sys.local-date",
+      "description": "Today and Overdue are computed from the local calendar date."
+    },
+    {
+      "id": "rel.discovery-today.depends-on.create-task",
+      "type": "dependsOn",
+      "sourceId": "cap.task-discovery.today",
+      "targetId": "cap.task-management.create",
+      "description": "Today can only show tasks that exist, so it depends on tasks being created."
+    },
+    {
+      "id": "rel.discovery-today.depends-on.edit-task",
+      "type": "dependsOn",
+      "sourceId": "cap.task-discovery.today",
+      "targetId": "cap.task-management.edit",
+      "description": "Today relies on the due dates people set or change when editing a task."
+    },
+    {
+      "id": "rel.discovery-today.depends-on.complete-task",
+      "type": "dependsOn",
+      "sourceId": "cap.task-discovery.today",
+      "targetId": "cap.task-management.complete",
+      "description": "Completed tasks drop out of Today."
     }
   ],
   "tests": [
     {
       "id": "test.tasky.demo.load",
-      "name": "End-to-end: first run offers to load demo data with lists and dated tasks",
+      "name": "E2E: first run offers to load demo data with lists and dated tasks",
       "location": "apps/tasky/tests/e2e/persistence.spec.ts › first run offers to load demo data with lists and dated tasks"
     },
     {
       "id": "test.tasky.demo.no-auto-reseed",
-      "name": "End-to-end: existing data is never silently reseeded, even when empty",
+      "name": "E2E: existing data is never silently reseeded, even when empty",
       "location": "apps/tasky/tests/e2e/persistence.spec.ts › existing data is never silently reseeded, even when empty"
     },
     {
       "id": "test.tasky.demo.reset",
-      "name": "End-to-end: reset demo data asks for confirmation before replacing data",
+      "name": "E2E: reset demo data asks for confirmation before replacing data",
       "location": "apps/tasky/tests/e2e/persistence.spec.ts › reset demo data asks for confirmation before replacing data"
     },
     {
@@ -609,27 +1076,27 @@
     },
     {
       "id": "test.tasky.lists.assign-task",
-      "name": "End-to-end: assigns a task to a list by editing and by creating inside it",
+      "name": "E2E: assigns a task to a list by editing and by creating inside it",
       "location": "apps/tasky/tests/e2e/lists.spec.ts › assigns a task to a list by editing and by creating inside it"
     },
     {
       "id": "test.tasky.lists.create-rename",
-      "name": "End-to-end: creates and renames a custom list",
+      "name": "E2E: creates and renames a custom list",
       "location": "apps/tasky/tests/e2e/lists.spec.ts › creates and renames a custom list"
     },
     {
       "id": "test.tasky.lists.delete-moves-tasks",
-      "name": "End-to-end: deleting a list moves its tasks to Inbox after confirmation",
+      "name": "E2E: deleting a list moves its tasks to Inbox after confirmation",
       "location": "apps/tasky/tests/e2e/lists.spec.ts › deleting a list moves its tasks to Inbox after confirmation"
     },
     {
       "id": "test.tasky.lists.inbox-protected",
-      "name": "End-to-end: Inbox cannot be renamed or deleted",
+      "name": "E2E: Inbox cannot be renamed or deleted",
       "location": "apps/tasky/tests/e2e/lists.spec.ts › Inbox cannot be renamed or deleted"
     },
     {
       "id": "test.tasky.lists.name-validation",
-      "name": "End-to-end: rejects blank and duplicate list names",
+      "name": "E2E: rejects blank and duplicate list names",
       "location": "apps/tasky/tests/e2e/lists.spec.ts › rejects blank and duplicate list names"
     },
     {
@@ -654,17 +1121,17 @@
     },
     {
       "id": "test.tasky.persistence.corrupt-data",
-      "name": "End-to-end: corrupt stored data shows a banner and is never overwritten",
+      "name": "E2E: corrupt stored data shows a banner and is never overwritten",
       "location": "apps/tasky/tests/e2e/persistence.spec.ts › corrupt stored data shows a banner and is never overwritten"
     },
     {
       "id": "test.tasky.persistence.reload",
-      "name": "End-to-end: lists and tasks survive a reload",
+      "name": "E2E: lists and tasks survive a reload",
       "location": "apps/tasky/tests/e2e/persistence.spec.ts › lists and tasks survive a reload"
     },
     {
       "id": "test.tasky.persistence.start-fresh",
-      "name": "End-to-end: start fresh keeps a backup copy under another key",
+      "name": "E2E: start fresh keeps a backup copy under another key",
       "location": "apps/tasky/tests/e2e/persistence.spec.ts › start fresh keeps a backup copy under another key"
     },
     {
@@ -699,73 +1166,115 @@
     },
     {
       "id": "test.tasky.tasks.complete",
-      "name": "End-to-end: marks a task complete and incomplete",
+      "name": "E2E: marks a task complete and incomplete",
       "location": "apps/tasky/tests/e2e/tasks.spec.ts › marks a task complete and incomplete"
     },
     {
       "id": "test.tasky.tasks.create",
-      "name": "End-to-end: creates a task in the selected list",
+      "name": "E2E: creates a task in the selected list",
       "location": "apps/tasky/tests/e2e/tasks.spec.ts › creates a task in the selected list"
     },
     {
       "id": "test.tasky.tasks.create-validation",
-      "name": "End-to-end: rejects empty and whitespace-only titles with an inline message",
+      "name": "E2E: rejects empty and whitespace-only titles with an inline message",
       "location": "apps/tasky/tests/e2e/tasks.spec.ts › rejects empty and whitespace-only titles with an inline message"
     },
     {
       "id": "test.tasky.tasks.default-inbox",
-      "name": "End-to-end: defaults new tasks to Inbox outside a custom list",
+      "name": "E2E: defaults new tasks to Inbox outside a custom list",
       "location": "apps/tasky/tests/e2e/tasks.spec.ts › defaults new tasks to Inbox outside a custom list"
     },
     {
       "id": "test.tasky.tasks.delete",
-      "name": "End-to-end: deletes a task only after confirmation",
+      "name": "E2E: deletes a task only after confirmation",
       "location": "apps/tasky/tests/e2e/tasks.spec.ts › deletes a task only after confirmation"
     },
     {
       "id": "test.tasky.tasks.dialog-accessibility",
-      "name": "End-to-end: edit dialog traps focus, closes on Escape and returns focus",
+      "name": "E2E: edit dialog traps focus, closes on Escape and returns focus",
       "location": "apps/tasky/tests/e2e/tasks.spec.ts › edit dialog traps focus, closes on Escape and returns focus"
     },
     {
       "id": "test.tasky.tasks.edit",
-      "name": "End-to-end: edits title, notes, due date and list",
+      "name": "E2E: edits title, notes, due date and list",
       "location": "apps/tasky/tests/e2e/tasks.spec.ts › edits title, notes, due date and list"
     },
     {
       "id": "test.tasky.tasks.keyboard-operable",
-      "name": "End-to-end: task controls are labeled and keyboard operable",
+      "name": "E2E: task controls are labeled and keyboard operable",
       "location": "apps/tasky/tests/e2e/tasks.spec.ts › task controls are labeled and keyboard operable"
     },
     {
       "id": "test.tasky.views.all-tasks",
-      "name": "End-to-end: All Tasks shows completed tasks after incomplete ones in due-date order",
+      "name": "E2E: All Tasks shows completed tasks after incomplete ones in due-date order",
       "location": "apps/tasky/tests/e2e/views.spec.ts › All Tasks shows completed tasks after incomplete ones in due-date order"
     },
     {
       "id": "test.tasky.views.empty-states",
-      "name": "End-to-end: every view has a useful empty state",
+      "name": "E2E: every view has a useful empty state",
       "location": "apps/tasky/tests/e2e/views.spec.ts › every view has a useful empty state"
     },
     {
       "id": "test.tasky.views.inbox",
-      "name": "End-to-end: Inbox shows only Inbox tasks and hides completed until toggled",
+      "name": "E2E: Inbox shows only Inbox tasks and hides completed until toggled",
       "location": "apps/tasky/tests/e2e/views.spec.ts › Inbox shows only Inbox tasks and hides completed until toggled"
     },
     {
       "id": "test.tasky.views.today-midnight-timer",
-      "name": "End-to-end: Today updates at local midnight without any interaction",
+      "name": "E2E: Today updates at local midnight without any interaction",
       "location": "apps/tasky/tests/e2e/views.spec.ts › Today updates at local midnight without any interaction"
     },
     {
       "id": "test.tasky.views.today-overdue",
-      "name": "End-to-end: Today shows tasks due today and overdue, labeling overdue in text",
+      "name": "E2E: Today shows tasks due today and overdue, labeling overdue in text",
       "location": "apps/tasky/tests/e2e/views.spec.ts › Today shows tasks due today and overdue, labeling overdue in text"
     },
     {
       "id": "test.tasky.views.today-rollover",
-      "name": "End-to-end: Today re-evaluates when the local date rolls over on focus",
+      "name": "E2E: Today re-evaluates when the local date rolls over on focus",
       "location": "apps/tasky/tests/e2e/views.spec.ts › Today re-evaluates when the local date rolls over on focus"
+    },
+    {
+      "id": "test.tasky.tasks.create-title-too-long",
+      "name": "E2E: rejects titles over 200 characters with an inline message",
+      "location": "apps/tasky/tests/e2e/tasks.spec.ts › rejects titles over 200 characters with an inline message",
+      "placeholder": true
+    },
+    {
+      "id": "test.tasky.tasks.edit-blank-title",
+      "name": "E2E: rejects a blank title when editing a task",
+      "location": "apps/tasky/tests/e2e/tasks.spec.ts › rejects a blank title when editing a task",
+      "placeholder": true
+    },
+    {
+      "id": "test.tasky.lists.create-name-too-long",
+      "name": "E2E: rejects list names over 60 characters with an inline message",
+      "location": "apps/tasky/tests/e2e/lists.spec.ts › rejects list names over 60 characters with an inline message",
+      "placeholder": true
+    },
+    {
+      "id": "test.tasky.lists.rename-validation",
+      "name": "E2E: rejects blank and duplicate names when renaming a list",
+      "location": "apps/tasky/tests/e2e/lists.spec.ts › rejects blank and duplicate names when renaming a list",
+      "placeholder": true
+    },
+    {
+      "id": "test.tasky.views.all-done-message",
+      "name": "E2E: shows an all done message when every task in a view is completed and hidden",
+      "location": "apps/tasky/tests/e2e/views.spec.ts › shows an all done message when every task in a view is completed and hidden",
+      "placeholder": true
+    },
+    {
+      "id": "test.tasky.views.today-timezone-change",
+      "name": "E2E: Today follows a changed time zone when the window regains focus",
+      "location": "apps/tasky/tests/e2e/views.spec.ts › Today follows a changed time zone when the window regains focus",
+      "placeholder": true
+    },
+    {
+      "id": "test.tasky.views.narrow-menu",
+      "name": "E2E: sidebar collapses behind a Menu button on narrow screens",
+      "location": "apps/tasky/tests/e2e/views.spec.ts › sidebar collapses behind a Menu button on narrow screens",
+      "placeholder": true
     }
   ],
   "validation": {

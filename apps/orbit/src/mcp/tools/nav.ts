@@ -170,6 +170,77 @@ export function navTools(): ToolDef[] {
   });
 
   tools.push({
+    kind: 'nav',
+    tool: {
+      name: 'filter_view',
+      title: "Filter the person's view",
+      description:
+        "Narrow what the person sees in the product / engineering trees to a set of entities and/or behaviors, with a yellow banner explaining the filter in plain English (the person can close it with its X). Use it when the person asks to be shown things, e.g. \"show me everything to do with overdue tasks\". YOU decide what is relevant: first use search / list_entities / get_entity to find the matching ids (think about meaning, not just substrings), then call this once with all of them. entityIds shows those entities with all their behaviors; behaviorIds shows only those behaviors under their owners. Ancestors stay visible for context. description is what the banner says: a short sentence describing what is shown, e.g. 'Showing capabilities and behaviors related to tasks becoming overdue.' view picks product (capabilities) or engineering (systems); by default the current view is kept when it has matches, otherwise the one that does. Replaces any previous filter. Does not change the document.",
+      inputSchema: S.obj(
+        {
+          description: S.nonEmpty('Plain-English sentence for the banner describing what is shown.', { maxLength: 300 }),
+          entityIds: S.strList('Entities (capabilities or systems) to show in full.'),
+          behaviorIds: S.strList('Individual behaviors to show (their owners are shown too).'),
+          view: S.oneOf(['product', 'engineering'], 'Which view to show (default: the current view if it has matches).'),
+        },
+        ['description'],
+      ),
+      annotations: ann(false),
+    },
+    run(a, ctx) {
+      const c = requireContract(ctx);
+      const entityIds = [...new Set((a.entityIds as string[] | undefined) ?? [])];
+      const behaviorIds = [...new Set((a.behaviorIds as string[] | undefined) ?? [])];
+      if (!entityIds.length && !behaviorIds.length) throw new ToolError('Pass at least one entityId or behaviorId to filter to.', { suggestions: ['Use search or list_entities to find relevant ids first. To remove a filter, call clear_filter.'] });
+      const byId = new Map(c.entities.map((e) => [e.id, e]));
+      const bIndex = behaviorIndex(c);
+      for (const id of entityIds) if (!byId.has(id)) throw notFound('Entity', id, entityCandidates(c));
+      for (const id of behaviorIds) if (!bIndex.has(id)) throw notFound('Behavior', id, [...bIndex.values()].map((x) => ({ id: x.behavior.id, name: x.behavior.name })));
+
+      const kinds = { capability: 0, system: 0 };
+      for (const id of entityIds) kinds[byId.get(id)!.kind]++;
+      for (const id of behaviorIds) kinds[bIndex.get(id)!.entity.kind]++;
+      const s0 = st(ctx);
+      const current = s0.view === 'engineering' ? 'system' : 'capability';
+      const kind = a.view ? (a.view === 'engineering' ? 'system' : 'capability') : s0.view !== 'impact' && kinds[current] > 0 ? current : kinds.capability >= kinds.system ? 'capability' : 'system';
+
+      const d = ctx.store.dispatch;
+      d({ type: 'setViewFilter', filter: { description: (a.description as string).trim(), entityIds, behaviorIds } });
+      d({ type: 'setSearch', search: '' });
+      if (!(s0.rawMode && s0.rawDraft !== null && s0.rawDraft !== currentText(s0))) d({ type: 'setRawMode', on: false });
+      d({ type: 'setView', view: kind === 'capability' ? 'product' : 'engineering' });
+      return {
+        data: {
+          view: kind === 'capability' ? 'product' : 'engineering',
+          description: (a.description as string).trim(),
+          shown: {
+            entities: entityIds.map((id) => ({ id, name: byId.get(id)!.name, kind: byId.get(id)!.kind })),
+            behaviors: behaviorIds.map((id) => ({ id, name: bIndex.get(id)!.behavior.name, ownerId: bIndex.get(id)!.entity.id })),
+          },
+          matchesPerView: { product: kinds.capability, engineering: kinds.system },
+        },
+        toast: 'Filtered the view',
+      };
+    },
+  });
+
+  tools.push({
+    kind: 'nav',
+    tool: {
+      name: 'clear_filter',
+      title: 'Clear the view filter',
+      description: "Remove the filter set by filter_view (same as the person clicking the banner's X). No-op when there is none.",
+      inputSchema: S.obj({}),
+      annotations: ann(false),
+    },
+    run(_a, ctx) {
+      const had = !!st(ctx).viewFilter;
+      if (had) ctx.store.dispatch({ type: 'setViewFilter', filter: null });
+      return { data: { cleared: had }, ...(had ? { toast: 'Cleared the view filter' } : {}) };
+    },
+  });
+
+  tools.push({
     kind: 'file',
     tool: {
       name: 'run_tests',

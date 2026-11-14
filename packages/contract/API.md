@@ -82,7 +82,7 @@ passes them in as `ctx = { results: Map<testId, TestResult>, since }`, where `si
   after `since`), else `unconfirmed` (no result, a result from before the proposal, or skipped).
 - Behavior status, by precedence, over real tests only (defined, not placeholders): `failing` if any fails; `passing`
   if all pass; `unconfirmed` otherwise. With no real tests: `planned` if placeholders are mapped, else `untested`.
-- Summary counts `passing + failing + unconfirmed = withTests` and `withTests + planned + untested = total`.
+- Summary counts `passing + failing + unconfirmed = withTests` and `withTests + planned + untested = total`. `withPlanned` counts behaviors with any planned test, whatever their status, so it overlaps the other counts.
 
 ## Semantic diff — `src/diff.ts`
 

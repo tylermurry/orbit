@@ -69,6 +69,44 @@ export function searchTree(roots: TreeNode[], query: string): SearchResult | nul
   return { matches, behaviorMatches, visible };
 }
 
+export interface FilterResult {
+  /** Entities that match on their own (all their behaviors are relevant). */
+  matches: Set<string>;
+  /** Matching behaviors per owner entity. */
+  behaviorMatches: Map<string, { id: string; name: string; expected: string }[]>;
+  /** Matches plus their ancestors. */
+  visible: Set<string>;
+}
+
+/** Resolve a view filter against a tree: which entities stay visible and which behaviors matched. */
+export function applyViewFilter(roots: TreeNode[], f: { entityIds: string[]; behaviorIds: string[] } | null): FilterResult | null {
+  if (!f) return null;
+  const ents = new Set(f.entityIds);
+  const behs = new Set(f.behaviorIds);
+  const matches = new Set<string>();
+  const behaviorMatches: FilterResult['behaviorMatches'] = new Map();
+  const visible = new Set<string>();
+  const walk = (n: TreeNode, trail: string[]) => {
+    const e = n.entity;
+    const self = ents.has(e.id);
+    const bm = e.behaviors.filter((b) => behs.has(b.id));
+    if (self) matches.add(e.id);
+    if (bm.length) behaviorMatches.set(e.id, bm);
+    if (self || bm.length) {
+      visible.add(e.id);
+      trail.forEach((t) => visible.add(t));
+    }
+    n.children.forEach((c) => walk(c, [...trail, e.id]));
+  };
+  roots.forEach((r) => walk(r, []));
+  return { matches, behaviorMatches, visible };
+}
+
+/** Keep only the visible nodes of a forest (structure preserved). */
+export function pruneTree(roots: TreeNode[], visible: Set<string>): TreeNode[] {
+  return roots.filter((n) => visible.has(n.entity.id)).map((n) => ({ entity: n.entity, children: pruneTree(n.children, visible) }));
+}
+
 export function descendantCount(contract: OrbitContract, id: string): number {
   return descendantIdsOf(contract, id).length;
 }

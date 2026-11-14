@@ -667,6 +667,30 @@ describe('navigation and comparison', () => {
     expect(store.getState()).toMatchObject({ rawMode: false, view: 'engineering' });
   });
 
+  it('filter_view narrows the view with a banner description, and clear_filter removes it', async () => {
+    const { ok, fail, store } = await boot();
+    await ok('navigate', { view: 'engineering' });
+    const d = await ok('filter_view', { description: 'Showing everything about overdue tasks.', entityIds: ['cap.task-discovery.today-overdue'], behaviorIds: ['behavior.today.rollover'] });
+    expect(d.view).toBe('product'); // the engineering view had no matches
+    expect(d.matchesPerView).toEqual({ product: 2, engineering: 0 });
+    expect(store.getState().viewFilter).toEqual({ description: 'Showing everything about overdue tasks.', entityIds: ['cap.task-discovery.today-overdue'], behaviorIds: ['behavior.today.rollover'] });
+    expect(store.getState().view).toBe('product');
+    expect((await ok('get_status')).viewFilter.description).toMatch(/overdue/);
+    expect((await fail('filter_view', { description: 'x' })).error).toMatch(/at least one/);
+    expect((await fail('filter_view', { description: 'x', entityIds: ['cap.zzz'] })).error).toMatch(/not found/);
+    expect(store.getState().viewFilter?.description).toMatch(/overdue/); // a failed call keeps the old filter
+    // Selecting an entity hidden by the filter drops the filter; a visible one keeps it.
+    store.dispatch({ type: 'selectEntity', id: 'cap.task-discovery.today-overdue', kind: 'capability' });
+    expect(store.getState().viewFilter).not.toBeNull();
+    store.dispatch({ type: 'selectEntity', id: 'sys.local-date', kind: 'system' });
+    expect(store.getState().viewFilter).toBeNull();
+    await ok('filter_view', { description: 'Systems.', entityIds: ['sys.local-date'] });
+    expect(store.getState().view).toBe('engineering');
+    expect(await ok('clear_filter')).toEqual({ cleared: true });
+    expect(store.getState().viewFilter).toBeNull();
+    expect(await ok('clear_filter')).toEqual({ cleared: false });
+  });
+
   it('navigate refuses to leave the raw editor with an unapplied draft', async () => {
     const { ok, fail, store } = await boot();
     await ok('navigate', { openRaw: true });

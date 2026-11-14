@@ -4,12 +4,15 @@ pub mod files;
 pub mod git;
 pub mod mcp;
 pub mod runner;
+pub mod terminal;
 
 use files::{Expected, FileSnapshot, FileStat, WriteResult};
 use git::{GitContext, GitFileAtRevision, GitRef, ProposalTag};
 use mcp::{McpManager, McpStatus};
 use runner::{RunOutcome, Runner};
 use std::sync::Arc;
+use tauri::ipc::{Channel, InvokeResponseBody};
+use terminal::Terminals;
 use tauri::async_runtime::spawn_blocking;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -122,6 +125,27 @@ fn mcp_regenerate_token(mcp: State<'_, Arc<McpManager>>) -> Result<McpStatus, St
     mcp.regenerate_token()
 }
 
+/// Start the embedded terminal (login shell running `claude`) in `cwd`; returns its id.
+#[tauri::command]
+fn term_open(terms: State<'_, Arc<Terminals>>, cwd: String, cols: u16, rows: u16, on_data: Channel<InvokeResponseBody>, on_exit: Channel<Option<u32>>) -> Result<u32, String> {
+    terms.inner().open(&cwd, cols, rows, on_data, on_exit)
+}
+
+#[tauri::command]
+fn term_write(terms: State<'_, Arc<Terminals>>, id: u32, data: String) -> Result<(), String> {
+    terms.write(id, &data)
+}
+
+#[tauri::command]
+fn term_resize(terms: State<'_, Arc<Terminals>>, id: u32, cols: u16, rows: u16) -> Result<(), String> {
+    terms.resize(id, cols, rows)
+}
+
+#[tauri::command]
+fn term_close(terms: State<'_, Arc<Terminals>>, id: u32) {
+    terms.close(id)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -129,6 +153,7 @@ pub fn run() {
             let mcp = McpManager::new(app.handle());
             app.manage(mcp.clone());
             app.manage(Runner::new());
+            app.manage(Terminals::new());
             mcp.start();
             Ok(())
         })
@@ -148,8 +173,17 @@ pub fn run() {
             mcp_status,
             mcp_set_enabled,
             mcp_respond,
-            mcp_regenerate_token
+            mcp_regenerate_token,
+            term_open,
+            term_write,
+            term_resize,
+            term_close
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Orbit");
+        .build(tauri::generate_context!())
+        .expect("error while running Orbit")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<Arc<Terminals>>().close_all();
+            }
+        });
 }

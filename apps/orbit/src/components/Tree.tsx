@@ -3,6 +3,7 @@ import { Button, Flex, ScrollArea, Text, TextField, Tooltip } from '@radix-ui/th
 import { ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, PlusIcon, Cross2Icon, ChatBubbleIcon, DoubleArrowDownIcon, DoubleArrowUpIcon } from '@radix-ui/react-icons';
 import type { AssuranceSummary, EntityKind } from '@orbit/contract';
 import { KIND_PLURAL, searchTree } from '../lib/model';
+import type { FilterResult } from '../lib/model';
 import type { DropPosition, SearchResult, TreeNode } from '../lib/model';
 
 interface Row {
@@ -34,24 +35,25 @@ function Highlight({ text, q }: { text: string; q: string }) {
   );
 }
 
-export function AssuranceChip({ summary }: { summary: AssuranceSummary | undefined }) {
+export function AssuranceChip({ summary, onPick }: { summary: AssuranceSummary | undefined; onPick?: (behaviorIds: string[]) => void }) {
   if (!summary || summary.total === 0) return null;
-  // Yellow: anything not confirmed either way (unconfirmed results, missing tests, tests only planned).
-  const gaps = summary.unconfirmed + summary.untested + summary.planned;
+  // Yellow: anything not confirmed either way (unconfirmed results, missing tests).
+  const ids = summary.behaviorIds;
   const parts = [
-    { kind: 'failing', n: summary.failing, text: 'failing' },
-    { kind: 'gaps', n: gaps, text: 'unconfirmed or missing tests' },
-    { kind: 'passing', n: summary.passing, text: 'passing' },
+    { kind: 'failing', n: summary.failing, text: 'failing', ids: ids.failing },
+    { kind: 'gaps', n: summary.unconfirmed + summary.untested, text: 'unconfirmed or missing tests', ids: [...ids.unconfirmed, ...ids.untested] },
+    { kind: 'planned', n: summary.withPlanned, text: 'with planned tests', ids: summary.withPlannedIds },
+    { kind: 'passing', n: summary.passing, text: 'passing', ids: ids.passing },
   ].filter((x) => x.n > 0);
   const breakdown = [
     `${summary.total} behaviors`,
     `${summary.passing} passing`,
     `${summary.failing} failing`,
     `${summary.unconfirmed} unconfirmed`,
-    summary.planned ? `${summary.planned} with only planned tests` : null,
+    summary.withPlanned ? `${summary.withPlanned} with planned tests` : null,
     `${summary.untested} without tests`,
+    onPick ? 'Click a count to highlight those behaviors' : null,
   ].filter(Boolean) as string[];
-  const label = parts.map((x) => `${x.n} ${x.text}`).join(', ');
   return (
     <Tooltip
       content={
@@ -64,22 +66,49 @@ export function AssuranceChip({ summary }: { summary: AssuranceSummary | undefin
         </span>
       }
     >
-      <span className="status-chips" role="img" aria-label={label} data-testid="assurance-chip">
+      <span className="status-chips" data-testid="assurance-chip">
         {parts.map((x) => (
-          <span key={x.kind} className={`chip chip-${x.kind}`} aria-hidden data-kind={x.kind}>
+          <button
+            key={x.kind}
+            type="button"
+            className={`chip chip-${x.kind}`}
+            data-kind={x.kind}
+            aria-label={`${x.n} ${x.text}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPick?.(x.ids);
+            }}
+          >
             {x.n}
-          </span>
+          </button>
         ))}
       </span>
     </Tooltip>
   );
 }
 
-export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, expanded, onExpandedChange, search, onSearch, onAdd, onMove, onNudge }: {
+export function Tree({
+  kind,
+  roots,
+  selectedId,
+  onSelect,
+  onFocusBehaviors,
+  assurance,
+  readOnly,
+  expanded,
+  onExpandedChange,
+  search,
+  onSearch,
+  onAdd,
+  onMove,
+  onNudge,
+  filter = null,
+}: {
   kind: EntityKind;
   roots: TreeNode[];
   selectedId: string | null;
   onSelect: (entityId: string, behaviorId?: string) => void;
+  onFocusBehaviors: (entityId: string, behaviorIds: string[]) => void;
   assurance: Map<string, AssuranceSummary>;
   readOnly: boolean;
   expanded: Record<string, boolean>;
@@ -89,11 +118,17 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
   onAdd: () => void;
   onMove: (id: string, targetId: string, pos: DropPosition) => void;
   onNudge: (id: string, dir: -1 | 1) => void;
+  /** Active view filter; `roots` are already pruned to it. Its matching behaviors are listed under their owners. */
+  filter?: FilterResult | null;
 }) {
   const sr: SearchResult | null = useMemo(() => searchTree(roots, search), [roots, search]);
   const total = useMemo(() => {
     let n = 0;
-    const walk = (a: TreeNode[]) => a.forEach((x) => { n++; walk(x.children); });
+    const walk = (a: TreeNode[]) =>
+      a.forEach((x) => {
+        n++;
+        walk(x.children);
+      });
     walk(roots);
     return n;
   }, [roots]);
@@ -102,6 +137,7 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
     const out: Row[] = [];
     const isExpanded = (n: TreeNode, depth: number): boolean => {
       if (sr) return sr.visible.has(n.entity.id) && n.children.some((c) => sr.visible.has(c.entity.id));
+      if (filter) return n.children.length > 0;
       const v = expanded[n.entity.id];
       return v === undefined ? depth === 0 : v;
     };
@@ -111,15 +147,42 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
         const visibleKids = sr ? n.children.filter((c) => sr.visible.has(c.entity.id)) : n.children;
         const exp = isExpanded(n, depth);
         const key = `e:${n.entity.id}`;
-        const bm = sr?.behaviorMatches.get(n.entity.id) ?? [];
-        out.push({ type: 'entity', id: key, entityId: n.entity.id, name: n.entity.name, depth, node: n, hasChildren: visibleKids.length > 0, expanded: exp, posinset: i + 1, setsize: list.length, parentKey });
-        if (sr) bm.forEach((b, j) => out.push({ type: 'behavior', id: `b:${b.id}`, entityId: n.entity.id, behaviorId: b.id, name: b.name, depth: depth + 1, hasChildren: false, expanded: false, posinset: j + 1, setsize: bm.length, parentKey: key }));
+        const bm = (sr ? sr.behaviorMatches.get(n.entity.id) : filter?.behaviorMatches.get(n.entity.id)) ?? [];
+        out.push({
+          type: 'entity',
+          id: key,
+          entityId: n.entity.id,
+          name: n.entity.name,
+          depth,
+          node: n,
+          hasChildren: visibleKids.length > 0,
+          expanded: exp,
+          posinset: i + 1,
+          setsize: list.length,
+          parentKey,
+        });
+        if (sr || filter)
+          bm.forEach((b, j) =>
+            out.push({
+              type: 'behavior',
+              id: `b:${b.id}`,
+              entityId: n.entity.id,
+              behaviorId: b.id,
+              name: b.name,
+              depth: depth + 1,
+              hasChildren: false,
+              expanded: false,
+              posinset: j + 1,
+              setsize: bm.length,
+              parentKey: key,
+            }),
+          );
         if (exp) walk(visibleKids, depth + 1, key);
       });
     };
     walk(roots, 0, null);
     return out;
-  }, [roots, expanded, sr]);
+  }, [roots, expanded, sr, filter]);
 
   const selectedKey = selectedId ? `e:${selectedId}` : null;
   const [focusKey, setFocusKey] = useState<string | null>(null);
@@ -148,13 +211,17 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
   const toggle = (id: string, value: boolean) => onExpandedChange({ ...expanded, [id]: value });
   const parentIds = useMemo(() => {
     const out: string[] = [];
-    const walk = (a: TreeNode[]) => a.forEach((x) => { if (x.children.length) out.push(x.entity.id); walk(x.children); });
+    const walk = (a: TreeNode[]) =>
+      a.forEach((x) => {
+        if (x.children.length) out.push(x.entity.id);
+        walk(x.children);
+      });
     walk(roots);
     return out;
   }, [roots]);
   const setAll = (value: boolean) => onExpandedChange(Object.fromEntries(parentIds.map((id) => [id, value])));
 
-  const canDrag = !readOnly && !sr;
+  const canDrag = !readOnly && !sr && !filter;
   const [dragId, setDragId] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ id: string; pos: DropPosition } | null>(null);
 
@@ -190,7 +257,7 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
       }
     } else if (key === 'ArrowLeft') {
       e.preventDefault();
-      if (row.type === 'entity' && row.hasChildren && row.expanded && !sr) toggle(row.entityId, false);
+      if (row.type === 'entity' && row.hasChildren && row.expanded && !sr && !filter) toggle(row.entityId, false);
       else if (row.parentKey) moveTo(row.parentKey);
     } else if (key === 'Enter' || key === ' ') {
       e.preventDefault();
@@ -225,7 +292,10 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
         }
       };
       const sub = new Set<string>();
-      const walk = (n: TreeNode) => { sub.add(n.entity.id); n.children.forEach(walk); };
+      const walk = (n: TreeNode) => {
+        sub.add(n.entity.id);
+        n.children.forEach(walk);
+      };
       const me = find(latest.current.roots);
       if (me) walk(me);
       if (sub.has(id)) return null;
@@ -309,7 +379,7 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
             </TextField.Slot>
           )}
         </TextField.Root>
-        {parentIds.length > 0 && !sr && (
+        {parentIds.length > 0 && !sr && !filter && (
           <>
             <Tooltip content="Expand all">
               <Button size="2" variant="soft" color="gray" onClick={() => setAll(true)} aria-label="Expand all">
@@ -330,7 +400,13 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
         </Tooltip>
       </Flex>
       <ScrollArea scrollbars="vertical" className="tree-scroll">
-        {total === 0 && !sr ? (
+        {total === 0 && filter && !sr ? (
+          <div className="tree-empty" data-testid="filter-empty">
+            <Text size="2" color="gray" as="p">
+              No {noun} match the current filter.
+            </Text>
+          </div>
+        ) : total === 0 && !sr ? (
           <div className="tree-empty">
             <Text size="2" color="gray" as="p" mb="2">
               No {noun} yet.
@@ -374,7 +450,7 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
                     }}
                     className={`tree-row${drop?.id === r.entityId ? ` drop-${drop.pos}` : ''}${dragId === r.entityId ? ' dragging' : ''}${isSel ? ' selected' : ''}${r.type === 'behavior' ? ' behavior-row' : ''}`}
                     data-entity-id={r.entityId}
-                    style={{ paddingLeft: 6 + r.depth * 16 }}
+                    style={{ paddingLeft: 6 + r.depth * 16 + (r.type === 'behavior' ? 16 : 0) }}
                     onClick={() => {
                       if (suppressClick.current) {
                         suppressClick.current = false;
@@ -390,7 +466,7 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
                         className="twisty"
                         aria-hidden
                         onClick={(e) => {
-                          if (!r.hasChildren || sr) return;
+                          if (!r.hasChildren || sr || filter) return;
                           e.stopPropagation();
                           toggle(r.entityId, !r.expanded);
                         }}
@@ -404,14 +480,14 @@ export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, e
                     )}
                     <span className="row-name truncate">
                       <Highlight text={r.name} q={r.type === 'entity' || sr ? search : ''} />
-                      {r.type === 'behavior' && sr && (
+                      {r.type === 'behavior' && (sr || filter) && (
                         <Text size="1" color="gray" className="row-sub">
                           {' '}
                           — behavior
                         </Text>
                       )}
                     </span>
-                    {summary && <AssuranceChip summary={summary} />}
+                    {summary && <AssuranceChip summary={summary} onPick={(ids) => onFocusBehaviors(r.entityId, ids)} />}
                   </div>
                 </Fragment>
               );

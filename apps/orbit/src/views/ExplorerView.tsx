@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Callout, Flex, Text } from '@radix-ui/themes';
 import { InfoCircledIcon } from '@radix-ui/react-icons';
 import type { EntityKind } from '@orbit/contract';
-import { buildTree, moveEntity, nudgeEntity } from '../lib/model';
+import { applyViewFilter, buildTree, moveEntity, nudgeEntity, pruneTree } from '../lib/model';
 import { loadPref, savePref } from '../lib/prefs';
 import { EntityCreateDialog } from '../components/EntityDialogs';
 import { EntityDetail } from '../components/EntityDetail';
@@ -17,6 +17,7 @@ export function ExplorerView({ kind }: { kind: EntityKind }) {
   const selectedId = useApp((s) => s.selected[kind]);
   const expanded = useApp((s) => s.expanded);
   const search = useApp((s) => s.search);
+  const viewFilter = useApp((s) => s.viewFilter);
   const d = useDispatch();
   const ctrl = useCtrl();
   const assurance = useAssurance(contract);
@@ -24,8 +25,12 @@ export function ExplorerView({ kind }: { kind: EntityKind }) {
   const [width, setWidth] = useState(() => loadPref<number>(WIDTH_KEY, 320));
   const dragging = useRef(false);
 
-  const roots = useMemo(() => buildTree(contract, kind), [contract, kind]);
-  const entity = (selectedId ? contract.entities.find((e) => e.id === selectedId && e.kind === kind) : undefined) ?? roots[0]?.entity;
+  const allRoots = useMemo(() => buildTree(contract, kind), [contract, kind]);
+  const filter = useMemo(() => applyViewFilter(allRoots, viewFilter), [allRoots, viewFilter]);
+  const roots = useMemo(() => (filter ? pruneTree(allRoots, filter.visible) : allRoots), [allRoots, filter]);
+  const firstMatch = filter ? contract.entities.find((e) => e.kind === kind && (filter.matches.has(e.id) || filter.behaviorMatches.has(e.id))) : undefined;
+  const selected = selectedId ? contract.entities.find((e) => e.id === selectedId && e.kind === kind) : undefined;
+  const entity = (selected && (!filter || filter.visible.has(selected.id)) ? selected : undefined) ?? firstMatch ?? roots[0]?.entity;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -46,6 +51,7 @@ export function ExplorerView({ kind }: { kind: EntityKind }) {
           roots={roots}
           selectedId={entity?.id ?? null}
           onSelect={(id, behaviorId) => d({ type: 'selectEntity', id, kind, behaviorId: behaviorId ?? null })}
+          onFocusBehaviors={(id, behaviorIds) => d({ type: 'focusBehaviors', id, kind, behaviorIds })}
           assurance={assurance}
           readOnly={readOnlyDoc}
           expanded={expanded}
@@ -55,6 +61,7 @@ export function ExplorerView({ kind }: { kind: EntityKind }) {
           onAdd={() => setAdding(true)}
           onMove={(id, targetId, pos) => d({ type: 'edit', fn: (c) => moveEntity(c, id, targetId, pos) })}
           onNudge={(id, dir) => d({ type: 'edit', fn: (c) => nudgeEntity(c, id, dir) })}
+          filter={filter}
         />
       </aside>
       <div
@@ -93,7 +100,9 @@ export function ExplorerView({ kind }: { kind: EntityKind }) {
               <Callout.Icon>
                 <InfoCircledIcon />
               </Callout.Icon>
-              <Callout.Text>Select or add {kind === 'capability' ? 'a capability' : 'a system'} to see its details.</Callout.Text>
+              <Callout.Text>
+                {filter ? `No ${kind === 'capability' ? 'capabilities' : 'systems'} match the current filter.` : `Select or add ${kind === 'capability' ? 'a capability' : 'a system'} to see its details.`}
+              </Callout.Text>
             </Callout.Root>
             <Text size="2" color="gray">
               {kind === 'capability' ? 'Capabilities describe what users can do.' : 'Systems describe the internal components that support capabilities.'}

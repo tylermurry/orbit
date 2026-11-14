@@ -72,6 +72,19 @@ export function behaviorAssurance(contract: OrbitContract, behaviorId: string, c
 
 const BUCKETS: AssuranceBucket[] = ['all', 'withTests', 'passing', 'failing', 'unconfirmed', 'planned', 'untested'];
 
+/** Behaviors that map at least one planned (placeholder) test, whatever their status. */
+const plannedCache = new WeakMap<OrbitContract, Set<string>>();
+function plannedBehaviorIds(contract: OrbitContract): Set<string> {
+  let s = plannedCache.get(contract);
+  if (!s) {
+    const tests = testsOf(contract);
+    s = new Set();
+    for (const e of contract.entities) for (const b of e.behaviors) if (b.testIds.some((id) => tests.get(id)?.placeholder)) s.add(b.id);
+    plannedCache.set(contract, s);
+  }
+  return s;
+}
+
 function emptySummary(): AssuranceSummary {
   return {
     total: 0,
@@ -80,13 +93,19 @@ function emptySummary(): AssuranceSummary {
     failing: 0,
     unconfirmed: 0,
     planned: 0,
+    withPlanned: 0,
+    withPlannedIds: [],
     untested: 0,
     behaviorIds: Object.fromEntries(BUCKETS.map((b) => [b, []])) as unknown as Record<AssuranceBucket, string[]>,
   };
 }
 
-function addBehavior(s: AssuranceSummary, id: string, status: BehaviorStatus): void {
+function addBehavior(s: AssuranceSummary, id: string, status: BehaviorStatus, withPlanned: boolean): void {
   s.behaviorIds.all.push(id);
+  if (withPlanned) {
+    s.withPlanned++;
+    s.withPlannedIds.push(id);
+  }
   s.total++;
   if (status === 'passing' || status === 'failing' || status === 'unconfirmed') {
     s.behaviorIds.withTests.push(id);
@@ -103,6 +122,8 @@ function mergeInto(target: AssuranceSummary, src: AssuranceSummary): void {
   target.failing += src.failing;
   target.unconfirmed += src.unconfirmed;
   target.planned += src.planned;
+  target.withPlanned += src.withPlanned;
+  target.withPlannedIds.push(...src.withPlannedIds);
   target.untested += src.untested;
   for (const k of BUCKETS) for (const id of src.behaviorIds[k]) target.behaviorIds[k].push(id);
 }
@@ -121,6 +142,7 @@ function behaviorStatuses(contract: OrbitContract, ctx: AssuranceContext): Map<s
 
 function summarize(contract: OrbitContract, entityId: string, statuses: Map<string, BehaviorStatus>): AssuranceSummary {
   const byId = entityById(contract);
+  const planned = plannedBehaviorIds(contract);
   const summary = emptySummary();
   const root = byId.get(entityId);
   if (!root) return summary;
@@ -129,7 +151,7 @@ function summarize(contract: OrbitContract, entityId: string, statuses: Map<stri
     for (const b of byId.get(id)!.behaviors) {
       if (seen.has(b.id)) continue;
       seen.add(b.id);
-      addBehavior(summary, b.id, statuses.get(b.id)!);
+      addBehavior(summary, b.id, statuses.get(b.id)!, planned.has(b.id));
     }
   }
   return summary;
@@ -143,6 +165,7 @@ export function entityAssurance(contract: OrbitContract, entityId: string, ctx: 
 /** Summary for every entity; one pass over the hierarchy with memoized subtree merges. */
 export function computeAssurance(contract: OrbitContract, ctx: AssuranceContext): Map<string, AssuranceSummary> {
   const statuses = behaviorStatuses(contract, ctx);
+  const planned = plannedBehaviorIds(contract);
   const result = new Map<string, AssuranceSummary>();
   const byId = entityById(contract);
   const behaviorCount = contract.entities.reduce((n, e) => n + e.behaviors.length, 0);
@@ -168,7 +191,7 @@ export function computeAssurance(contract: OrbitContract, ctx: AssuranceContext)
     for (let i = order.length - 1; i >= 0; i--) {
       const e = order[i]!;
       const s = emptySummary();
-      for (const b of e.behaviors) addBehavior(s, b.id, statuses.get(b.id)!);
+      for (const b of e.behaviors) addBehavior(s, b.id, statuses.get(b.id)!, planned.has(b.id));
       for (const c of children.get(e.id) ?? []) {
         const cs = result.get(c.id);
         if (cs) mergeInto(s, cs);

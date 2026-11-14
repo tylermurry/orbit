@@ -1,5 +1,5 @@
 // OrbitHost implementation backed by the Tauri Rust backend (apps/orbit/src-tauri).
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import type {
   FileSnapshot,
@@ -9,6 +9,7 @@ import type {
   GitRef,
   OrbitHost,
   RunOutcome,
+  TerminalSession,
   WriteResult,
 } from './types';
 
@@ -92,6 +93,20 @@ export function createTauriHost(): OrbitHost {
       }
     },
     cancelCommand: (runId) => call<boolean>('cancel_command', { runId }),
+
+    async openTerminal({ cwd, cols, rows, onData, onExit }): Promise<TerminalSession> {
+      const data = new Channel<ArrayBuffer>();
+      data.onmessage = (buf) => onData(new Uint8Array(buf));
+      const exit = new Channel<number | null>();
+      exit.onmessage = (code) => onExit(code);
+      const id = await call<number>('term_open', { cwd, cols, rows, onData: data, onExit: exit });
+      const quiet = (p: Promise<unknown>) => void p.catch(() => {});
+      return {
+        write: (text) => quiet(invoke('term_write', { id, data: text })),
+        resize: (c, r) => quiet(invoke('term_resize', { id, cols: c, rows: r })),
+        close: () => quiet(invoke('term_close', { id })),
+      };
+    },
 
     gitMergeBase: (repoRoot, a, b) => call<string | null>('git_merge_base', { repoRoot, a, b }),
     gitTagProposal: (repoRoot, branch, replace) =>

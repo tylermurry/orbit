@@ -111,6 +111,8 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 | `get_raw_json` | read | The Raw JSON editor's text (draft if unapplied). |
 | `set_raw_json` | write | Validate (`apply: false`) or apply (`apply: true`) complete contract text; invalid text is never applied. |
 | `navigate` | navigate | Switch view, select entity/behavior, open raw editor, library or diagnostics. |
+| `filter_view` | navigate | Narrow the product/engineering trees to chosen entities and behaviors, with a yellow banner describing the filter (the person closes it with X). The AI picks the relevant ids. |
+| `clear_filter` | navigate | Remove the view filter. |
 | `list_git_refs` | read | Branches, tags and HEAD of the contract's repository. |
 | `compare` | navigate | Set the app's comparison and return totals, directly changed and potentially affected entities, and the change list. |
 | `get_change` | read | Field-level before/after for one change key of the active comparison. |

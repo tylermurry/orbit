@@ -76,6 +76,24 @@ export interface RunOutcome {
   output: string;
 }
 
+/** A running embedded terminal (see OrbitHost.openTerminal). */
+export interface TerminalSession {
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  /** Kill the terminal's processes. onExit still fires. */
+  close(): void;
+}
+
+export interface TerminalOptions {
+  cwd: string;
+  cols: number;
+  rows: number;
+  /** Raw terminal output. */
+  onData(bytes: Uint8Array): void;
+  /** Fires once when the shell exits (null code when it was killed). */
+  onExit(code: number | null): void;
+}
+
 export interface OrbitHost {
   readonly kind: 'tauri' | 'memory';
 
@@ -109,6 +127,13 @@ export interface OrbitHost {
   runCommand(cwd: string, command: string, runId: string, onOutput: (text: string) => void): Promise<RunOutcome>;
   /** Stop a run started by runCommand and everything it started. */
   cancelCommand(runId: string): Promise<boolean>;
+
+  // ── terminal ──
+  /**
+   * Start the embedded terminal in `cwd`: the user's login shell running Claude Code (`claude`), which drops back
+   * to an interactive shell when it exits. Undefined when the host has no terminal (browser/E2E builds).
+   */
+  openTerminal?(opts: TerminalOptions): Promise<TerminalSession>;
 
   // ── git (read-only) ──
   gitContext(path: string): Promise<GitContext>;

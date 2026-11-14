@@ -154,6 +154,10 @@ export interface AssuranceSummary {
   failing: number;
   unconfirmed: number;
   planned: number;
+  /** behaviors with >=1 planned (placeholder) test, whatever their status; overlaps the other counts */
+  withPlanned: number;
+  /** ids of the behaviors counted in withPlanned */
+  withPlannedIds: string[];
   untested: number;
   /** behavior ids per bucket, for drill-down */
   behaviorIds: Record<AssuranceBucket, string[]>;

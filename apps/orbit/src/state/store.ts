@@ -2,9 +2,11 @@ import { serializeContract } from '@orbit/contract';
 import type { AssuranceContext, Diagnostic, EntityKind, OrbitContract, ParseResult, TestDefinition } from '@orbit/contract';
 import type { GitContext, GitRef } from '../host/types';
 import { matchResults } from '../lib/junit';
+import { applyViewFilter, buildTree } from '../lib/model';
+import { loadPref } from '../lib/prefs';
 import type { JUnitCase, MatchedResults } from '../lib/junit';
 import { proposalRef } from './compare';
-import type { AppState, CompareResult, Comparison, Prompt, ResultsFile, ReviewState, RunState, ViewId } from './types';
+import type { AppState, CompareResult, Comparison, Prompt, ResultsFile, ReviewState, RunState, ViewFilter, ViewId } from './types';
 
 const canonCache = new WeakMap<OrbitContract, string>();
 export function canon(c: OrbitContract | null): string {
@@ -16,6 +18,8 @@ export function canon(c: OrbitContract | null): string {
   }
   return s;
 }
+
+export const TERMINAL_OPEN_KEY = 'orbit.layout.terminalOpen';
 
 export function initialState(): AppState {
   return {
@@ -35,8 +39,10 @@ export function initialState(): AppState {
     rawMode: false,
     selected: { capability: null, system: null },
     focusBehaviorId: null,
+    focusBehaviorIds: [],
     expanded: {},
     search: '',
+    viewFilter: null,
     compare: null,
     compareResult: null,
     impactSelection: null,
@@ -50,6 +56,7 @@ export function initialState(): AppState {
     productDialog: false,
     newDialog: false,
     shortcutsOpen: false,
+    terminalOpen: loadPref<boolean>(TERMINAL_OPEN_KEY, false),
     prompt: null,
     review: null,
     toasts: [],
@@ -107,6 +114,12 @@ export function assuranceContext(s: AppState): AssuranceContext {
   return ctxMemo.ctx;
 }
 
+/** The view filter, kept only while the given entity stays visible under it (selecting a hidden entity drops it). */
+function filterKeeping(s: AppState, id: string, kind: EntityKind): AppState['viewFilter'] {
+  if (!s.viewFilter || !s.contract) return s.viewFilter;
+  return applyViewFilter(buildTree(s.contract, kind), s.viewFilter)?.visible.has(id) ? s.viewFilter : null;
+}
+
 export function canUndo(s: AppState): boolean {
   return s.undo.length > 0 && !s.loadedInvalid;
 }
@@ -120,6 +133,7 @@ export type Action =
   | { type: 'redo' }
   | { type: 'setView'; view: ViewId }
   | { type: 'selectEntity'; id: string; kind: EntityKind; behaviorId?: string | null }
+  | { type: 'focusBehaviors'; id: string; kind: EntityKind; behaviorIds: string[] }
   | { type: 'clearFocusBehavior' }
   | { type: 'setRawMode'; on: boolean }
   | { type: 'setRawDraft'; text: string | null }
@@ -136,7 +150,8 @@ export type Action =
   | { type: 'runFinished'; runId: string; outcome: NonNullable<AppState['lastRun']> }
   | { type: 'setExpanded'; expanded: Record<string, boolean> }
   | { type: 'setSearch'; search: string }
-  | { type: 'ui'; patch: Partial<Pick<AppState, 'diagnosticsOpen' | 'libraryOpen' | 'libraryFocusTest' | 'runDialog' | 'productDialog' | 'newDialog' | 'shortcutsOpen' | 'bannerNote'>> }
+  | { type: 'setViewFilter'; filter: ViewFilter | null }
+  | { type: 'ui'; patch: Partial<Pick<AppState, 'diagnosticsOpen' | 'libraryOpen' | 'libraryFocusTest' | 'runDialog' | 'productDialog' | 'newDialog' | 'shortcutsOpen' | 'bannerNote' | 'terminalOpen'>> }
   | { type: 'prompt'; prompt: Prompt | null }
   | { type: 'review'; review: ReviewState | null }
   | { type: 'toast'; id: number; message: string; tone: 'info' | 'success' | 'error' }
@@ -198,10 +213,14 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, view: a.view };
     case 'selectEntity': {
       const view: ViewId = a.kind === 'capability' ? 'product' : 'engineering';
-      return { ...s, view, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: a.behaviorId ?? null, rawMode: false };
+      return { ...s, view, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: a.behaviorId ?? null, focusBehaviorIds: [], rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
+    }
+    case 'focusBehaviors': {
+      const view: ViewId = a.kind === 'capability' ? 'product' : 'engineering';
+      return { ...s, view, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: null, focusBehaviorIds: a.behaviorIds, rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
     }
     case 'clearFocusBehavior':
-      return s.focusBehaviorId ? { ...s, focusBehaviorId: null } : s;
+      return s.focusBehaviorId || s.focusBehaviorIds.length ? { ...s, focusBehaviorId: null, focusBehaviorIds: [] } : s;
     case 'setRawMode':
       return { ...s, rawMode: a.on };
     case 'setRawDraft':
@@ -264,6 +283,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, expanded: a.expanded };
     case 'setSearch':
       return { ...s, search: a.search };
+    case 'setViewFilter':
+      return { ...s, viewFilter: a.filter };
     case 'ui':
       return { ...s, ...a.patch };
     case 'prompt':

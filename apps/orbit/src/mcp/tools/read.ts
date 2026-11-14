@@ -88,6 +88,7 @@ export function readTools(): ToolDef[] {
             readOnly: s.loadedInvalid || (!!s.filePath && !c),
             view: s.rawMode || (!c && !!s.filePath) ? 'raw' : s.view,
             selection: { capability: s.selected.capability, system: s.selected.system, focusedBehaviorId: s.focusBehaviorId },
+            viewFilter: s.viewFilter,
             raw: { mode: s.rawMode, hasUnappliedDraft: s.rawDraft !== null && s.rawDraft !== currentText(s) },
             history: historyState(s),
             git: git
