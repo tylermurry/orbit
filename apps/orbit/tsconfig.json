@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": ["vite/client", "node"] },
+  "include": ["src", "tests"],
+  "exclude": ["src-tauri", "node_modules", "dist"]
+}

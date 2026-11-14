@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "product": { "id": "broken-tasky", "name": "Broken Tasky", "summary": "A deliberately invalid contract that demonstrates Orbit diagnostics" },
+  "unexpectedTopLevel": true,
+  "entities": [
+    {
+      "id": "cap.tasks",
+      "kind": "capability",
+      "parentId": null,
+      "name": "Task Management",
+      "summary": "Create and maintain tasks",
+      "description": "",
+      "behaviors": [
+        { "id": "behavior.tasks.create", "name": "Create task", "expected": "A task can be created.", "testIds": ["test.tasks.create", "test.tasks.missing"] },
+        { "id": "behavior.shared", "name": "First owner", "expected": "Behavior ids are globally unique.", "testIds": [] }
+      ]
+    },
+    {
+      "id": "cap.tasks",
+      "kind": "capability",
+      "parentId": null,
+      "name": "Task Management (duplicate id)",
+      "summary": "Reuses an entity id",
+      "description": "",
+      "behaviors": [
+        { "id": "behavior.shared", "name": "Second owner", "expected": "Same behavior id in another entity.", "testIds": [] }
+      ]
+    },
+    {
+      "id": "cap.lists",
+      "kind": "capability",
+      "parentId": "cap.nowhere",
+      "name": "Task Lists",
+      "summary": "Parent does not exist",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.reminders",
+      "kind": "capability",
+      "parentId": "sys.storage",
+      "name": "Reminders",
+      "summary": "Capability parented under a system",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.loop-a",
+      "kind": "capability",
+      "parentId": "cap.loop-b",
+      "name": "Loop A",
+      "summary": "Part of a parent cycle",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.loop-b",
+      "kind": "capability",
+      "parentId": "cap.loop-a",
+      "name": "Loop B",
+      "summary": "Part of a parent cycle",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "sys.storage",
+      "kind": "system",
+      "parentId": null,
+      "name": "Local Storage",
+      "summary": "Persists data",
+      "description": "",
+      "behaviors": []
+    }
+  ],
+  "relationships": [
+    { "id": "rel.unknown-target", "type": "uses", "sourceId": "cap.tasks", "targetId": "sys.missing" },
+    { "id": "rel.unknown-source", "type": "uses", "sourceId": "sys.ghost", "targetId": "sys.storage" },
+    { "id": "rel.self", "type": "dependsOn", "sourceId": "cap.tasks", "targetId": "cap.tasks" },
+    { "id": "rel.bad-type", "type": "contains", "sourceId": "cap.tasks", "targetId": "sys.storage" }
+  ],
+  "tests": [
+    { "id": "test.tasks.create", "name": "Create task", "location": "tests/tasks.spec.ts#create" }
+  ],
+  "evidence": [
+    { "id": "run.1", "testId": "test.tasks.create", "status": "passed", "executedAt": "yesterday afternoon", "commit": "abc123" },
+    { "id": "run.2", "testId": "test.tasks.unknown", "status": "passed", "executedAt": "2026-11-13T18:00:00Z" }
+  ]
+}

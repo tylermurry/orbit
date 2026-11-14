@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "id": "orbit",
+    "name": "Orbit",
+    "summary": "Orbit is a local-first desktop app for modeling, visualizing, and comparing what a software product does."
+  },
+  "entities": [],
+  "relationships": [],
+  "tests": [],
+  "evidence": []
+}

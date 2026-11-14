@@ -1,0 +1,41 @@
+{
+  "name": "orbit-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "tests"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build -w @orbit/contract && npm run build:web -w @orbit/app && npm run build -w @orbit/tasky",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspaces --if-present",
+    "orbit": "npm run start -w @orbit/app",
+    "orbit:dev": "npm run dev -w @orbit/app",
+    "tasky": "npm run dev -w @orbit/tasky",
+    "validate": "npm run build -w @orbit/contract --silent && node scripts/validate-contract.mjs",
+    "evidence": "npm run build -w @orbit/contract --silent && node scripts/generate-evidence.mjs",
+    "demo:impact": "node scripts/create-demo-repo.mjs",
+    "orbit:build": "npm run build -w @orbit/app",
+    "test:mcp": "node scripts/mcp-smoke.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.15.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@playwright/test": "^1.56.1",
+    "@types/node": "22.9.0",
+    "eslint": "9.15.0",
+    "eslint-plugin-react-hooks": "5.0.0",
+    "globals": "15.12.0",
+    "typescript": "5.6.3",
+    "typescript-eslint": "8.15.0",
+    "vitest": "2.1.5"
+  }
+}

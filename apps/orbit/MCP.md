@@ -1,0 +1,169 @@
+# Orbit AI access (MCP)
+
+Orbit has a built-in [Model Context Protocol](https://modelcontextprotocol.io) server so an AI assistant can take the
+same actions a person can in the app: read the contract, edit entities, behaviors, tests, evidence and relationships,
+review semantic diffs and impact, and save. The human sees everything live (a toast per AI change, the trees update,
+`navigate` moves their view).
+
+- **Where it runs:** inside the Orbit desktop app (Tauri). Rust serves HTTP on `127.0.0.1:47821` (next free port if busy)
+  and forwards `tools/list` / `tools/call` to the UI runtime in `src/mcp/*`, which executes them against the live
+  document store. The browser/E2E build exposes the same runtime as `window.__orbitMcp`.
+- **Turn it on:** top bar **AI** button -> *AI access (MCP)* dialog -> switch on. The dialog shows the endpoint,
+  copy-paste setup snippets and a log of recent AI requests.
+
+## Connect a client
+
+Replace `<url>` with the value from the dialog (the snippets there are pre-filled with a copy button).
+
+### Claude Code
+
+```sh
+claude mcp add --transport http orbit <url>
+```
+
+### Cursor / any client with HTTP MCP support
+
+```json
+{ "mcpServers": { "orbit": { "type": "http", "url": "<url>" } } }
+```
+
+### Claude Desktop (stdio bridge)
+
+Claude Desktop launches stdio servers. `scripts/orbit-mcp-stdio.mjs` is a dependency-free Node 18+ bridge that turns
+stdio JSON-RPC lines into HTTP requests (it carries `Mcp-Session-Id`, parses `text/event-stream`
+replies, and returns a JSON-RPC error such as "Is Orbit running with AI access enabled?" when Orbit is unreachable).
+
+```json
+{
+  "mcpServers": {
+    "orbit": {
+      "command": "node",
+      "args": ["/path/to/orbit/scripts/orbit-mcp-stdio.mjs"],
+      "env": { "ORBIT_MCP_URL": "<url>" }
+    }
+  }
+}
+```
+
+`ORBIT_MCP_URL` defaults to `http://127.0.0.1:47821/mcp`; `ORBIT_MCP_TIMEOUT_MS` (default 120000) bounds one request.
+
+## Security model
+
+- **Local only.** The server binds to `127.0.0.1`, validates the `Origin` header (no browser pages can talk to it). There is **no authentication**: any local process can use it while AI access is enabled.
+- **Same safeguards as the UI.** AI edits go through the same undoable `edit` action as manual edits. They live in memory
+  (the file shows as modified) until `save_file`; `undo` reverts them (the undo stack is shared with the person).
+  Edits that would introduce validation errors are rejected with the would-be diagnostics. A file that failed
+  validation is read-only exactly as in the UI (repair via `set_raw_json`).
+- **No silent data loss.** `save_file` refuses to overwrite a file changed on disk (conflict -> `review_external_changes`,
+  `reload_from_disk`, `save_file_as`), refuses to write validation errors unless `saveDespiteErrors: true`, and never
+  applies a person's unapplied Raw JSON draft implicitly. `open_file`/`create_contract`/`reload_from_disk` refuse while
+  there are unsaved changes unless `discardUnsavedChanges: true`. `save_file_as` refuses to replace a file unless
+  `overwrite: true`.
+- **Orbit never runs code or tests.** Evidence is data the AI (or CI) records; git access is read-only.
+- **Serialized.** Tool calls run one at a time, so concurrent AI requests never interleave edits.
+- Turn the switch off at any time; the status dot in the top bar shows Off / Ready / Active / Error.
+
+## Tool catalog
+
+`read` tools never change anything. `write` tools change the in-memory contract (undoable) or files. `navigate` tools move
+the person's view, comparison or evidence context. All write/edit tools accept `dryRun: true` to preview.
+
+| Tool | Kind | What it does |
+|---|---|---|
+| `get_status` | read | Snapshot of the app: file, product, dirty/valid, diagnostics counts, read-only state, view and selection, raw editor state, undo/redo, git, comparison, evidence context, external changes. Call first. |
+| `get_contract` | read | Canonical contract JSON; `source: 'working'` (default, with unsaved edits) or `'disk'`. |
+| `list_entities` | read | Tree-ordered capabilities/systems with depth, behavior counts, subtree assurance and diff status; filters `kind`, `parentId`, `query`. |
+| `get_entity` | read | One entity in full: ancestors, children, behaviors with per-test assurance/freshness/history, subtree assurance, relationships (with the other entity's name/kind). |
+| `search` | read | Substring search over entities (name/id), behaviors (name/expected) and tests. |
+| `get_assurance` | read | Verification assurance for an entity subtree or the whole product against the inspected commit. |
+| `list_tests` | read | Test definitions with the behaviors they verify, evidence counts and latest freshness. |
+| `list_evidence` | read | Evidence records (newest first) filtered by `testId`, `status`, `freshness`. |
+| `get_diagnostics` | read | Validation errors/warnings (codes, paths, line/column) for what the user sees. |
+| `open_file` | write | Open a contract by absolute path (guards unsaved changes). |
+| `create_contract` | write | Create and open a new empty contract at a path that does not exist yet. |
+| `save_file` | write | Atomic canonical save; conflict- and validation-safe (`saveDespiteErrors`). |
+| `save_file_as` | write | Save to a new path and switch to it (`overwrite` required to replace). |
+| `reload_from_disk` | write | Re-read the file, dropping in-memory edits (needs `discardUnsavedChanges` when dirty). |
+| `review_external_changes` | read | Semantic diff disk -> working, with field-level before/after (`showInApp` opens the review sheet). |
+| `list_recent_files` | read | Recently opened files. |
+| `update_product` | write | Change the product id, name, summary, description. |
+| `create_entity` | write | Create a capability or system (optional same-kind parent; auto id `cap.*` / `sys.*`). |
+| `update_entity` | write | Change name/summary/description and/or reparent (same kind, no cycles). |
+| `delete_entity` | write | Delete with behaviors and relationships; children reparent (default) or block; returns the implications. |
+| `create_behavior` | write | Add a behavior (`name`, `expected`, optional `testIds`) to an entity. |
+| `update_behavior` | write | Change name/expected/testIds or move to another owner. |
+| `delete_behavior` | write | Delete a behavior. |
+| `map_tests` | write | Map existing tests to a behavior. |
+| `unmap_tests` | write | Remove test mappings from a behavior. |
+| `create_test` | write | Define a test (`name`, `location`). |
+| `update_test` | write | Change a test's name/location. |
+| `delete_test` | write | Delete a test, unmap it and delete its evidence (like the UI). |
+| `create_evidence` | write | Record a run: `status`, `executedAt` (default now), `commit` (40-hex or `HEAD`). |
+| `update_evidence` | write | Change an evidence record (`commit: null` clears it). |
+| `delete_evidence` | write | Delete an evidence record. |
+| `create_relationship` | write | Add `dependsOn` / `uses` / `implementedBy` source -> target; refuses self-edges, no-ops on duplicates. |
+| `update_relationship` | write | Change type, endpoints or description. |
+| `delete_relationship` | write | Delete a relationship. |
+| `apply_edits` | write | Several edit operations as ONE atomic, single-undo change. |
+| `undo` | write | Undo the last edit (shared stack with the person). |
+| `redo` | write | Redo the last undone edit. |
+| `get_raw_json` | read | The Raw JSON editor's text (draft if unapplied). |
+| `set_raw_json` | write | Validate (`apply: false`) or apply (`apply: true`) complete contract text; invalid text is never applied. |
+| `navigate` | navigate | Switch view, select entity/behavior, open raw editor, library or diagnostics. |
+| `set_evidence_context` | navigate | Inspect evidence at `none`, `head` or a branch/tag/sha. |
+| `list_git_refs` | read | Branches, tags and HEAD of the contract's repository. |
+| `compare` | navigate | Set the app's comparison and return totals, directly changed and potentially affected entities, and the change list. |
+| `get_change` | read | Field-level before/after for one change key of the active comparison. |
+| `get_impact` | read | Potential impact for the active comparison or for arbitrary `entityIds` ("what would this affect?"). |
+| `clear_comparison` | navigate | Remove the comparison. |
+
+### Conventions
+
+- Ids are permanent. Omit `id` on `create_*` to get a generated one (`cap.custom-lists`, `behavior.<entity>.<slug>`,
+  `test.<slug>`, `run.<test>`, `rel.<source>-<type>-<target>`); inside `apply_edits` pass explicit ids to reference
+  something created earlier in the same batch.
+- Unknown ids fail with up to five closest matches by id/name in `suggestions`.
+- Failures are normal tool results with `isError: true`, an actionable message and `suggestions`. Protocol problems
+  (unknown tool) are JSON-RPC `-32602`.
+- Results are JSON in both `content[0].text` and `structuredContent`.
+- Assurance is conservative: nothing is "passing" until `set_evidence_context` names a commit and evidence recorded for
+  that exact commit passed. Evidence without a commit is *unknown*, other commits are *stale*.
+- Potential impact is inferred from relationships (changed targets affect their sources); it is never observed breakage.
+
+## Example workflows
+
+**Orient, then add a behavior with its test (one undo step)**
+
+1. `get_status`, `list_entities { query: "overdue" }`, `get_entity { id: "cap.task-discovery.today-overdue" }`
+2. `apply_edits`:
+   ```json
+   { "operations": [
+     { "tool": "create_test", "args": { "id": "test.today.overdue-visible", "name": "Overdue tasks stay in Today", "location": "tests/e2e/today.spec.ts › overdue stays" } },
+     { "tool": "create_behavior", "args": { "entityId": "cap.task-discovery.today-overdue", "name": "Overdue items remain visible", "expected": "Overdue tasks stay in Today until completed.", "testIds": ["test.today.overdue-visible"] } }
+   ] }
+   ```
+3. `navigate { entityId: "cap.task-discovery.today-overdue" }` so the person sees it, then `save_file` when they agree
+   (or `undo` to take it back).
+
+**Record CI results and judge assurance at HEAD**
+
+`create_evidence { testId, status: "passed", commit: "HEAD" }` for each run -> `set_evidence_context { mode: "head" }` ->
+`get_assurance` (counts) / `list_entities` (per subtree).
+
+**Review a proposal before merging**
+
+`list_git_refs` -> `compare { base: "main", target: "proposal", show: true }` -> `get_change { key }` for each guarantee
+change -> `get_impact` for the potentially affected capabilities.
+
+**"What would changing this affect?"**
+
+`get_impact { entityIds: ["sys.local-date"] }` before editing, then edit and `compare { base: "HEAD", target: "unsaved" }`.
+
+**Recover from a conflict**
+
+`save_file` -> error "changed on disk" -> `review_external_changes` -> either `reload_from_disk { discardUnsavedChanges: true }`
+or `save_file_as { path }` to keep both versions.
+
+**Repair a file that opened read-only**
+
+`get_diagnostics` -> `get_raw_json` -> `set_raw_json { text: <fixed>, apply: true }` -> `save_file`.

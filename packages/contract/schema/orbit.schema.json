@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbit.dev/schema/orbit.schema.json",
+  "title": "Orbit product contract v1",
+  "description": "A product contract: capabilities and systems (entities) with behaviors, typed relationships, automated tests and execution evidence. Arrays are unordered; items are identified by stable ids.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "product",
+    "entities",
+    "relationships",
+    "tests",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Contract format version. Must be 1."
+    },
+    "product": {
+      "$ref": "#/$defs/product"
+    },
+    "entities": {
+      "type": "array",
+      "description": "Capabilities and systems, stored flat; hierarchy is expressed with parentId.",
+      "items": {
+        "$ref": "#/$defs/entity"
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "description": "Directed typed edges between entities (source -> target).",
+      "items": {
+        "$ref": "#/$defs/relationship"
+      }
+    },
+    "tests": {
+      "type": "array",
+      "description": "Automated test definitions that behaviors reference.",
+      "items": {
+        "$ref": "#/$defs/test"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Externally produced test execution records. Orbit never runs tests.",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    }
+  },
+  "$defs": {
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The product described by this contract.",
+      "required": [
+        "id",
+        "name",
+        "summary"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Stable opaque product id."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Product display name."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "One-line product summary."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional longer description."
+        }
+      }
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A node in the unified model: a user-facing capability or an internal system.",
+      "required": [
+        "id",
+        "kind",
+        "parentId",
+        "name",
+        "summary",
+        "description",
+        "behaviors"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Stable opaque entity id, unique among entities. Never changes on rename or reorder."
+        },
+        "kind": {
+          "enum": [
+            "capability",
+            "system"
+          ],
+          "description": "capability = user-facing product ability; system = internal supporting component."
+        },
+        "parentId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Id of the parent entity (must exist and have the same kind), or null for a root."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Display name."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "One-line summary."
+        },
+        "description": {
+          "type": "string",
+          "description": "Longer description; may be empty."
+        },
+        "behaviors": {
+          "type": "array",
+          "description": "Guarantees owned by this entity.",
+          "items": {
+            "$ref": "#/$defs/behavior"
+          }
+        }
+      }
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A first-class guarantee: a statement of expected outcome owned by exactly one entity.",
+      "required": [
+        "id",
+        "name",
+        "expected",
+        "testIds"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Behavior id, unique across all behaviors in the contract."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Short behavior name."
+        },
+        "expected": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "The expected outcome, as a plain statement."
+        },
+        "testIds": {
+          "type": "array",
+          "description": "Ids of tests that verify this behavior (order is not significant). May be empty.",
+          "items": {
+            "type": "string",
+            "description": "A test id from the top-level tests array."
+          }
+        }
+      }
+    },
+    "relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A directed typed edge from source to target.",
+      "required": [
+        "id",
+        "type",
+        "sourceId",
+        "targetId"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Stable relationship id, unique among relationships."
+        },
+        "type": {
+          "enum": [
+            "dependsOn",
+            "uses",
+            "implementedBy"
+          ],
+          "description": "dependsOn: source relies on target functionality; uses: source uses target as support; implementedBy: source capability is supported by target system."
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Id of the source entity (the consumer)."
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Id of the target entity (the provider). Must differ from sourceId."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional explanation of the relationship."
+        }
+      }
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An automated test definition.",
+      "required": [
+        "id",
+        "name",
+        "location"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Stable test id, unique among tests."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Human-readable test name."
+        },
+        "location": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Source path, test identifier or URL; not required to exist locally."
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One execution result for a test.",
+      "required": [
+        "id",
+        "testId",
+        "status",
+        "executedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Evidence id, unique among evidence records."
+        },
+        "testId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Id of the executed test."
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped",
+            "error"
+          ],
+          "description": "Result of the execution."
+        },
+        "executedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 timestamp of the execution."
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Full 40-hex lowercase git SHA that was tested. Omit when unknown; never invent one."
+        },
+        "details": {
+          "type": "string",
+          "description": "Optional free-form details, e.g. failure message."
+        }
+      }
+    }
+  }
+}
