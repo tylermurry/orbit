@@ -5,7 +5,7 @@ import type { Entity, EntityKind, OrbitContract } from '@orbit/contract';
 import { InfoCircledIcon } from '@radix-ui/react-icons';
 import { KIND_LABEL } from '../lib/model';
 import { useApp, useCtrl, useDispatch, useEdit } from '../state/context';
-import { Confirm } from './common';
+import { Confirm, summaryFrom } from './common';
 import { Field } from './Dialogs';
 
 const ID_PREFIX: Record<EntityKind, string> = { capability: 'cap', system: 'sys' };
@@ -35,10 +35,10 @@ export function EntityCreateDialog({ open, onOpenChange, contract, kind, selecte
   const autoId = useMemo(() => generateId(ID_PREFIX[kind], ids, name || 'new'), [ids, kind, name]);
   const effectiveId = idTouched ? id : autoId;
   const idTaken = ids.has(effectiveId.trim());
-  const valid = name.trim() && summary.trim() && effectiveId.trim() && !idTaken;
+  const valid = name.trim() && effectiveId.trim() && !idTaken;
   const submit = () => {
     if (!valid) return;
-    const entity: Entity = { id: effectiveId.trim(), kind, parentId: placement === 'child' && selected ? selected.id : null, name: name.trim(), summary: summary.trim(), description: '', behaviors: [] };
+    const entity: Entity = { id: effectiveId.trim(), kind, parentId: placement === 'child' && selected ? selected.id : null, name: name.trim(), summary: summaryFrom(summary, name.trim()), description: summary.trim(), behaviors: [] };
     edit((c) => ({ ...c, entities: [...c.entities, entity] }));
     if (entity.parentId) ctrl.setExpanded({ ...expanded, [entity.parentId]: true });
     d({ type: 'selectEntity', id: entity.id, kind });
@@ -62,8 +62,8 @@ export function EntityCreateDialog({ open, onOpenChange, contract, kind, selecte
             <Field label="Name">
               <TextField.Root aria-label="Name" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Summary">
-              <TextField.Root aria-label="Summary" value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="One line describing it" />
+            <Field label="Description">
+              <TextField.Root aria-label="Description" value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="Optional: what is it?" />
             </Field>
             <Field label="Id" hint="Stable identifier; cannot be changed later." error={idTaken ? 'This id is already used.' : undefined}>
               <TextField.Root
@@ -140,7 +140,7 @@ export function EntityDeleteDialog({ open, onOpenChange, contract, entity, onDel
               </>
             )}
           </li>
-          <li>Tests and evidence records are not affected.</li>
+          <li>Test definitions are not affected.</li>
         </ul>
         {refs.length > 0 && (
           <Callout.Root size="1" variant="surface">

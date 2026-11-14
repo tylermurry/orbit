@@ -18,8 +18,6 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const demoDir = join(repoRoot, 'examples/demo');
 const CONTRACT_FILE = 'tasky.orbit.json';
-const PLACEHOLDER_MAIN = 'b'.repeat(40);
-const PLACEHOLDER_IMPL = 'a'.repeat(40);
 
 function fail(message) {
   console.error(`error: ${message}`);
@@ -107,13 +105,13 @@ write(codeFile, '// Tasky placeholder code, revision 2\nexport const revision = 
 write(CONTRACT_FILE, snapshot('03-proposal.orbit.json'));
 const proposalCommit = commit('Propose: overdue items remain visible in Today');
 
-// implementation: commit the CODE first, then commit the contract whose evidence names that code commit.
+// implementation: commit the code first, then the contract that describes it.
 git('checkout', '-q', '-b', 'implementation', 'main');
 write(codeFile, '// Tasky placeholder code, revision 2\nexport const revision = 2;\n// implementation: notes editing, local date change, assignment folded into lists\n');
 const codeCommit = commit('Implement notes editing and local-date change (code only)');
-const implText = snapshot('04-implementation.orbit.json').replaceAll(PLACEHOLDER_IMPL, codeCommit).replaceAll(PLACEHOLDER_MAIN, mainCommit);
+const implText = snapshot('04-implementation.orbit.json');
 write(CONTRACT_FILE, implText);
-const contractCommit = commit('Update contract and record evidence (evidence cites the code commit, not this commit)');
+const contractCommit = commit('Update the contract to match the implementation');
 
 // uncommitted edit on the checked-out branch so HEAD -> working tree has a diff.
 const contract = JSON.parse(implText);
@@ -184,12 +182,9 @@ if (opts.json) {
 
 Try it in Orbit:
   1. Open ${info.contractPath} in Orbit.
-  2. Impact -> choose base "main" and target "implementation".
-     Also try main -> proposal, and the default HEAD -> working tree.
+  2. Under Impact, choose Actual: everything that changed on implementation since it left main.
+     Other comparisons (main -> proposal, HEAD -> working tree) are available to the AI through the compare tool.
   3. The reformat commit (base commit -> main) shows zero semantic changes.
-  4. With the implementation code commit ${codeCommit.slice(0, 10)} as the inspected revision, evidence is
-     current for tests recorded at that commit, stale for evidence recorded at main, unknown when no commit is recorded.
-     (The contract commit cannot cite itself; that is the documented self-reference caveat.)
 
 Expected results (computed from the snapshots):
 ${expected.map((l) => `  ${l}`).join('\n')}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://orbit.dev/schema/orbit.schema.json",
   "title": "Orbit product contract v1",
-  "description": "A product contract: capabilities and systems (entities) with behaviors, typed relationships, automated tests and execution evidence. Arrays are unordered; items are identified by stable ids.",
+  "description": "A product contract: capabilities and systems (entities) with behaviors, typed relationships and automated tests. Arrays are unordered; items are identified by stable ids.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,8 +10,7 @@
     "product",
     "entities",
     "relationships",
-    "tests",
-    "evidence"
+    "tests"
   ],
   "properties": {
     "schemaVersion": {
@@ -42,12 +41,8 @@
         "$ref": "#/$defs/test"
       }
     },
-    "evidence": {
-      "type": "array",
-      "description": "Externally produced test execution records. Orbit never runs tests.",
-      "items": {
-        "$ref": "#/$defs/evidence"
-      }
+    "validation": {
+      "$ref": "#/$defs/validation"
     }
   },
   "$defs": {
@@ -252,55 +247,34 @@
           "type": "string",
           "minLength": 1,
           "pattern": "\\S",
-          "description": "Source path, test identifier or URL; not required to exist locally."
+          "description": "Source path, test identifier or URL; not required to exist locally. For a placeholder, where the test is intended to live."
+        },
+        "placeholder": {
+          "const": true,
+          "description": "Present (true) when the test is planned but not implemented yet, e.g. proposed alongside a behavior. Omit once the test exists. A placeholder never counts as test coverage."
         }
       }
     },
-    "evidence": {
+    "validation": {
       "type": "object",
       "additionalProperties": false,
-      "description": "One execution result for a test.",
+      "description": "How to validate the product: the command that runs the whole test suite, and where it writes its results. Orbit runs the command only when a person asks it to, and reads test outcomes from the results file.",
       "required": [
-        "id",
-        "testId",
-        "status",
-        "executedAt"
+        "command",
+        "results"
       ],
       "properties": {
-        "id": {
+        "command": {
           "type": "string",
           "minLength": 1,
           "pattern": "\\S",
-          "description": "Evidence id, unique among evidence records."
+          "description": "Shell command that runs the entire test suite, run from the repository root (or the contract's folder outside Git), e.g. 'npm test'."
         },
-        "testId": {
+        "results": {
           "type": "string",
           "minLength": 1,
           "pattern": "\\S",
-          "description": "Id of the executed test."
-        },
-        "status": {
-          "enum": [
-            "passed",
-            "failed",
-            "skipped",
-            "error"
-          ],
-          "description": "Result of the execution."
-        },
-        "executedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "RFC 3339 timestamp of the execution."
-        },
-        "commit": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{40}$",
-          "description": "Full 40-hex lowercase git SHA that was tested. Omit when unknown; never invent one."
-        },
-        "details": {
-          "type": "string",
-          "description": "Optional free-form details, e.g. failure message."
+          "description": "Path of the JUnit XML results file the command writes, relative to the same folder, e.g. 'test-results/junit.xml'."
         }
       }
     }

@@ -8,6 +8,7 @@ import type {
   GitFileAtRevision,
   GitRef,
   OrbitHost,
+  RunOutcome,
   WriteResult,
 } from './types';
 
@@ -73,9 +74,27 @@ export function createTauriHost(): OrbitHost {
 
     initialFile: () => call<string | null>('initial_file'),
 
+    openInEditor: (path) => call<void>('open_in_editor', { path }),
+
     gitContext: (path) => call<GitContext>('git_context', { path }),
     gitListRefs: (repoRoot) => call<GitRef[]>('git_list_refs', { repoRoot }),
     gitReadFileAt: (repoRoot, rev, relPath) =>
       call<GitFileAtRevision>('git_read_file_at', { repoRoot, rev, relPath }),
+    async runCommand(cwd, command, runId, onOutput) {
+      const { listen } = await import('@tauri-apps/api/event');
+      const unlisten = await listen<{ runId: string; text: string }>('run:output', (e) => {
+        if (e.payload.runId === runId) onOutput(e.payload.text);
+      });
+      try {
+        return await call<RunOutcome>('run_command', { cwd, command, runId });
+      } finally {
+        unlisten();
+      }
+    },
+    cancelCommand: (runId) => call<boolean>('cancel_command', { runId }),
+
+    gitMergeBase: (repoRoot, a, b) => call<string | null>('git_merge_base', { repoRoot, a, b }),
+    gitTagProposal: (repoRoot, branch, replace) =>
+      call<{ tag: string; commit: string; replaced: boolean }>('git_tag_proposal', { repoRoot, branch, replace }),
   };
 }

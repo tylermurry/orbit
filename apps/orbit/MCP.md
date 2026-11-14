@@ -1,8 +1,8 @@
 # Orbit AI access (MCP)
 
 Orbit has a built-in [Model Context Protocol](https://modelcontextprotocol.io) server so an AI assistant can take the
-same actions a person can in the app: read the contract, edit entities, behaviors, tests, evidence and relationships,
-review semantic diffs and impact, and save. The human sees everything live (a toast per AI change, the trees update,
+same actions a person can in the app: read the contract, edit entities, behaviors, tests and relationships,
+run the test suite, review semantic diffs and impact, and save. The human sees everything live (a toast per AI change, the trees update,
 `navigate` moves their view).
 
 - **Where it runs:** inside the Orbit desktop app (Tauri). Rust serves HTTP on `127.0.0.1:47821` (next free port if busy)
@@ -59,25 +59,27 @@ replies, and returns a JSON-RPC error such as "Is Orbit running with AI access e
   applies a person's unapplied Raw JSON draft implicitly. `open_file`/`create_contract`/`reload_from_disk` refuse while
   there are unsaved changes unless `discardUnsavedChanges: true`. `save_file_as` refuses to replace a file unless
   `overwrite: true`.
-- **Orbit never runs code or tests.** Evidence is data the AI (or CI) records; git access is read-only.
+- **Tests run only with the person's approval.** `run_tests` runs the contract's validation command only after the
+  person approved that exact command in Orbit (Validate capabilities asks once per command, and again if it changes).
+  Git access is read-only except `mark_proposal`, which only creates or moves the lightweight tag
+  `orbit/proposal/<branch>`.
 - **Serialized.** Tool calls run one at a time, so concurrent AI requests never interleave edits.
 - Turn the switch off at any time; the status dot in the top bar shows Off / Ready / Active / Error.
 
 ## Tool catalog
 
 `read` tools never change anything. `write` tools change the in-memory contract (undoable) or files. `navigate` tools move
-the person's view, comparison or evidence context. All write/edit tools accept `dryRun: true` to preview.
+the person's view or comparison. All write/edit tools accept `dryRun: true` to preview.
 
 | Tool | Kind | What it does |
 |---|---|---|
-| `get_status` | read | Snapshot of the app: file, product, dirty/valid, diagnostics counts, read-only state, view and selection, raw editor state, undo/redo, git, comparison, evidence context, external changes. Call first. |
+| `get_status` | read | Snapshot of the app: file, product, dirty/valid, diagnostics counts, read-only state, view and selection, raw editor state, undo/redo, git, comparison, test results, external changes. Call first. |
 | `get_contract` | read | Canonical contract JSON; `source: 'working'` (default, with unsaved edits) or `'disk'`. |
 | `list_entities` | read | Tree-ordered capabilities/systems with depth, behavior counts, subtree assurance and diff status; filters `kind`, `parentId`, `query`. |
-| `get_entity` | read | One entity in full: ancestors, children, behaviors with per-test assurance/freshness/history, subtree assurance, relationships (with the other entity's name/kind). |
+| `get_entity` | read | One entity in full: ancestors, children, behaviors with each test's status and latest result, subtree assurance, relationships (with the other entity's name/kind). |
 | `search` | read | Substring search over entities (name/id), behaviors (name/expected) and tests. |
 | `get_assurance` | read | Verification assurance for an entity subtree or the whole product against the inspected commit. |
-| `list_tests` | read | Test definitions with the behaviors they verify, evidence counts and latest freshness. |
-| `list_evidence` | read | Evidence records (newest first) filtered by `testId`, `status`, `freshness`. |
+| `list_tests` | read | Test definitions with the behaviors they verify and their status (passing / failing / unconfirmed / planned). |
 | `get_diagnostics` | read | Validation errors/warnings (codes, paths, line/column) for what the user sees. |
 | `open_file` | write | Open a contract by absolute path (guards unsaved changes). |
 | `create_contract` | write | Create and open a new empty contract at a path that does not exist yet. |
@@ -95,12 +97,11 @@ the person's view, comparison or evidence context. All write/edit tools accept `
 | `delete_behavior` | write | Delete a behavior. |
 | `map_tests` | write | Map existing tests to a behavior. |
 | `unmap_tests` | write | Remove test mappings from a behavior. |
-| `create_test` | write | Define a test (`name`, `location`). |
-| `update_test` | write | Change a test's name/location. |
-| `delete_test` | write | Delete a test, unmap it and delete its evidence (like the UI). |
-| `create_evidence` | write | Record a run: `status`, `executedAt` (default now), `commit` (40-hex or `HEAD`). |
-| `update_evidence` | write | Change an evidence record (`commit: null` clears it). |
-| `delete_evidence` | write | Delete an evidence record. |
+| `create_test` | write | Define a test (`name`, `location`); `placeholder: true` for a planned test that does not exist yet. |
+| `update_test` | write | Change a test's name/location, or mark a placeholder implemented (`placeholder: false`). |
+| `delete_test` | write | Delete a test and unmap it (like the UI). |
+| `set_validation` | write | Set the command that runs the whole test suite and the JUnit XML results file it writes. |
+| `run_tests` | write | Run the approved test command, wait, and return each test's status. |
 | `create_relationship` | write | Add `dependsOn` / `uses` / `implementedBy` source -> target; refuses self-edges, no-ops on duplicates. |
 | `update_relationship` | write | Change type, endpoints or description. |
 | `delete_relationship` | write | Delete a relationship. |
@@ -110,12 +111,13 @@ the person's view, comparison or evidence context. All write/edit tools accept `
 | `get_raw_json` | read | The Raw JSON editor's text (draft if unapplied). |
 | `set_raw_json` | write | Validate (`apply: false`) or apply (`apply: true`) complete contract text; invalid text is never applied. |
 | `navigate` | navigate | Switch view, select entity/behavior, open raw editor, library or diagnostics. |
-| `set_evidence_context` | navigate | Inspect evidence at `none`, `head` or a branch/tag/sha. |
 | `list_git_refs` | read | Branches, tags and HEAD of the contract's repository. |
 | `compare` | navigate | Set the app's comparison and return totals, directly changed and potentially affected entities, and the change list. |
 | `get_change` | read | Field-level before/after for one change key of the active comparison. |
 | `get_impact` | read | Potential impact for the active comparison or for arbitrary `entityIds` ("what would this affect?"). |
 | `clear_comparison` | navigate | Remove the comparison. |
+| `mark_proposal` | write | Tag the committed contract at HEAD as this branch's proposal (`orbit/proposal/<branch>`; `replace` to move it). |
+| `view_changes` | navigate | Product-owner views: `proposal` (baseline -> proposal), `vs-proposal` (proposal -> latest), `actual` (baseline -> latest). |
 
 ### Conventions
 
@@ -126,8 +128,11 @@ the person's view, comparison or evidence context. All write/edit tools accept `
 - Failures are normal tool results with `isError: true`, an actionable message and `suggestions`. Protocol problems
   (unknown tool) are JSON-RPC `-32602`.
 - Results are JSON in both `content[0].text` and `structuredContent`.
-- Assurance is conservative: nothing is "passing" until `set_evidence_context` names a commit and evidence recorded for
-  that exact commit passed. Evidence without a commit is *unknown*, other commits are *stale*.
+- Test status comes from the latest results file (`validation.results`, JUnit XML). A test is *passing* or *failing*
+  only when its latest result is at or after the proposal's commit time; otherwise (no result, an older result, or
+  skipped) it is *unconfirmed*. Placeholder tests are *planned*. A behavior is passing only when all its real tests pass.
+- Results are matched to tests by a `[<test id>]` tag in the runner's test name when present, else by `location`
+  (`<file> › <describe> › <test title>`, as the runner reports it).
 - Potential impact is inferred from relationships (changed targets affect their sources); it is never observed breakage.
 
 ## Example workflows
@@ -145,10 +150,22 @@ the person's view, comparison or evidence context. All write/edit tools accept `
 3. `navigate { entityId: "cap.task-discovery.today-overdue" }` so the person sees it, then `save_file` when they agree
    (or `undo` to take it back).
 
-**Record CI results and judge assurance at HEAD**
+**Set up validation and check the product**
 
-`create_evidence { testId, status: "passed", commit: "HEAD" }` for each run -> `set_evidence_context { mode: "head" }` ->
-`get_assurance` (counts) / `list_entities` (per subtree).
+`set_validation { command: "npm test", results: "test-results/junit.xml" }` -> `save_file` -> the person approves the
+command once (Validate capabilities) -> `run_tests` (or run the command in a terminal; Orbit reads the results file
+whenever it changes) -> `get_assurance` (counts) / `list_tests { status: "failing" }`.
+
+**Propose a feature, then track it against the proposal**
+
+1. On a feature branch, edit the contract to describe the proposed change, including a placeholder test
+   (`create_test { placeholder: true }`) mapped to each new or changed behavior so the intended test surface is
+   visible. `save_file`, and commit it with git.
+2. `mark_proposal { show: true }` - tags HEAD as `orbit/proposal/<branch>` and opens "View proposal".
+3. While implementing, keep the contract in sync; when a planned test is written, `update_test { placeholder: false }`.
+   Run the tests after each change: results from before the proposal count as *unconfirmed*. `view_changes { view: "vs-proposal" }` shows how the actual work
+   differs from the proposal; `view_changes { view: "actual" }` shows everything since the branch left `main`.
+   `compare` also accepts `baseline` and `proposal` as revisions.
 
 **Review a proposal before merging**
 

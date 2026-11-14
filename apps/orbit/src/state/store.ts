@@ -1,7 +1,10 @@
 import { serializeContract } from '@orbit/contract';
-import type { Diagnostic, EntityKind, OrbitContract, ParseResult } from '@orbit/contract';
+import type { AssuranceContext, Diagnostic, EntityKind, OrbitContract, ParseResult, TestDefinition } from '@orbit/contract';
 import type { GitContext, GitRef } from '../host/types';
-import type { AppState, CompareResult, Comparison, EvidenceCtx, Prompt, ReviewState, ViewId } from './types';
+import { matchResults } from '../lib/junit';
+import type { JUnitCase, MatchedResults } from '../lib/junit';
+import { proposalRef } from './compare';
+import type { AppState, CompareResult, Comparison, Prompt, ResultsFile, ReviewState, RunState, ViewId } from './types';
 
 const canonCache = new WeakMap<OrbitContract, string>();
 export function canon(c: OrbitContract | null): string {
@@ -37,10 +40,12 @@ export function initialState(): AppState {
     compare: null,
     compareResult: null,
     impactSelection: null,
-    evidenceCtx: { kind: 'none' },
+    resultsFile: null,
+    run: null,
+    lastRun: null,
+    runDialog: false,
     diagnosticsOpen: false,
     libraryOpen: false,
-    libraryTab: 'tests',
     libraryFocusTest: null,
     productDialog: false,
     newDialog: false,
@@ -72,11 +77,34 @@ export function currentText(s: AppState): string {
   return structuredDirty(s) ? canon(s.contract) : s.diskText || canon(s.contract);
 }
 
-export function inspectedCommit(s: AppState): string | null {
-  const e = s.evidenceCtx;
-  if (e.kind === 'none') return null;
-  if (e.kind === 'head') return s.git?.available ? (s.git.headCommit ?? null) : null;
-  return e.commit;
+// Matching is redone only when the contract's tests or the results file change.
+let matchMemo: { tests: TestDefinition[]; cases: JUnitCase[]; at: string; out: MatchedResults } | null = null;
+const NO_MATCH: MatchedResults = { results: new Map(), unmatchedCases: 0 };
+
+/** The latest result per contract test, matched from the results file. */
+export function matchedResults(s: AppState): MatchedResults {
+  const f = s.resultsFile;
+  if (!s.contract || !f || f.state !== 'ok' || !f.at) return NO_MATCH;
+  const m = matchMemo;
+  if (m && m.tests === s.contract.tests && m.cases === f.cases && m.at === f.at) return m.out;
+  const out = matchResults(s.contract.tests, f.cases, f.at);
+  matchMemo = { tests: s.contract.tests, cases: f.cases, at: f.at, out };
+  return out;
+}
+
+/** Results only count when newer than the proposal's commit time (null when there is no proposal). */
+export function proposalTime(s: AppState): string | null {
+  return proposalRef(s.git, s.refs)?.date || null;
+}
+
+let ctxMemo: { results: MatchedResults['results']; since: string | null; ctx: AssuranceContext } | null = null;
+/** Stable (memoized) assurance context, so assurance is recomputed only when results or the proposal change. */
+export function assuranceContext(s: AppState): AssuranceContext {
+  const results = matchedResults(s).results;
+  const since = proposalTime(s);
+  if (ctxMemo && ctxMemo.results === results && ctxMemo.since === since) return ctxMemo.ctx;
+  ctxMemo = { results, since, ctx: { results, since } };
+  return ctxMemo.ctx;
 }
 
 export function canUndo(s: AppState): boolean {
@@ -86,7 +114,7 @@ export function canUndo(s: AppState): boolean {
 // ───────────── actions ─────────────
 
 export type Action =
-  | { type: 'loaded'; path: string; text: string; sha: string | null; parse: ParseResult; git: GitContext | null; refs: GitRef[]; keepContext: boolean; expanded?: Record<string, boolean>; evidenceCtx?: EvidenceCtx }
+  | { type: 'loaded'; path: string; text: string; sha: string | null; parse: ParseResult; git: GitContext | null; refs: GitRef[]; keepContext: boolean; expanded?: Record<string, boolean> }
   | { type: 'edit'; fn: (c: OrbitContract) => OrbitContract }
   | { type: 'undo' }
   | { type: 'redo' }
@@ -102,10 +130,13 @@ export type Action =
   | { type: 'setCompare'; compare: Comparison | null }
   | { type: 'setCompareResult'; result: CompareResult | null }
   | { type: 'selectChange'; key: string | null }
-  | { type: 'setEvidence'; ctx: EvidenceCtx }
+  | { type: 'setResultsFile'; file: ResultsFile | null }
+  | { type: 'runStarted'; run: RunState }
+  | { type: 'runOutput'; runId: string; text: string }
+  | { type: 'runFinished'; runId: string; outcome: NonNullable<AppState['lastRun']> }
   | { type: 'setExpanded'; expanded: Record<string, boolean> }
   | { type: 'setSearch'; search: string }
-  | { type: 'ui'; patch: Partial<Pick<AppState, 'diagnosticsOpen' | 'libraryOpen' | 'libraryTab' | 'libraryFocusTest' | 'productDialog' | 'newDialog' | 'shortcutsOpen' | 'bannerNote'>> }
+  | { type: 'ui'; patch: Partial<Pick<AppState, 'diagnosticsOpen' | 'libraryOpen' | 'libraryFocusTest' | 'runDialog' | 'productDialog' | 'newDialog' | 'shortcutsOpen' | 'bannerNote'>> }
   | { type: 'prompt'; prompt: Prompt | null }
   | { type: 'review'; review: ReviewState | null }
   | { type: 'toast'; id: number; message: string; tone: 'info' | 'success' | 'error' }
@@ -127,7 +158,6 @@ export function reducer(s: AppState, a: Action): AppState {
             toasts: s.toasts,
             view: s.view === 'impact' ? 'product' : s.view,
             expanded: a.expanded ?? {},
-            evidenceCtx: a.evidenceCtx ?? { kind: 'none' },
           };
       return {
         ...base,
@@ -218,8 +248,18 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, compareResult: a.result };
     case 'selectChange':
       return { ...s, impactSelection: a.key };
-    case 'setEvidence':
-      return { ...s, evidenceCtx: a.ctx };
+    case 'setResultsFile':
+      return { ...s, resultsFile: a.file };
+    case 'runStarted':
+      return { ...s, run: a.run };
+    case 'runOutput': {
+      if (s.run?.runId !== a.runId) return s;
+      const output = s.run.output + a.text;
+      // Keep the visible log bounded; the full output streams past.
+      return { ...s, run: { ...s.run, output: output.length > 200_000 ? output.slice(-150_000) : output } };
+    }
+    case 'runFinished':
+      return s.run?.runId === a.runId ? { ...s, run: null, lastRun: a.outcome } : s;
     case 'setExpanded':
       return { ...s, expanded: a.expanded };
     case 'setSearch':

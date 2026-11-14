@@ -1,23 +1,26 @@
-import { ancestorsOf, behaviorIndex, potentialImpact } from '@orbit/contract';
-import type { Change, ImpactPath, OrbitContract, SemanticDiff } from '@orbit/contract';
+import { ancestorsOf, behaviorIndex, potentialImpact, testAssurance } from '@orbit/contract';
+import type { Change, ImpactPath, OrbitContract, SemanticDiff, TestAssurance } from '@orbit/contract';
 import { shortSha } from '../../lib/format';
 import { REL_INFO } from '../../lib/model';
-import { revKey, revLabel } from '../../state/compare';
-import { currentText } from '../../state/store';
-import type { CompareResult, EvidenceCtx, RevSel } from '../../state/types';
-import { assuranceFor, closest, entityCandidates, historyState, inspected, notFound, requireContract, slimDiagnostic, st } from './helpers';
-import { slimAssurance } from './read';
+import { proposalTag } from '../../host/types';
+import { PRESET_LABELS, baseBranchFor, proposalRef, revKey, revLabel } from '../../state/compare';
+import { currentText, isDirty } from '../../state/store';
+import type { CompareResult, LifecyclePreset, RevSel } from '../../state/types';
+import { actxOf, closest, entityCandidates, historyState, notFound, requireContract, slimDiagnostic, st } from './helpers';
+import { resultsInfo } from './read';
 import { S } from './schema';
 import { ToolError } from './types';
 import type { ToolContext, ToolDef } from './types';
 
 const ann = (readOnly: boolean, idempotent = true) => ({ readOnlyHint: readOnly, destructiveHint: false, idempotentHint: idempotent, openWorldHint: false as const });
+/** Status and latest result of one test, for tool output. */
+const pick = (t: TestAssurance) => ({ status: t.status, ...(t.result ? { lastResult: { status: t.result.status, at: t.result.at, ...(t.result.message ? { message: t.result.message } : {}) } } : {}) });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function needGit(ctx: ToolContext) {
   const g = st(ctx).git;
   if (!g?.available || !g.repoRoot || !g.relPath) {
-    throw new ToolError(`Git is not available for the open file${g?.message ? ` (${g.message})` : ''}. Comparisons and commit-based evidence need the contract to be inside a git repository.`, {
+    throw new ToolError(`Git is not available for the open file${g?.message ? ` (${g.message})` : ''}. Comparisons need the contract to be inside a git repository.`, {
       suggestions: ['Open a contract that lives in a git repository.'],
     });
   }
@@ -29,6 +32,19 @@ function parseRev(ctx: ToolContext, raw: string): RevSel {
   const v = raw.trim();
   if (v === 'working') return { type: 'working' };
   if (v === 'unsaved') return { type: 'unsaved' };
+  if (v === 'baseline') {
+    const branch = baseBranchFor(s.refs);
+    if (!branch) throw new ToolError("There is no 'main' or 'master' branch to use as the baseline.", { suggestions: ['Pass a branch name as base instead, e.g. compare({ base: "develop", ... }).'] });
+    return { type: 'baseline', branch };
+  }
+  if (v === 'proposal') {
+    const p = proposalRef(s.git, s.refs);
+    if (p) return { type: 'ref', name: p.name };
+    // fall through: a branch literally called 'proposal' still works
+    if (!s.refs.some((r) => r.name === 'proposal')) {
+      throw new ToolError(`No proposal is recorded for ${s.git?.headBranch ? `branch '${s.git.headBranch}'` : 'a detached HEAD'}.`, { suggestions: ['Commit the proposed contract, then call mark_proposal.'] });
+    }
+  }
   const ref = s.refs.find((r) => r.name === v) ?? (v.toUpperCase() === 'HEAD' ? s.refs.find((r) => r.kind === 'head') : undefined);
   if (ref) return { type: 'ref', name: ref.kind === 'head' ? 'HEAD' : ref.name };
   if (/^[0-9a-f]{4,40}$/i.test(v)) return { type: 'sha', sha: v.toLowerCase() };
@@ -98,15 +114,12 @@ export function navTools(): ToolDef[] {
       name: 'navigate',
       title: 'Navigate the UI',
       description:
-        "Move the human's view so they can follow along. view: 'product' (capabilities), 'engineering' (systems) or 'impact' (comparison). entityId selects that entity (the view follows its kind; its ancestors are expanded) and behaviorId additionally focuses a behavior. openRaw: true opens the Raw JSON editor. openLibrary opens the Tests & evidence library ('tests' | 'evidence' | 'none' to close; testId focuses one test). openDiagnostics opens the diagnostics panel. Does not change the document.",
+        "Move the human's view so they can follow along. view: 'product' (capabilities), 'engineering' (systems) or 'impact' (comparison). entityId selects that entity (the view follows its kind; its ancestors are expanded) and behaviorId additionally focuses a behavior. openRaw: true opens the Raw JSON editor. Does not change the document.",
       inputSchema: S.obj({
         view: S.oneOf(['product', 'engineering', 'impact'], 'Which view to show.'),
         entityId: S.nonEmpty('Entity to select.'),
         behaviorId: S.nonEmpty('Behavior to focus (its owner entity is selected automatically).'),
         openRaw: S.bool('Open the Raw JSON editor.'),
-        openLibrary: S.oneOf(['tests', 'evidence', 'none'], 'Open the Tests & evidence library on that tab, or none to close it.'),
-        testId: S.nonEmpty('With openLibrary: focus this test.'),
-        openDiagnostics: S.bool('Open the diagnostics panel.'),
       }),
       annotations: ann(false),
     },
@@ -151,55 +164,52 @@ export function navTools(): ToolDef[] {
       } else if (!entityId && s0.rawMode) {
         d({ type: 'setRawMode', on: false });
       }
-      if (a.openLibrary) {
-        if (a.openLibrary === 'none') d({ type: 'ui', patch: { libraryOpen: false, libraryFocusTest: null } });
-        else {
-          if (a.testId && !c.tests.some((t) => t.id === a.testId)) throw notFound('Test', a.testId as string, c.tests.map((t) => ({ id: t.id, name: t.name })));
-          d({ type: 'ui', patch: { libraryOpen: true, libraryTab: a.openLibrary as 'tests' | 'evidence', libraryFocusTest: (a.testId as string | undefined) ?? null } });
-        }
-      }
-      if (a.openDiagnostics === true) d({ type: 'ui', patch: { diagnosticsOpen: true } });
       const s = st(ctx);
-      return { data: { view: s.rawMode ? 'raw' : s.view, selection: { capability: s.selected.capability, system: s.selected.system, focusedBehaviorId: s.focusBehaviorId }, libraryOpen: s.libraryOpen } };
+      return { data: { view: s.rawMode ? 'raw' : s.view, selection: { capability: s.selected.capability, system: s.selected.system, focusedBehaviorId: s.focusBehaviorId } } };
     },
   });
 
   tools.push({
-    kind: 'nav',
+    kind: 'file',
     tool: {
-      name: 'set_evidence_context',
-      title: 'Set the inspected commit for evidence',
+      name: 'run_tests',
+      title: 'Run the test suite',
       description:
-        "Choose which code revision verification is judged against. Evidence is 'current' only when its recorded commit equals the inspected commit. mode: 'none' (nothing is current - the default), 'head' (the repository's HEAD) or 'rev' with rev = branch, tag or commit sha. Changes assurance everywhere in the app; returns the product-wide assurance for the new context.",
-      inputSchema: S.obj({ mode: S.oneOf(['none', 'head', 'rev'], "'none' | 'head' | 'rev'."), rev: S.nonEmpty("Branch, tag or sha (required when mode is 'rev').") }, ['mode']),
-      annotations: ann(false),
+        "Run the contract's validation command (the whole test suite, see set_validation) and wait for it, then return each test's status from the results file. Only runs a command the person has approved in Orbit (Validate capabilities asks once per command); otherwise fails and asks them to. Alternatively run the same command yourself in a terminal: Orbit picks up the results file automatically whenever it changes. Statuses: passing / failing (a result at or after the proposal time), unconfirmed (no current result), planned (placeholder).",
+      inputSchema: S.obj({ timeoutSeconds: S.int('Give up waiting after this many seconds (default 600). The run keeps going in Orbit.', { minimum: 5, maximum: 3600 }) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false as const },
     },
     async run(a, ctx) {
       requireContract(ctx);
-      let ctxNew: EvidenceCtx;
-      if (a.mode === 'none') ctxNew = { kind: 'none' };
-      else if (a.mode === 'head') {
-        const g = needGit(ctx);
-        if (!g.headCommit) throw new ToolError('The repository has no commits yet, so HEAD cannot be inspected.', { suggestions: ["Use mode: 'rev' with a specific commit, or 'none'."] });
-        ctxNew = { kind: 'head' };
-      } else {
-        if (!a.rev) throw new ToolError("mode 'rev' requires rev (a branch, tag or commit sha).", { suggestions: ['list_git_refs shows the choices.'] });
-        const g = needGit(ctx);
-        try {
-          const f = await ctx.host.gitReadFileAt(g.repoRoot!, a.rev as string, g.relPath!);
-          ctxNew = { kind: 'rev', label: a.rev as string, commit: f.commit };
-        } catch (e) {
-          throw new ToolError((e as Error).message, { suggestions: ['list_git_refs shows the available refs.'] });
-        }
+      const started = await ctx.ctrl.runValidation();
+      if (started === 'not-configured') throw new ToolError('No test command is set up for this contract.', { suggestions: ["set_validation({ command: 'npm test', results: 'test-results/junit.xml' }) and save, then ask the person to approve it with Validate capabilities."] });
+      if (started === 'needs-approval') {
+        ctx.store.dispatch({ type: 'ui', patch: { runDialog: true } });
+        throw new ToolError(`The person has not approved running '${st(ctx).contract!.validation!.command}' yet. Orbit opened Validate capabilities so they can approve it.`, { suggestions: ['Ask the person to click Run tests in Orbit, or run the command yourself in a terminal.'] });
       }
-      ctx.ctrl.setEvidence(ctxNew);
-      const c = st(ctx).contract!;
-      const commit = inspected(st(ctx));
-      const asr = assuranceFor(c, commit);
-      const behaviors = c.entities.reduce((n, e) => n + e.behaviors.length, 0);
-      const label = ctxNew.kind === 'none' ? 'no code revision' : ctxNew.kind === 'head' ? `HEAD (${shortSha(commit)})` : `${ctxNew.label} (${shortSha(commit)})`;
-      const roots = c.entities.filter((e) => !e.parentId).map((e) => ({ id: e.id, name: e.name, ...slimAssurance(asr.get(e.id)!) }));
-      return { data: { evidenceContext: ctxNew, inspectedCommit: commit, behaviors, topLevelAssurance: roots }, toast: `Inspecting evidence for ${label}` };
+      if (started === 'busy') throw new ToolError('A test run is already in progress.', { suggestions: ['Wait for it, then call get_assurance or list_tests.'] });
+      const deadline = Date.now() + ((a.timeoutSeconds as number | undefined) ?? 600) * 1000;
+      while (st(ctx).run && Date.now() < deadline) await sleep(100);
+      const s = st(ctx);
+      if (s.run) throw new ToolError('The test run is still going.', { suggestions: ['Call list_tests later; the results update when the run finishes.'] });
+      const last = s.lastRun;
+      const c = s.contract!;
+      const actx = actxOf(s);
+      const tests = c.tests.map((t) => ({ id: t.id, name: t.name, ...pick(testAssurance(c, t.id, actx)) }));
+      const count = (x: string) => tests.filter((t) => t.status === x).length;
+      return {
+        data: {
+          exitCode: last?.exitCode ?? null,
+          cancelled: !!last?.cancelled,
+          durationMs: last?.durationMs ?? 0,
+          output: last ? last.output.slice(-4000) : '',
+          testResults: resultsInfo(s),
+          totals: { passing: count('passing'), failing: count('failing'), unconfirmed: count('unconfirmed'), planned: count('planned') },
+          failing: tests.filter((t) => t.status === 'failing'),
+          unconfirmed: tests.filter((t) => t.status === 'unconfirmed').map((t) => ({ id: t.id, name: t.name })),
+        },
+        toast: last?.cancelled ? 'Test run cancelled' : `Ran the tests: ${count('passing')} passing, ${count('failing')} failing`,
+      };
     },
   });
 
@@ -208,7 +218,7 @@ export function navTools(): ToolDef[] {
     tool: {
       name: 'list_git_refs',
       title: 'List git refs',
-      description: 'Branches, tags and HEAD of the repository containing the open contract (read-only), for use with compare and set_evidence_context. Returns available: false with the reason when the file is not in a git repository.',
+      description: 'Branches, tags and HEAD of the repository containing the open contract (read-only), for use with compare. Returns available: false with the reason when the file is not in a git repository.',
       inputSchema: S.obj({}),
       annotations: ann(true),
     },
@@ -236,7 +246,7 @@ export function navTools(): ToolDef[] {
       name: 'compare',
       title: 'Compare two revisions semantically',
       description:
-        "Set the app's comparison (trees highlight added/modified/removed/potentially-affected entities) and return the semantic diff. base/target each: 'working' (saved file on disk), 'unsaved' (in-app edits), 'HEAD', a branch or tag name, a commit sha, or a git revision expression such as 'main~1' or 'HEAD^'. Needs the file to be in a git repository. Returns totals per category, directly changed entities, potentially affected entities (with the relationship path), and the change list (use get_change for field-level before/after). Direct changes and inferred potential impact are always reported separately. show: true also switches the UI to the Impact view.",
+        "Set the app's comparison (trees highlight added/modified/removed/potentially-affected entities) and return the semantic diff. base/target each: 'working' (saved file on disk), 'unsaved' (in-app edits), 'baseline' (where this branch left main/master), 'proposal' (this branch's proposal tag), 'HEAD', a branch or tag name, a commit sha, or a git revision expression such as 'main~1' or 'HEAD^'. Needs the file to be in a git repository. Returns totals per category, directly changed entities, potentially affected entities (with the relationship path), and the change list (use get_change for field-level before/after). Direct changes and inferred potential impact are always reported separately. show: true also switches the UI to the Impact view.",
       inputSchema: S.obj({ base: S.nonEmpty("Older side, e.g. 'HEAD' or 'main'."), target: S.nonEmpty("Newer side, e.g. 'unsaved' or 'working'."), show: S.bool('Also open the Impact view.') }, ['base', 'target']),
       annotations: ann(false),
     },
@@ -261,6 +271,73 @@ export function navTools(): ToolDef[] {
         });
       }
       return { data: describeCompare(ctx, r) };
+    },
+  });
+
+  tools.push({
+    kind: 'file',
+    tool: {
+      name: 'mark_proposal',
+      title: 'Mark the committed contract as the proposal',
+      description:
+        "Record the current commit as this feature branch's PROPOSAL by pointing the git tag orbit/proposal/<branch> at HEAD. This is the only git write Orbit makes; it never commits, stages or checks out. Workflow: propose the change by editing the contract, save_file, commit the contract yourself (git commit), then call mark_proposal. Refuses when the contract has unsaved or uncommitted changes, on a detached HEAD, on the base branch itself, or when a proposal tag already exists (pass replace: true to move it). show: true opens the 'View proposal' comparison afterwards.",
+      inputSchema: S.obj({ replace: S.bool('Move an existing proposal tag to HEAD.'), show: S.bool("Open the 'View proposal' comparison.") }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false as const },
+    },
+    async run(a, ctx) {
+      requireContract(ctx);
+      needGit(ctx);
+      await ctx.ctrl.refreshGit(); // the AI usually just committed
+      const s = st(ctx);
+      const g = needGit(ctx);
+      if (isDirty(s)) throw new ToolError('The contract has unsaved changes in Orbit. The proposal must be committed first.', { suggestions: ['save_file, commit the contract with git, then call mark_proposal again.'] });
+      if (!g.headCommit) throw new ToolError('The repository has no commits yet.', { suggestions: ['Commit the proposed contract first.'] });
+      if (!g.headBranch) throw new ToolError('HEAD is detached, so there is no feature branch to record a proposal for.', { suggestions: ['Check out (or create) the feature branch first.'] });
+      const base = baseBranchFor(s.refs);
+      if (base && g.headBranch === base) throw new ToolError(`You are on the base branch '${base}'. Proposals belong to a feature branch.`, { suggestions: ['Create a feature branch (git switch -c <name>), commit the proposal there, then call mark_proposal.'] });
+      if (!g.trackedAtHead || g.workingTreeDiffers) throw new ToolError(`The contract file differs from what is committed at HEAD (${shortSha(g.headCommit)}), so HEAD is not the proposal.`, { suggestions: [`Commit ${g.relPath} first, then call mark_proposal again.`] });
+      let res: { tag: string; commit: string; replaced: boolean };
+      try {
+        res = await ctx.host.gitTagProposal(g.repoRoot!, g.headBranch, a.replace === true);
+      } catch (e) {
+        throw new ToolError((e as Error).message, { suggestions: [`If the proposal was revised on purpose, call mark_proposal({ replace: true }).`] });
+      }
+      await ctx.ctrl.refreshGit();
+      if (a.show === true) {
+        ctx.ctrl.applyPreset('proposal', { quiet: true });
+        ctx.store.dispatch({ type: 'setRawMode', on: false });
+        ctx.store.dispatch({ type: 'setView', view: 'impact' });
+      }
+      return { data: { tag: res.tag, commit: res.commit, replaced: res.replaced, branch: g.headBranch, baseBranch: base }, toast: `${res.replaced ? 'Moved' : 'Marked'} proposal ${proposalTag(g.headBranch)} at ${shortSha(res.commit)}` };
+    },
+  });
+
+  tools.push({
+    kind: 'nav',
+    tool: {
+      name: 'view_changes',
+      title: 'Show a product-owner change view',
+      description:
+        "One of the three views of a feature branch, as the person sees them: 'proposal' = baseline -> proposal (what was proposed), 'vs-proposal' = proposal -> latest (how the actual work differs from the proposal), 'actual' = baseline -> latest (everything that changed on the branch). Baseline is where the branch left main/master (git merge-base); latest is the working tree, or unsaved edits; the proposal is the tag set by mark_proposal. Returns the same result as compare. show: true opens the Impact view.",
+      inputSchema: S.obj({ view: S.oneOf(['proposal', 'vs-proposal', 'actual'], 'Which view.'), show: S.bool('Also open the Impact view.') }, ['view']),
+      annotations: ann(false),
+    },
+    async run(a, ctx) {
+      requireContract(ctx);
+      needGit(ctx);
+      const preset = a.view as LifecyclePreset;
+      const why = ctx.ctrl.applyPreset(preset, { quiet: true });
+      if (why) throw new ToolError(why, { suggestions: preset === 'actual' ? ["compare({ base: '<branch>', target: 'working' })"] : ['Commit the proposed contract, then call mark_proposal.'] });
+      ctx.store.dispatch({ type: 'setCompareResult', result: { status: 'loading' } });
+      await ctx.ctrl.recomputeCompare();
+      const r = await awaitCompare(ctx);
+      if (a.show === true) {
+        ctx.store.dispatch({ type: 'setRawMode', on: false });
+        ctx.store.dispatch({ type: 'setView', view: 'impact' });
+      }
+      if (r.status === 'error') throw new ToolError(r.message);
+      if (r.status === 'blocked') throw new ToolError('One side of this view is not a valid contract, so a semantic comparison is not possible.', { suggestions: ['get_diagnostics, or compare the sides individually.'] });
+      return { data: { view: preset, label: PRESET_LABELS[preset], ...describeCompare(ctx, r) } };
     },
   });
 

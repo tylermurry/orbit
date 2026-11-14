@@ -1,13 +1,24 @@
-import type { FileSnapshot, FileStat, GitContext, GitFileAtRevision, GitRef, OrbitHost, WriteResult } from './types';
+import { proposalTag } from './types';
+import type { FileSnapshot, FileStat, GitContext, GitFileAtRevision, GitRef, OrbitHost, RunOutcome, WriteResult } from './types';
 
 /** Seed describing a fake git repository (read-only from Orbit's perspective). */
 export interface MemoryGitSeed {
   repoRoot: string;
   /** Full 40-hex sha -> commit. `files` is keyed by repo-relative path. */
-  commits: Record<string, { subject: string; date: string; files: Record<string, string> }>;
+  /** `parents` (optional) enables merge-base; a commit without parents is a root. */
+  commits: Record<string, { subject: string; date: string; files: Record<string, string>; parents?: string[] }>;
   refs: { name: string; kind: 'branch' | 'tag'; commit: string }[];
   head: { branch?: string; commit?: string };
   shallow?: boolean;
+}
+
+/** What a fake validation command does: its output and exit code, the files it writes, and how long it takes. */
+export interface MemoryCommand {
+  exitCode: number;
+  output?: string;
+  /** Absolute path -> text, written when the command finishes. */
+  writes?: Record<string, string>;
+  delayMs?: number;
 }
 
 export interface MemorySeed {
@@ -20,6 +31,8 @@ export interface MemorySeed {
   git?: MemoryGitSeed | null;
   /** When git is absent, which reason to report. */
   gitUnavailable?: 'git-missing' | 'not-a-repo';
+  /** Fake validation commands by exact command text; any other command fails to start. */
+  commands?: Record<string, MemoryCommand>;
   /** Poll interval override for external-change detection (tests). */
   pollMs?: number;
 }
@@ -32,10 +45,14 @@ export interface OrbitTestApi {
   fileList(): string[];
   /** Every successful writeFileAtomic call, in order. */
   writes: { path: string; text: string }[];
+  /** Every path passed to openInEditor, in order. */
+  openedInEditor: string[];
+  /** Every command run, with its folder, in order. */
+  ranCommands: { cwd: string; command: string }[];
   queueOpenPick(path: string | null): void;
   queueSavePick(path: string | null): void;
   setGit(git: MemoryGitSeed | null): void;
-  addCommit(sha: string, commit: { subject: string; date: string; files: Record<string, string> }, branch?: string): void;
+  addCommit(sha: string, commit: { subject: string; date: string; files: Record<string, string>; parents?: string[] }, branch?: string): void;
 }
 
 declare global {
@@ -64,6 +81,9 @@ export function createMemoryHost(seed: MemorySeed): MemoryHost {
   const openPicks = [...(seed.openPicks ?? [])];
   const savePicks = [...(seed.savePicks ?? [])];
   const writes: { path: string; text: string }[] = [];
+  const openedInEditor: string[] = [];
+  const ranCommands: { cwd: string; command: string }[] = [];
+  const cancels = new Map<string, () => void>();
 
   const headCommit = () => git?.head.commit ?? (git?.head.branch ? git.refs.find((r) => r.name === git!.head.branch)?.commit : undefined);
 
@@ -95,6 +115,8 @@ export function createMemoryHost(seed: MemorySeed): MemoryHost {
     kind: 'memory',
     pollMs: seed.pollMs ?? 2000,
     writes,
+    openedInEditor,
+    ranCommands,
 
     async pickOpenFile() {
       return openPicks.length ? (openPicks.shift() ?? null) : null;
@@ -120,6 +142,9 @@ export function createMemoryHost(seed: MemorySeed): MemoryHost {
       writes.push({ path, text });
       const st = await api.statFile(path);
       return { ok: true, sha256: st.sha256!, modifiedMs: st.modifiedMs! };
+    },
+    async openInEditor(path) {
+      openedInEditor.push(path);
     },
     async initialFile() {
       return seed.initialFile ?? null;
@@ -164,6 +189,65 @@ export function createMemoryHost(seed: MemorySeed): MemoryHost {
       const sha = resolveRev(rev);
       const text = git!.commits[sha]?.files[relPath];
       return text === undefined ? { commit: sha, exists: false } : { commit: sha, exists: true, text };
+    },
+
+    async runCommand(cwd, command, runId, onOutput): Promise<RunOutcome> {
+      const c = seed.commands?.[command];
+      if (!c) throw new Error(`Could not start the test command: '${command}' was not found.`);
+      ranCommands.push({ cwd, command });
+      const started = Date.now();
+      const cancelled = await new Promise<boolean>((resolve) => {
+        const t = setTimeout(() => {
+          cancels.delete(runId);
+          resolve(false);
+        }, c.delayMs ?? 0);
+        cancels.set(runId, () => {
+          clearTimeout(t);
+          resolve(true);
+        });
+      });
+      if (cancelled) return { exitCode: null, cancelled: true, durationMs: Date.now() - started, output: '' };
+      if (c.output) onOutput(c.output);
+      for (const [p, text] of Object.entries(c.writes ?? {})) touch(p, text);
+      return { exitCode: c.exitCode, cancelled: false, durationMs: Date.now() - started, output: c.output ?? '' };
+    },
+    async cancelCommand(runId) {
+      const f = cancels.get(runId);
+      cancels.delete(runId);
+      f?.();
+      return !!f;
+    },
+    async gitMergeBase(_root, a, b) {
+      const ca = resolveRev(a);
+      const cb = resolveRev(b);
+      const ancestors = new Set<string>();
+      const walk = [ca];
+      while (walk.length) {
+        const c = walk.shift()!;
+        if (ancestors.has(c)) continue;
+        ancestors.add(c);
+        walk.push(...(git!.commits[c]?.parents ?? []));
+      }
+      const seen = new Set<string>();
+      const q = [cb];
+      while (q.length) {
+        const c = q.shift()!;
+        if (seen.has(c)) continue;
+        seen.add(c);
+        if (ancestors.has(c)) return c;
+        q.push(...(git!.commits[c]?.parents ?? []));
+      }
+      return null;
+    },
+    async gitTagProposal(_root, branch, replace) {
+      if (!git) throw new Error('Not a git repository.');
+      const commit = resolveRev('HEAD');
+      const tag = proposalTag(branch);
+      const existing = git.refs.find((r) => r.kind === 'tag' && r.name === tag);
+      if (existing && !replace) throw new Error(`Tag '${tag}' already exists (at ${existing.commit.slice(0, 7)}). Pass replace: true to move it to HEAD.`);
+      if (existing) existing.commit = commit;
+      else git.refs.push({ name: tag, kind: 'tag', commit });
+      return { tag, commit, replaced: !!existing };
     },
 
     // ── test helpers ──

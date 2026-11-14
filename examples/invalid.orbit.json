@@ -81,8 +81,5 @@
   "tests": [
     { "id": "test.tasks.create", "name": "Create task", "location": "tests/tasks.spec.ts#create" }
   ],
-  "evidence": [
-    { "id": "run.1", "testId": "test.tasks.create", "status": "passed", "executedAt": "yesterday afternoon", "commit": "abc123" },
-    { "id": "run.2", "testId": "test.tasks.unknown", "status": "passed", "executedAt": "2026-11-13T18:00:00Z" }
-  ]
+  "validation": { "command": "npm test", "results": " " }
 }

@@ -48,7 +48,6 @@ const COLLECTION_LABEL: Record<string, string> = {
   entities: 'Entity',
   relationships: 'Relationship',
   tests: 'Test',
-  evidence: 'Evidence',
 };
 
 /** Describe the object that owns the value at `segments` (nearest identifiable ancestor), e.g. "Entity 'cap.x'". */
@@ -186,7 +185,7 @@ function analyzeSemantics(c: OrbitContract): SemanticResult {
       drop.add(`/entities/${i}`);
     } else firstEntity.set(e.id, i);
   });
-  const dupSimple = (label: string, coll: 'relationships' | 'tests' | 'evidence', items: { id: string }[]) => {
+  const dupSimple = (label: string, coll: 'relationships' | 'tests', items: { id: string }[]) => {
     const seen = new Map<string, number>();
     items.forEach((it, i) => {
       if (seen.has(it.id)) {
@@ -197,7 +196,6 @@ function analyzeSemantics(c: OrbitContract): SemanticResult {
   };
   dupSimple('relationship', 'relationships', c.relationships);
   dupSimple('test', 'tests', c.tests);
-  dupSimple('evidence', 'evidence', c.evidence);
 
   const firstBehavior = new Map<string, { owner: string; path: string }>();
   c.entities.forEach((e, i) => {
@@ -268,7 +266,7 @@ function analyzeSemantics(c: OrbitContract): SemanticResult {
     if (bad) drop.add(base);
   });
 
-  // Tests & evidence -------------------------------------------------------
+  // Tests ------------------------------------------------------------------
   const testIds = new Set(c.tests.map((t) => t.id));
   c.entities.forEach((e, i) => {
     e.behaviors.forEach((b, j) => {
@@ -285,12 +283,6 @@ function analyzeSemantics(c: OrbitContract): SemanticResult {
       });
     });
   });
-  c.evidence.forEach((ev, i) => {
-    if (!testIds.has(ev.testId)) {
-      err('ref.evidence.test', `Evidence '${ev.id}' references test '${ev.testId}' which is not defined in tests. Add the test definition or remove the evidence.`, `/evidence/${i}/testId`, [ev.id, ev.testId]);
-    }
-  });
-
   return { diagnostics, drop };
 }
 
@@ -301,7 +293,7 @@ export function validateSemantics(contract: OrbitContract): Diagnostic[] {
 
 // ───────────────────────── Pipeline shared by parseContract / validateContract ─────────────────────────
 
-const ARRAYS = ['entities', 'relationships', 'tests', 'evidence'] as const;
+const ARRAYS = ['entities', 'relationships', 'tests'] as const;
 
 interface Analysis {
   diagnostics: Diagnostic[];
@@ -311,6 +303,12 @@ interface Analysis {
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+/** The validation block when it is usable for display; omitted otherwise. */
+function validationOf(v: unknown): { validation: OrbitContract['validation'] } | null {
+  if (!isObj(v) || typeof v.command !== 'string' || typeof v.results !== 'string' || !v.command.trim() || !v.results.trim()) return null;
+  return { validation: { command: v.command, results: v.results } };
 }
 
 /** Schema + semantic validation with a display contract that keeps original array indices in diagnostics. */
@@ -343,7 +341,7 @@ function analyze(value: unknown): Analysis {
   let dropped = hardKeys.size;
   const entityOrig: number[] = [];
   const behaviorOrig: number[][] = [];
-  const orig: Record<'relationships' | 'tests' | 'evidence', number[]> = { relationships: [], tests: [], evidence: [] };
+  const orig: Record<'relationships' | 'tests', number[]> = { relationships: [], tests: [] };
   const keep = <T>(coll: string, items: unknown[], origOut: number[]): T[] => {
     const out: T[] = [];
     items.forEach((it, i) => {
@@ -370,7 +368,7 @@ function analyze(value: unknown): Analysis {
     entities,
     relationships: keep('relationships', root.relationships as unknown[], orig.relationships),
     tests: keep('tests', root.tests as unknown[], orig.tests),
-    evidence: keep('evidence', root.evidence as unknown[], orig.evidence),
+    ...(validationOf(root.validation) ?? {}),
   };
 
   // Stage 2: semantic checks, remapped to original indices.
@@ -380,7 +378,7 @@ function analyze(value: unknown): Analysis {
       const ei = Number(s[1]);
       s[1] = String(entityOrig[ei]);
       if (s[2] === 'behaviors' && s[3] !== undefined) s[3] = String(behaviorOrig[ei]![Number(s[3])]);
-    } else if (s[0] === 'relationships' || s[0] === 'tests' || s[0] === 'evidence') {
+    } else if (s[0] === 'relationships' || s[0] === 'tests') {
       if (s[1] !== undefined) s[1] = String(orig[s[0]][Number(s[1])]);
     }
     return toPointer(s);
@@ -399,7 +397,6 @@ function analyze(value: unknown): Analysis {
       .map(({ e, i }) => ({ ...e, behaviors: e.behaviors.filter((_, j) => !gone(`/entities/${i}/behaviors/${j}`)) })),
     relationships: stage1.relationships.filter((_, i) => !gone(`/relationships/${i}`)),
     tests: stage1.tests.filter((_, i) => !gone(`/tests/${i}`)),
-    evidence: stage1.evidence.filter((_, i) => !gone(`/evidence/${i}`)),
   };
   // Behaviors of a dropped duplicate entity vanish with it; count only what was explicitly dropped above.
   return { diagnostics, contract, partial: dropped > 0 };
@@ -535,8 +532,8 @@ export function serializeContract(c: OrbitContract): string {
       behaviors: e.behaviors.map((b) => ({ id: b.id, name: b.name, expected: b.expected, testIds: [...b.testIds] })),
     })),
     relationships: c.relationships.map((r) => omitUndefined({ id: r.id, type: r.type, sourceId: r.sourceId, targetId: r.targetId, description: r.description })),
-    tests: c.tests.map((t) => ({ id: t.id, name: t.name, location: t.location })),
-    evidence: c.evidence.map((ev) => omitUndefined({ id: ev.id, testId: ev.testId, status: ev.status, executedAt: ev.executedAt, commit: ev.commit, details: ev.details })),
+    tests: c.tests.map((t) => omitUndefined({ id: t.id, name: t.name, location: t.location, placeholder: t.placeholder })),
+    ...(c.validation ? { validation: { command: c.validation.command, results: c.validation.results } } : {}),
   };
   return JSON.stringify(canonical, null, 2) + '\n';
 }
@@ -548,6 +545,5 @@ export function createEmptyContract(product: { id: string; name: string; summary
     entities: [],
     relationships: [],
     tests: [],
-    evidence: [],
   };
 }

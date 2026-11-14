@@ -780,6 +780,5 @@
       "name": "End-to-end (planned): overdue tasks stay in Today until resolved",
       "location": "apps/tasky/tests/e2e/views.spec.ts › Today keeps overdue tasks until they are completed or rescheduled"
     }
-  ],
-  "evidence": []
+  ]
 }

@@ -12,7 +12,10 @@ const NOW = new Date('2026-11-14T10:00:00.456Z');
 
 async function boot(opts: { git?: boolean; text?: string; open?: boolean } = {}) {
   const { host, store, ctrl } = setup(opts.git ? { git: gitSeed() } : {}, opts.text ?? TASKY);
-  if (opts.open !== false) await ctrl.openPath(FILE);
+  if (opts.open !== false) {
+    await ctrl.openPath(FILE);
+    await ctrl.pollResults(true); // the app's background loop does this on open
+  }
   const rt = createToolRuntime({ store, ctrl, host, now: () => NOW });
   const call = async (name: string, args: Record<string, unknown> = {}) => {
     const r = await rt.callTool(name, args);
@@ -30,6 +33,12 @@ async function boot(opts: { git?: boolean; text?: string; open?: boolean } = {})
   };
   const toasts = () => store.getState().toasts.map((t) => t.message);
   return { host, store, ctrl, rt, call, ok, fail, toasts, contract: () => store.getState().contract! };
+}
+
+/** Pretend a test run wrote results for these tests (matched by their [test.id] tag). */
+function results(store: Awaited<ReturnType<typeof boot>>['store'], byId: Record<string, 'passed' | 'failed' | 'skipped'>, at = '2026-11-14T12:00:00.000Z') {
+  const cases = Object.entries(byId).map(([id, status]) => ({ file: 'x.test.ts', name: `case [${id}]`, status }));
+  store.dispatch({ type: 'setResultsFile', file: { path: '/work/repo/apps/tasky/test-results/junit.xml', state: 'ok', at, cases } });
 }
 
 const ENTITY = 'cap.task-organization.custom-lists';
@@ -55,7 +64,7 @@ describe('tool registry', () => {
       expect(t.annotations.openWorldHint).toBe(false);
       if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint).toBe(false);
     }
-    for (const n of ['get_status', 'get_contract', 'list_entities', 'get_entity', 'search', 'get_assurance', 'list_tests', 'list_evidence', 'get_diagnostics', 'open_file', 'create_contract', 'save_file', 'save_file_as', 'reload_from_disk', 'review_external_changes', 'list_recent_files', 'update_product', 'create_entity', 'update_entity', 'delete_entity', 'create_behavior', 'update_behavior', 'delete_behavior', 'map_tests', 'unmap_tests', 'create_test', 'update_test', 'delete_test', 'create_evidence', 'update_evidence', 'delete_evidence', 'create_relationship', 'update_relationship', 'delete_relationship', 'undo', 'redo', 'get_raw_json', 'set_raw_json', 'apply_edits', 'navigate', 'set_evidence_context', 'list_git_refs', 'compare', 'get_change', 'get_impact', 'clear_comparison']) {
+    for (const n of ['get_status', 'get_contract', 'list_entities', 'get_entity', 'search', 'get_assurance', 'list_tests', 'get_diagnostics', 'open_file', 'create_contract', 'save_file', 'save_file_as', 'reload_from_disk', 'review_external_changes', 'list_recent_files', 'update_product', 'create_entity', 'update_entity', 'delete_entity', 'create_behavior', 'update_behavior', 'delete_behavior', 'map_tests', 'unmap_tests', 'create_test', 'update_test', 'delete_test', 'set_validation', 'run_tests', 'create_relationship', 'update_relationship', 'delete_relationship', 'undo', 'redo', 'get_raw_json', 'set_raw_json', 'apply_edits', 'navigate', 'list_git_refs', 'compare', 'get_change', 'get_impact', 'clear_comparison']) {
       expect(names.has(n), n).toBe(true);
     }
   });
@@ -96,8 +105,8 @@ describe('reading', () => {
     expect(d.git).toMatchObject({ available: true, branch: 'main', headCommit: SHA1 });
     expect(d.refsCount).toBeGreaterThan(0);
     expect(d.comparison).toBeNull();
-    expect(d.evidenceContext).toMatchObject({ kind: 'none', inspectedCommit: null });
-    expect(d.counts).toMatchObject({ capabilities: 9, systems: 6, tests: 44, evidence: 44 });
+    expect(d.testResults).toMatchObject({ configured: true, command: 'npm run validate -w @orbit/tasky', state: 'missing', lastRunAt: null, running: false });
+    expect(d.counts).toMatchObject({ capabilities: 9, systems: 6, tests: 44, placeholderTests: 0 });
     expect(d.externalChange).toBeNull();
   });
 
@@ -146,9 +155,9 @@ describe('reading', () => {
     expect(d.ancestors.map((a: any) => a.id)).toEqual(['cap.task-discovery']);
     expect(d.entity.name).toBe('Today and Overdue');
     const b = d.behaviors.find((x: any) => x.id === BEHAVIOR);
-    expect(b.status).toBe('no-current-evidence');
-    expect(b.tests[0]).toMatchObject({ id: 'test.tasky.views.today-overdue', defined: true, freshness: 'unknown' });
-    expect(b.tests[0].history.length).toBeGreaterThan(0);
+    expect(b.status).toBe('unconfirmed'); // no test results yet
+    expect(b.tests[0]).toMatchObject({ id: 'test.tasky.views.today-overdue', defined: true, status: 'unconfirmed' });
+    expect(b.tests[0].lastResult).toBeUndefined();
     expect(d.subtreeAssurance.behaviorIds.all).toHaveLength(4);
     expect(d.relationships.outgoing.map((r: any) => r.type).sort()).toEqual(['dependsOn', 'implementedBy', 'uses']);
     expect(d.relationships.outgoing[0].other.name).toBeTruthy();
@@ -172,34 +181,37 @@ describe('reading', () => {
     expect((await ok('search', { query: 'zzzzzz' })).totals).toEqual({ entities: 0, behaviors: 0, tests: 0 });
   });
 
-  it('get_assurance for an entity and for the product, tracking the evidence context', async () => {
-    const { ok } = await boot({ git: true });
+  it('get_assurance for an entity and for the product, from the latest test results', async () => {
+    const { ok, store } = await boot({ git: true });
+    const p0 = await ok('get_assurance');
+    expect(p0.scope).toBe('product');
+    expect(p0.passing).toBe(0);
+    expect(p0.testResults.state).toBe('missing');
+    results(store, { 'test.tasky.views.today-overdue': 'passed' });
     const p = await ok('get_assurance');
-    expect(p.scope).toBe('product');
-    expect(p.passingCurrent).toBe(0);
-    expect(p.note).toMatch(/No inspected commit/);
+    expect(p.passing).toBeGreaterThan(0);
+    expect(p.passing + p.failing + p.unconfirmed).toBe(p.withTests);
     expect(p.total).toBe(p.behaviors.length);
     expect(p.topLevel.length).toBeGreaterThan(0);
     const e = await ok('get_assurance', { entityId: 'cap.task-discovery.today-overdue' });
     expect(e).toMatchObject({ scope: 'cap.task-discovery.today-overdue', total: 4, untested: 1 });
   });
 
-  it('list_tests and list_evidence support filters and freshness', async () => {
+  it('list_tests reports status from the results file and filters by it', async () => {
     const { ok, store } = await boot();
     const t = await ok('list_tests');
     expect(t.total).toBe(44);
     const row = t.tests.find((x: any) => x.id === 'test.tasky.views.today-overdue');
     expect(row.mappedBehaviors.map((b: any) => b.behaviorId)).toContain(BEHAVIOR);
-    expect(row.evidenceCount).toBeGreaterThan(0);
+    expect(row.status).toBe('unconfirmed');
     const un = await ok('list_tests', { unmapped: true });
     expect(un.tests.every((x: any) => x.mappedBehaviors.length === 0)).toBe(true);
     expect((await ok('list_tests', { query: 'rollover' })).tests.length).toBeGreaterThan(0);
-    const ev = await ok('list_evidence', { testId: 'test.tasky.views.today-overdue' });
-    expect(ev.evidence.every((e: any) => e.testId === 'test.tasky.views.today-overdue')).toBe(true);
-    expect(ev.evidence[0].freshness).toBe('unknown');
-    expect((await ok('list_evidence', { freshness: 'current' })).total).toBe(0);
-    expect((await ok('list_evidence', { status: 'failed' })).evidence.every((e: any) => e.status === 'failed')).toBe(true);
-    expect(store.getState().contract).toBeTruthy();
+    results(store, { 'test.tasky.views.today-overdue': 'passed', 'test.tasky.local-date.rollover': 'failed' });
+    const failing = await ok('list_tests', { status: 'failing' });
+    expect(failing.tests.map((x: any) => x.id)).toEqual(['test.tasky.local-date.rollover']);
+    expect(failing.tests[0].lastResult).toMatchObject({ status: 'failed' });
+    expect((await ok('list_tests', { status: 'passing' })).total).toBe(1);
   });
 
   it('get_diagnostics reports the text the user sees', async () => {
@@ -334,7 +346,7 @@ describe('editing behaviors and tests', () => {
     expect(contract().entities.flatMap((e) => e.behaviors).find((b) => b.id === 'behavior.today.timezone-change')!.testIds).toEqual([]);
   });
 
-  it('create/update/delete test; delete unmaps and removes evidence and reports implications', async () => {
+  it('create/update/delete test; delete unmaps and reports implications', async () => {
     const { ok, fail, contract } = await boot();
     const t = await ok('create_test', { name: 'Lists e2e', location: 'tests/lists.spec.ts' });
     expect(t.test.id).toBe('test.lists-e2e');
@@ -345,35 +357,25 @@ describe('editing behaviors and tests', () => {
     const dry = await ok('delete_test', { id, dryRun: true });
     expect(dry.implications.length).toBeGreaterThan(0);
     const del = await ok('delete_test', { id });
-    expect(del.removedEvidence.length).toBeGreaterThan(0);
+    expect(del.implications.length).toBeGreaterThan(0);
     expect(contract().tests.some((x) => x.id === id)).toBe(false);
-    expect(contract().evidence.some((e) => e.testId === id)).toBe(false);
     expect(contract().entities.flatMap((e) => e.behaviors).some((b) => b.testIds.includes(id))).toBe(false);
     expect((await fail('update_test', { id: 'nope', name: 'x' })).error).toMatch(/not found/);
   });
 });
 
-describe('editing evidence and relationships', () => {
-  it('create_evidence resolves HEAD, defaults the timestamp and validates fields', async () => {
-    const { ok, fail, contract } = await boot({ git: true });
-    const e = await ok('create_evidence', { testId: 'test.tasky.views.today-overdue', status: 'passed', commit: 'HEAD', details: 'ran in CI' });
-    expect(e.evidence).toMatchObject({ status: 'passed', commit: SHA1, executedAt: '2026-11-14T10:00:00Z', details: 'ran in CI' });
-    expect(e.evidence.id).toMatch(/^run\.tasky-views-today-overdue/);
-    expect((await fail('create_evidence', { testId: 'test.tasky.views.today-overdue', status: 'passed', commit: 'abc' })).error).toMatch(/40-character/);
-    expect((await fail('create_evidence', { testId: 'test.tasky.views.today-overdue', status: 'passed', executedAt: 'yesterday' })).error).toMatch(/RFC 3339/);
-    expect((await fail('create_evidence', { testId: 'test.nope', status: 'passed' })).error).toMatch(/not found/);
-    expect((await fail('create_evidence', { testId: 'test.tasky.views.today-overdue', status: 'great' })).error).toMatch(/must be one of/);
-    const upd = await ok('update_evidence', { id: e.evidence.id, status: 'failed', commit: null, details: null });
-    expect(upd.evidence.commit).toBeUndefined();
-    expect(contract().evidence.find((x) => x.id === e.evidence.id)).toMatchObject({ status: 'failed' });
-    await ok('delete_evidence', { id: e.evidence.id });
-    expect(contract().evidence.some((x) => x.id === e.evidence.id)).toBe(false);
-    expect((await fail('update_evidence', { id: 'run.nope', status: 'passed' })).error).toMatch(/not found/);
-  });
-
-  it('create_evidence HEAD fails without git', async () => {
-    const { fail } = await boot();
-    expect((await fail('create_evidence', { testId: 'test.tasky.views.today-overdue', status: 'passed', commit: 'HEAD' })).error).toMatch(/cannot be resolved/);
+describe('editing the test setup and relationships', () => {
+  it('set_validation sets, updates and removes how the suite runs', async () => {
+    const { ok, fail, contract } = await boot({ text: TASKY.replace(/,\n {2}"validation": \{[^}]*\}/, '') });
+    expect(contract().validation).toBeUndefined();
+    expect((await fail('set_validation', { results: 'r.xml' })).error).toMatch(/command and a results file/);
+    await ok('set_validation', { command: 'npm test', results: 'test-results/junit.xml' });
+    expect(contract().validation).toEqual({ command: 'npm test', results: 'test-results/junit.xml' });
+    await ok('set_validation', { results: 'out/junit.xml' });
+    expect(contract().validation).toEqual({ command: 'npm test', results: 'out/junit.xml' });
+    await ok('set_validation', { command: null });
+    expect(contract().validation).toBeUndefined();
+    expect((await fail('set_validation', { command: null })).error).toMatch(/No validation setup/);
   });
 
   it('relationships: create, refuse self-edges, no-op on duplicates, update and delete', async () => {
@@ -643,7 +645,7 @@ describe('files', () => {
   });
 });
 
-describe('navigation, comparison and evidence context', () => {
+describe('navigation and comparison', () => {
   it('navigate selects entities (expanding ancestors), switches views and opens panels', async () => {
     const { ok, fail, store } = await boot();
     const d = await ok('navigate', { entityId: 'cap.task-discovery.today-overdue', behaviorId: BEHAVIOR });
@@ -659,10 +661,6 @@ describe('navigation, comparison and evidence context', () => {
     expect((await fail('navigate', { entityId: 'sys.local-date', view: 'product' })).error).toMatch(/engineering view/);
     expect((await fail('navigate', { entityId: 'cap.task-management', behaviorId: BEHAVIOR })).error).toMatch(/belongs to/);
     expect((await fail('navigate', { entityId: 'cap.zzz' })).error).toMatch(/not found/);
-    await ok('navigate', { openLibrary: 'evidence', testId: 'test.tasky.views.today-overdue' });
-    expect(store.getState()).toMatchObject({ libraryOpen: true, libraryTab: 'evidence', libraryFocusTest: 'test.tasky.views.today-overdue' });
-    await ok('navigate', { openLibrary: 'none', openDiagnostics: true });
-    expect(store.getState()).toMatchObject({ libraryOpen: false, diagnosticsOpen: true });
     await ok('navigate', { openRaw: true });
     expect(store.getState().rawMode).toBe(true);
     await ok('navigate', { view: 'engineering' });
@@ -688,13 +686,13 @@ describe('navigation, comparison and evidence context', () => {
   it('compare main → impl returns totals, direct changes, potential impact and drives the UI state', async () => {
     const { ok, fail, store } = await boot({ git: true, text: DEMO_IMPL });
     const d = await ok('compare', { base: 'main', target: 'impl' });
-    expect(d.totalChanges).toBe(17);
+    expect(d.totalChanges).toBe(9);
     expect(d.directlyChanged).toHaveLength(3);
     expect(d.potentiallyAffected).toHaveLength(3);
     expect(d.potentiallyAffected[0].via).toMatch(/→|depends on|uses|is implemented by/);
     expect(d.totals.behavior).toEqual({ added: 1, modified: 4, removed: 0 });
-    expect(d.totals.evidence.added).toBe(8);
-    expect(d.guaranteeChanges + d.verificationChanges).toBe(17);
+    expect(d.totals).not.toHaveProperty('evidence');
+    expect(d.guaranteeChanges + d.verificationChanges).toBe(9);
     expect(d.changes[0]).toEqual(expect.objectContaining({ key: expect.any(String), category: expect.any(String), kind: expect.any(String), label: expect.any(String), group: expect.stringMatching(/guarantee|verification/) }));
     expect(store.getState().compare).toEqual({ base: { type: 'ref', name: 'main' }, target: { type: 'ref', name: 'impl' } });
     expect(store.getState().compareResult?.status).toBe('ready');
@@ -751,29 +749,33 @@ describe('navigation, comparison and evidence context', () => {
     expect((await fail('get_impact', { entityIds: ['sys.local-dat'] })).suggestions).toContain('sys.local-date');
   });
 
-  it('set_evidence_context changes freshness and assurance', async () => {
-    const { ok, fail, store, toasts } = await boot({ git: true });
-    const tid = 'test.tasky.views.today-overdue';
-    await ok('create_evidence', { testId: tid, status: 'passed', commit: 'HEAD' });
-    const before = await ok('get_entity', { id: 'cap.task-discovery.today-overdue' });
-    expect(before.behaviors.find((b: any) => b.id === BEHAVIOR).status).toBe('no-current-evidence');
-    const head = await ok('set_evidence_context', { mode: 'head' });
-    expect(head.inspectedCommit).toBe(SHA1);
-    expect(toasts().some((t) => t.startsWith('AI · Inspecting evidence'))).toBe(true);
-    const after = await ok('get_entity', { id: 'cap.task-discovery.today-overdue' });
-    const b = after.behaviors.find((x: any) => x.id === BEHAVIOR);
+  it('test results drive behavior status; results from before the proposal are unconfirmed', async () => {
+    const { ok, store } = await boot({ git: true });
+    const status = async () => (await ok('get_entity', { id: 'cap.task-discovery.today-overdue' })).behaviors.find((x: any) => x.id === BEHAVIOR);
+    expect((await status()).status).toBe('unconfirmed');
+    results(store, { 'test.tasky.views.today-overdue': 'passed' }, '2026-11-14T12:00:00.000Z');
+    const b = await status();
     expect(b.status).toBe('passing');
-    expect(b.tests[0].freshness).toBe('current');
-    expect(after.subtreeAssurance.passingCurrent).toBeGreaterThanOrEqual(2);
-    expect((await ok('list_evidence', { freshness: 'current' })).total).toBe(1);
-    const stale = await ok('set_evidence_context', { mode: 'rev', rev: 'impl' });
-    expect(stale.inspectedCommit).toBe(SHA2);
-    expect((await ok('get_entity', { id: 'cap.task-discovery.today-overdue' })).behaviors.find((x: any) => x.id === BEHAVIOR).tests[0].freshness).toBe('stale');
-    expect((await fail('set_evidence_context', { mode: 'rev', rev: 'nope' })).error).toMatch(/Cannot resolve revision/);
-    expect((await fail('set_evidence_context', { mode: 'rev' })).error).toMatch(/requires rev/);
-    await ok('set_evidence_context', { mode: 'none' });
-    expect(store.getState().evidenceCtx).toEqual({ kind: 'none' });
-    const nogit = await boot();
-    expect((await nogit.fail('set_evidence_context', { mode: 'head' })).error).toMatch(/Git is not available/);
+    expect(b.tests[0]).toMatchObject({ status: 'passing', lastResult: { status: 'passed', at: '2026-11-14T12:00:00.000Z' } });
+    // a proposal committed after that run makes the result unconfirmed until the tests run again
+    const s = store.getState();
+    store.dispatch({ type: 'setGit', git: s.git, refs: [...s.refs, { name: 'orbit/proposal/main', kind: 'tag', commit: SHA1, subject: 'proposal', date: '2026-11-14T13:00:00Z' }] });
+    expect((await status()).status).toBe('unconfirmed');
+    expect((await ok('get_status')).testResults.proposalTime).toBe('2026-11-14T13:00:00Z');
+    results(store, { 'test.tasky.views.today-overdue': 'failed' }, '2026-11-14T14:00:00.000Z');
+    expect((await status()).status).toBe('failing');
+  });
+});
+
+describe('placeholder tests', () => {
+  it('create_test with placeholder, list_tests reports it, update_test clears it', async () => {
+    const { ok } = await boot();
+    const t = await ok('create_test', { name: 'Overdue tasks stay in Today', location: 'tests/e2e/today.spec.ts › overdue stays', placeholder: true });
+    expect(t.test).toMatchObject({ placeholder: true });
+    const listed = await ok('list_tests', { query: 'overdue stays' });
+    expect(listed.tests[0]).toMatchObject({ id: t.test.id, placeholder: true });
+    const u = await ok('update_test', { id: t.test.id, placeholder: false });
+    expect(u.test.placeholder).toBeUndefined();
+    expect((await ok('list_tests', { query: 'overdue stays' })).tests[0].placeholder).toBe(false);
   });
 });

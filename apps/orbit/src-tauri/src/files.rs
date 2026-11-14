@@ -276,3 +276,21 @@ pub fn initial_file_from(args: &[String], env_file: Option<String>) -> Option<St
 pub fn strip_verbatim(s: &str) -> String {
     s.strip_prefix(r"\\?\").unwrap_or(s).to_string()
 }
+
+/// Open an existing file in the default editor (currently JetBrains WebStorm). Arguments are passed directly to the
+/// process (never through a shell), and only existing regular files are accepted.
+pub fn open_in_editor(path: &str) -> Result<(), String> {
+    let p = Path::new(path);
+    if !p.is_file() {
+        return Err(format!("Cannot open {path}: the file does not exist."));
+    }
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").args(["-a", "WebStorm", path]).status();
+    #[cfg(not(target_os = "macos"))]
+    let status = std::process::Command::new("webstorm").arg(path).status();
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        Ok(_) => Err("Could not open the file in WebStorm. Is WebStorm installed?".to_string()),
+        Err(e) => Err(format!("Could not launch WebStorm: {e}")),
+    }
+}

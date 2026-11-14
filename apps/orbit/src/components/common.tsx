@@ -1,32 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AlertDialog, Badge, Button, Code, Dialog, Flex, IconButton, Text, TextArea, TextField, Tooltip } from '@radix-ui/themes';
-import {
-  CheckCircledIcon,
-  CheckIcon,
-  CircleIcon,
-  ClockIcon,
-  Cross2Icon,
-  CrossCircledIcon,
-  CopyIcon,
-  MinusCircledIcon,
-} from '@radix-ui/react-icons';
-import type { BehaviorStatus, Entity, EntityChangeStatus, EntityKind, EvidenceStatus, Freshness } from '@orbit/contract';
-import { EVIDENCE_LABEL, KIND_LABEL, STATUS_LABEL } from '../lib/model';
+import { CheckCircledIcon, CheckIcon, CircleIcon, Cross2Icon, CrossCircledIcon, CopyIcon, ExclamationTriangleIcon, MinusCircledIcon } from '@radix-ui/react-icons';
+import type { BehaviorStatus, Entity, EntityChangeStatus, EntityKind, TestResult, TestStatus } from '@orbit/contract';
+import { KIND_LABEL, STATUS_LABEL } from '../lib/model';
+import { relativeTime } from '../lib/format';
+import { wordDiff } from '../lib/format';
 import { useApp, useDispatch } from '../state/context';
 
 export function KindBadge({ kind }: { kind: EntityKind }) {
   return (
-    <Badge color={kind === 'capability' ? 'indigo' : 'cyan'} variant="soft" radius="small">
+    <Badge color={kind === 'capability' ? 'indigo' : 'cyan'} variant="soft" radius="full">
       {KIND_LABEL[kind]}
     </Badge>
   );
 }
 
-const STATUS_COLOR: Record<BehaviorStatus, 'red' | 'green' | 'amber' | 'gray'> = {
+const STATUS_COLOR: Record<BehaviorStatus, 'red' | 'green' | 'amber' | 'violet' | 'gray'> = {
   failing: 'red',
   passing: 'green',
-  'no-current-evidence': 'amber',
+  unconfirmed: 'amber',
+  planned: 'violet',
   untested: 'gray',
 };
 
@@ -37,7 +31,7 @@ export function StatusIcon({ status, size = 14 }: { status: BehaviorStatus; size
       return <CrossCircledIcon {...p} />;
     case 'passing':
       return <CheckCircledIcon {...p} />;
-    case 'no-current-evidence':
+    case 'unconfirmed':
       return <MinusCircledIcon {...p} />;
     default:
       return <CircleIcon {...p} />;
@@ -53,27 +47,48 @@ export function StatusPill({ status }: { status: BehaviorStatus }) {
   );
 }
 
-const EV_COLOR: Record<EvidenceStatus, 'green' | 'red' | 'gray' | 'orange'> = { passed: 'green', failed: 'red', skipped: 'gray', error: 'orange' };
+const TEST_BADGE: Record<TestStatus, { label: string; color: 'green' | 'red' | 'amber' | 'violet'; icon: ReactNode }> = {
+  passing: { label: 'Passing', color: 'green', icon: <CheckIcon aria-hidden /> },
+  failing: { label: 'Failing', color: 'red', icon: <Cross2Icon aria-hidden /> },
+  unconfirmed: { label: 'Unconfirmed', color: 'amber', icon: <MinusCircledIcon aria-hidden /> },
+  planned: { label: 'Planned', color: 'violet', icon: null },
+  undefined: { label: 'Undefined', color: 'amber', icon: <ExclamationTriangleIcon aria-hidden /> },
+};
 
-export function EvidenceStatusBadge({ status }: { status: EvidenceStatus }) {
-  const icon = status === 'passed' ? <CheckIcon aria-hidden /> : status === 'skipped' ? <MinusCircledIcon aria-hidden /> : <Cross2Icon aria-hidden />;
-  return (
-    <Badge color={EV_COLOR[status]} variant="soft" radius="full">
-      {icon}
-      {EVIDENCE_LABEL[status]}
-    </Badge>
-  );
+/** Why a test has its status, in plain words (shown on hover). */
+export function testStatusReason(status: TestStatus, result: TestResult | undefined, since: string | null): string {
+  const when = result ? relativeTime(result.at) : '';
+  switch (status) {
+    case 'passing':
+      return `Passed in the last test run (${when}).`;
+    case 'failing':
+      return `Failed in the last test run (${when})${result?.message ? `: ${result.message}` : '.'}`;
+    case 'planned':
+      return 'Placeholder: this test is planned but not written yet. It does not count as coverage.';
+    case 'undefined':
+      return 'This test id is not defined in the contract.';
+    case 'unconfirmed':
+      if (!result) return 'No result yet: this test was not found in the latest test results. Run Validate capabilities.';
+      if (result.status === 'skipped') return `Skipped in the last test run (${when}).`;
+      return since ? `The last result (${when}) is older than the proposal. Run Validate capabilities to confirm it.` : 'No current result.';
+  }
 }
 
-export function FreshnessBadge({ freshness }: { freshness: Freshness }) {
-  const label = freshness === 'current' ? 'Current' : freshness === 'stale' ? 'Potentially outdated' : 'Freshness unknown';
-  const color = freshness === 'current' ? 'green' : freshness === 'stale' ? 'amber' : 'gray';
-  return (
-    <Badge color={color} variant="outline" radius="full">
-      <ClockIcon aria-hidden />
-      {label}
+/** A test's status: Passing (green), Failing (red), Unconfirmed (yellow) or Planned (violet). */
+export function TestStatusBadge({ status, reason }: { status: TestStatus; reason?: string }) {
+  const b = TEST_BADGE[status];
+  const badge = (
+    <Badge color={b.color} variant="soft" radius="full" data-testid="test-status" data-test-status={status}>
+      {b.icon}
+      {b.label}
     </Badge>
   );
+  return reason ? <Tooltip content={reason}>{badge}</Tooltip> : badge;
+}
+
+/** Marks a placeholder test: planned by a proposal, not implemented yet. */
+export function PlannedBadge() {
+  return <TestStatusBadge status="planned" reason={testStatusReason('planned', undefined, null)} />;
 }
 
 export const CHANGE_INFO: Record<EntityChangeStatus, { symbol: string; letter: string; label: string; color: 'green' | 'amber' | 'red' | 'violet' | 'gray' }> = {
@@ -84,14 +99,24 @@ export const CHANGE_INFO: Record<EntityChangeStatus, { symbol: string; letter: s
   unchanged: { symbol: '', letter: '', label: 'Unchanged', color: 'gray' },
 };
 
-export function ChangeMarker({ status, long }: { status: EntityChangeStatus; long?: boolean }) {
+/** The one badge used everywhere for a change status; same shape and size as every other Badge in the app. */
+export function ChangePill({ status, long }: { status: EntityChangeStatus; long?: boolean }) {
   if (status === 'unchanged') return null;
   const i = CHANGE_INFO[status];
   return (
-    <Tooltip content={i.label}>
-      <span className={`marker marker-${status}`} role="img" aria-label={i.label} data-change={status}>
-        <span aria-hidden>{i.symbol}</span>
-        <span aria-hidden>{long ? i.label : i.letter}</span>
+    <Badge color={i.color === 'gray' ? 'gray' : i.color} variant="soft" radius="full" role="img" aria-label={i.label} data-change={status}>
+      <span aria-hidden>{i.symbol}</span>
+      <span aria-hidden>{long ? i.label : i.letter}</span>
+    </Badge>
+  );
+}
+
+export function ChangeMarker({ status, long }: { status: EntityChangeStatus; long?: boolean }) {
+  if (status === 'unchanged') return null;
+  return (
+    <Tooltip content={CHANGE_INFO[status].label}>
+      <span className="pill-wrap">
+        <ChangePill status={status} long={long} />
       </span>
     </Tooltip>
   );
@@ -103,13 +128,7 @@ export function Legend() {
     <Flex gap="3" wrap="wrap" align="center" aria-label="Legend" role="group">
       {items.map((s) => (
         <Flex key={s} gap="1" align="center">
-          <span className={`marker marker-${s}`}>
-            <span aria-hidden>{CHANGE_INFO[s].symbol}</span>
-            <span aria-hidden>{CHANGE_INFO[s].letter}</span>
-          </span>
-          <Text size="1" color="gray">
-            {CHANGE_INFO[s].label}
-          </Text>
+          <ChangePill status={s} long />
         </Flex>
       ))}
     </Flex>
@@ -317,3 +336,97 @@ export function Toasts() {
   );
 }
 
+
+/**
+ * A borderless, auto-growing text editor that reads like a plain document. Commits on blur
+ * (and on Enter when `singleLine`); Escape reverts.
+ */
+export function InlineText({ value, onCommit, label, placeholder, disabled, singleLine, validate, className, autoFocusSelect, onDone }: {
+  value: string;
+  onCommit: (v: string) => void;
+  label: string;
+  placeholder?: string;
+  disabled?: boolean;
+  singleLine?: boolean;
+  validate?: (v: string) => boolean;
+  className?: string;
+  /** Focus and select the text on mount (used for freshly created items). */
+  autoFocusSelect?: boolean;
+  /** Called when editing ends (blur, Enter or Escape). Escape discards the draft. */
+  onDone?: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const cancelled = useRef(false);
+  useEffect(() => {
+    if (autoFocusSelect) {
+      ref.current?.focus();
+      ref.current?.select();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => setDraft(value), [value]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft]);
+  const commit = () => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      setDraft(value);
+      return;
+    }
+    const v = singleLine ? draft.trim() : draft.replace(/\s+$/, '');
+    if (v === value) return setDraft(value);
+    if (validate && !validate(v)) return setDraft(value);
+    onCommit(v);
+  };
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      className={`inline-text ${className ?? ''}`}
+      aria-label={label}
+      placeholder={placeholder}
+      value={draft}
+      disabled={disabled}
+      spellCheck
+      onChange={(e) => setDraft(singleLine ? e.target.value.replace(/\n/g, ' ') : e.target.value)}
+      onBlur={() => {
+        commit();
+        onDone?.();
+      }}
+      onKeyDown={(e) => {
+        if (singleLine && e.key === 'Enter') {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          if (onDone) {
+            cancelled.current = true;
+            e.currentTarget.blur();
+          } else setDraft(value);
+        }
+      }}
+    />
+  );
+}
+
+/** One-line summary kept in sync with the description (the schema still requires a non-empty summary). */
+export function summaryFrom(description: string, fallback: string): string {
+  const first = description.split('\n').map((l) => l.trim()).find(Boolean);
+  return first ? (first.length > 200 ? `${first.slice(0, 197)}…` : first) : fallback;
+}
+
+/** Read-only word diff of a text field, deletions struck through and additions highlighted. */
+export function TextDiff({ before, after, label, className }: { before: string; after: string; label: string; className: string }) {
+  const parts = useMemo(() => wordDiff(before, after), [before, after]);
+  return (
+    <div className={`text-diff ${className}`} role="group" aria-label={label} data-testid="text-diff">
+      {parts.map((p, i) => (p.type === 'same' ? <span key={i}>{p.text}</span> : p.type === 'del' ? <del key={i}>{p.text}</del> : <ins key={i}>{p.text}</ins>))}
+    </div>
+  );
+}

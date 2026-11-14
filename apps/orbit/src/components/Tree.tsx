@@ -1,11 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Flex, ScrollArea, Text, TextField, Tooltip } from '@radix-ui/themes';
-import { CheckCircledIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CrossCircledIcon, MagnifyingGlassIcon, PlusIcon, Cross2Icon, ChatBubbleIcon } from '@radix-ui/react-icons';
-import type { AssuranceSummary, EntityDiffState, EntityKind } from '@orbit/contract';
+import { ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, PlusIcon, Cross2Icon, ChatBubbleIcon, DoubleArrowDownIcon, DoubleArrowUpIcon } from '@radix-ui/react-icons';
+import type { AssuranceSummary, EntityKind } from '@orbit/contract';
 import { KIND_PLURAL, searchTree } from '../lib/model';
-import type { SearchResult, TreeNode } from '../lib/model';
-import { plural } from '../lib/format';
-import { ChangeMarker, Legend } from './common';
+import type { DropPosition, SearchResult, TreeNode } from '../lib/model';
 
 interface Row {
   type: 'entity' | 'behavior';
@@ -36,20 +34,24 @@ function Highlight({ text, q }: { text: string; q: string }) {
   );
 }
 
-export function AssuranceChip({ summary, hasCommit }: { summary: AssuranceSummary | undefined; hasCommit: boolean }) {
+export function AssuranceChip({ summary }: { summary: AssuranceSummary | undefined }) {
   if (!summary || summary.total === 0) return null;
-  const good = hasCommit ? summary.passingCurrent : summary.withTests;
-  const kind = summary.failingCurrent > 0 ? 'failing' : hasCommit && summary.passingCurrent === summary.total ? 'passing' : 'gaps';
-  const icon = kind === 'failing' ? <CrossCircledIcon aria-hidden /> : kind === 'passing' ? <CheckCircledIcon aria-hidden /> : <CircleIcon aria-hidden />;
+  // Yellow: anything not confirmed either way (unconfirmed results, missing tests, tests only planned).
+  const gaps = summary.unconfirmed + summary.untested + summary.planned;
+  const parts = [
+    { kind: 'failing', n: summary.failing, text: 'failing' },
+    { kind: 'gaps', n: gaps, text: 'unconfirmed or missing tests' },
+    { kind: 'passing', n: summary.passing, text: 'passing' },
+  ].filter((x) => x.n > 0);
   const breakdown = [
     `${summary.total} behaviors`,
-    `${summary.withTests} with tests`,
-    hasCommit ? `${summary.passingCurrent} with passing evidence` : 'passing evidence unknown (no code revision selected)',
-    hasCommit ? `${summary.failingCurrent} failing` : null,
+    `${summary.passing} passing`,
+    `${summary.failing} failing`,
+    `${summary.unconfirmed} unconfirmed`,
+    summary.planned ? `${summary.planned} with only planned tests` : null,
     `${summary.untested} without tests`,
-    `${summary.noCurrentEvidence} mapped, no current evidence`,
   ].filter(Boolean) as string[];
-  const label = `${good} of ${summary.total} ${hasCommit ? 'have passing evidence' : 'have tests mapped'}${kind === 'failing' ? '; failing behaviors present' : ''}`;
+  const label = parts.map((x) => `${x.n} ${x.text}`).join(', ');
   return (
     <Tooltip
       content={
@@ -62,31 +64,31 @@ export function AssuranceChip({ summary, hasCommit }: { summary: AssuranceSummar
         </span>
       }
     >
-      <span className={`chip chip-${kind}`} role="img" aria-label={label} data-testid="assurance-chip">
-        {icon}
-        <span aria-hidden>
-          {good}/{summary.total}
-        </span>
+      <span className="status-chips" role="img" aria-label={label} data-testid="assurance-chip">
+        {parts.map((x) => (
+          <span key={x.kind} className={`chip chip-${x.kind}`} aria-hidden data-kind={x.kind}>
+            {x.n}
+          </span>
+        ))}
       </span>
     </Tooltip>
   );
 }
 
-export function Tree({ kind, roots, selectedId, onSelect, diffStates, assurance, hasCommit, readOnly, expanded, onExpandedChange, search, onSearch, onAdd, comparing }: {
+export function Tree({ kind, roots, selectedId, onSelect, assurance, readOnly, expanded, onExpandedChange, search, onSearch, onAdd, onMove, onNudge }: {
   kind: EntityKind;
   roots: TreeNode[];
   selectedId: string | null;
   onSelect: (entityId: string, behaviorId?: string) => void;
-  diffStates?: Record<string, EntityDiffState>;
   assurance: Map<string, AssuranceSummary>;
-  hasCommit: boolean;
   readOnly: boolean;
   expanded: Record<string, boolean>;
   onExpandedChange: (m: Record<string, boolean>) => void;
   search: string;
   onSearch: (q: string) => void;
   onAdd: () => void;
-  comparing: boolean;
+  onMove: (id: string, targetId: string, pos: DropPosition) => void;
+  onNudge: (id: string, dir: -1 | 1) => void;
 }) {
   const sr: SearchResult | null = useMemo(() => searchTree(roots, search), [roots, search]);
   const total = useMemo(() => {
@@ -144,6 +146,17 @@ export function Tree({ kind, roots, selectedId, onSelect, diffStates, assurance,
   }, []);
 
   const toggle = (id: string, value: boolean) => onExpandedChange({ ...expanded, [id]: value });
+  const parentIds = useMemo(() => {
+    const out: string[] = [];
+    const walk = (a: TreeNode[]) => a.forEach((x) => { if (x.children.length) out.push(x.entity.id); walk(x.children); });
+    walk(roots);
+    return out;
+  }, [roots]);
+  const setAll = (value: boolean) => onExpandedChange(Object.fromEntries(parentIds.map((id) => [id, value])));
+
+  const canDrag = !readOnly && !sr;
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [drop, setDrop] = useState<{ id: string; pos: DropPosition } | null>(null);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement) return;
@@ -151,7 +164,13 @@ export function Tree({ kind, roots, selectedId, onSelect, diffStates, assurance,
     const row = rows[idx];
     if (!row) return;
     const key = e.key;
-    if (key === 'ArrowDown') {
+    if (e.altKey && (key === 'ArrowUp' || key === 'ArrowDown')) {
+      e.preventDefault();
+      if (canDrag && row.type === 'entity') {
+        pendingFocus.current = true;
+        onNudge(row.entityId, key === 'ArrowUp' ? -1 : 1);
+      }
+    } else if (key === 'ArrowDown') {
       e.preventDefault();
       moveTo(rows[Math.min(rows.length - 1, idx + 1)]?.id);
     } else if (key === 'ArrowUp') {
@@ -186,8 +205,79 @@ export function Tree({ kind, roots, selectedId, onSelect, diffStates, assurance,
     }
   };
 
+  const pressRef = useRef<{ id: string; x: number; y: number; active: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const dropRef = useRef<{ id: string; pos: DropPosition } | null>(null);
+  const latest = useRef({ onMove, onExpandedChange, expanded, roots });
+  latest.current = { onMove, onExpandedChange, expanded, roots };
+
+  useEffect(() => {
+    const hit = (x: number, y: number, dragging: string) => {
+      const el = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('[role="treeitem"][data-entity-id]');
+      if (!el || el.classList.contains('behavior-row')) return null;
+      const id = el.dataset.entityId!;
+      // A node cannot be dropped on itself or inside its own subtree.
+      const find = (a: TreeNode[]): TreeNode | undefined => {
+        for (const n of a) {
+          if (n.entity.id === dragging) return n;
+          const f = find(n.children);
+          if (f) return f;
+        }
+      };
+      const sub = new Set<string>();
+      const walk = (n: TreeNode) => { sub.add(n.entity.id); n.children.forEach(walk); };
+      const me = find(latest.current.roots);
+      if (me) walk(me);
+      if (sub.has(id)) return null;
+      const box = el.getBoundingClientRect();
+      const f = (y - box.top) / box.height;
+      return { id, pos: (f < 0.35 ? 'before' : f > 0.65 ? 'after' : 'inside') as DropPosition };
+    };
+    const move = (e: PointerEvent) => {
+      const p = pressRef.current;
+      if (!p) return;
+      if (!p.active) {
+        if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < 5) return;
+        p.active = true;
+        setDragId(p.id);
+      }
+      const h = hit(e.clientX, e.clientY, p.id);
+      dropRef.current = h;
+      setDrop((cur) => (cur?.id === h?.id && cur?.pos === h?.pos ? cur : h));
+    };
+    const up = () => {
+      const p = pressRef.current;
+      pressRef.current = null;
+      if (!p?.active) return;
+      suppressClick.current = true;
+      setTimeout(() => (suppressClick.current = false), 0);
+      const d = dropRef.current;
+      dropRef.current = null;
+      setDragId(null);
+      setDrop(null);
+      if (d) {
+        latest.current.onMove(p.id, d.id, d.pos);
+        if (d.pos === 'inside') latest.current.onExpandedChange({ ...latest.current.expanded, [d.id]: true });
+      }
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !pressRef.current) return;
+      pressRef.current = null;
+      dropRef.current = null;
+      setDragId(null);
+      setDrop(null);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('keydown', key);
+    };
+  }, []);
+
   const noun = KIND_PLURAL[kind].toLowerCase();
-  const states = diffStates;
 
   return (
     <Flex direction="column" className="tree-pane-inner">
@@ -219,17 +309,26 @@ export function Tree({ kind, roots, selectedId, onSelect, diffStates, assurance,
             </TextField.Slot>
           )}
         </TextField.Root>
+        {parentIds.length > 0 && !sr && (
+          <>
+            <Tooltip content="Expand all">
+              <Button size="2" variant="soft" color="gray" onClick={() => setAll(true)} aria-label="Expand all">
+                <DoubleArrowDownIcon aria-hidden />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Collapse all">
+              <Button size="2" variant="soft" color="gray" onClick={() => setAll(false)} aria-label="Collapse all">
+                <DoubleArrowUpIcon aria-hidden />
+              </Button>
+            </Tooltip>
+          </>
+        )}
         <Tooltip content={readOnly ? 'The file has errors and is read-only' : `Add ${kind}`}>
           <Button size="2" variant="soft" onClick={onAdd} disabled={readOnly} aria-label={`Add ${kind}`}>
             <PlusIcon aria-hidden /> Add
           </Button>
         </Tooltip>
       </Flex>
-      {comparing && (
-        <div className="tree-legend">
-          <Legend />
-        </div>
-      )}
       <ScrollArea scrollbars="vertical" className="tree-scroll">
         {total === 0 && !sr ? (
           <div className="tree-empty">
@@ -250,12 +349,10 @@ export function Tree({ kind, roots, selectedId, onSelect, diffStates, assurance,
             </Button>
           </div>
         ) : (
-          <div role="tree" aria-label={KIND_PLURAL[kind]} className="tree" onKeyDown={onKeyDown}>
+          <div role="tree" aria-label={KIND_PLURAL[kind]} className={`tree${dragId ? ' is-dragging' : ''}`} onKeyDown={onKeyDown}>
             {rows.map((r) => {
               const isSel = r.type === 'entity' && r.id === selectedKey;
-              const st = r.type === 'entity' ? states?.[r.entityId] : undefined;
-              const ghost = r.node?.ghost;
-              const summary = r.type === 'entity' && !ghost ? assurance.get(r.entityId) : undefined;
+              const summary = r.type === 'entity' ? assurance.get(r.entityId) : undefined;
               return (
                 <Fragment key={r.id}>
                   <div
@@ -271,11 +368,18 @@ export function Tree({ kind, roots, selectedId, onSelect, diffStates, assurance,
                     aria-selected={r.type === 'entity' ? isSel : false}
                     aria-label={r.type === 'behavior' ? `Behavior: ${r.name}` : undefined}
                     tabIndex={r.id === effectiveFocus ? 0 : -1}
-                    className={`tree-row${isSel ? ' selected' : ''}${ghost ? ' ghost' : ''}${r.type === 'behavior' ? ' behavior-row' : ''}`}
+                    onPointerDown={(e) => {
+                      if (!canDrag || r.type !== 'entity' || e.button !== 0) return;
+                      pressRef.current = { id: r.entityId, x: e.clientX, y: e.clientY, active: false };
+                    }}
+                    className={`tree-row${drop?.id === r.entityId ? ` drop-${drop.pos}` : ''}${dragId === r.entityId ? ' dragging' : ''}${isSel ? ' selected' : ''}${r.type === 'behavior' ? ' behavior-row' : ''}`}
                     data-entity-id={r.entityId}
-                    data-status={st?.status}
                     style={{ paddingLeft: 6 + r.depth * 16 }}
                     onClick={() => {
+                      if (suppressClick.current) {
+                        suppressClick.current = false;
+                        return;
+                      }
                       setFocusKey(r.id);
                       onSelect(r.entityId, r.behaviorId);
                     }}
@@ -307,18 +411,7 @@ export function Tree({ kind, roots, selectedId, onSelect, diffStates, assurance,
                         </Text>
                       )}
                     </span>
-                    {ghost && (
-                      <Text size="1" color="gray" className="ghost-label">
-                        {st?.status === 'added' ? 'Not in working copy' : 'Removed'}
-                      </Text>
-                    )}
-                    {st && st.changedDescendants > 0 && (
-                      <Text size="1" color="gray" className="inside-count" title={`${plural(st.changedDescendants, 'item')} changed inside`}>
-                        {st.changedDescendants} changed inside
-                      </Text>
-                    )}
-                    {st && st.status !== 'unchanged' && <ChangeMarker status={st.status} />}
-                    {summary && <AssuranceChip summary={summary} hasCommit={hasCommit} />}
+                    {summary && <AssuranceChip summary={summary} />}
                   </div>
                 </Fragment>
               );

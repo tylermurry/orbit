@@ -7,7 +7,6 @@ test.use({ colorScheme: 'dark' });
 test('dark mode looks intentional', async ({ page }) => {
   await launch(page, { git: true, text: DEMO.implementation });
   await page.getByRole('treeitem', { name: /^Today and Overdue/ }).click();
-  await page.getByRole('button', { name: 'Use HEAD' }).first().click();
   await page.screenshot({ path: `${dir}/dark-product.png` });
   await page.keyboard.press('Control+3');
   await page.getByTestId('change-row').nth(3).click();

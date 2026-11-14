@@ -15,12 +15,12 @@ test.describe('AC-02 open and navigate', () => {
     const detail = page.getByTestId('entity-detail');
     await expect(detail.getByLabel('Entity name')).toHaveValue('Today and Overdue');
     await expect(detail.getByText('cap.task-discovery.today-overdue').first()).toBeVisible();
-    await expect(detail.getByLabel('Parent: Task Discovery')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Ancestors' })).toContainText('Task Discovery');
     await expect(detail.getByTestId('behavior-card')).toHaveCount(4);
     const card = detail.locator('[data-behavior-id="behavior.today.due-today"]');
     await expect(card).toContainText('Today lists tasks due today or earlier');
     await expect(card.getByTestId('test-row')).toHaveCount(1);
-    await expect(card.getByTestId('test-row')).toContainText('Freshness unknown'); // no code revision selected
+    await expect(card.getByTestId('test-row')).toContainText(/freshness unknown/i); // no code revision selected
     await expect(detail.locator('[data-behavior-id="behavior.today.timezone-change"]')).toContainText('No tests');
 
     // focused relationships: textual alternative

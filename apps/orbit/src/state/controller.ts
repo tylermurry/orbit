@@ -1,12 +1,13 @@
 import { createEmptyContract, diffContracts, parseContract, serializeContract } from '@orbit/contract';
 import type { Diagnostic, OrbitContract } from '@orbit/contract';
 import type { FileStat, GitContext, GitRef, OrbitHost } from '../host/types';
+import { parseJUnit } from '../lib/junit';
 import { fileName } from '../lib/format';
 import { filePrefKey, loadPref, loadRecent, pushRecent, savePref } from '../lib/prefs';
-import { computeComparison, defaultComparison } from './compare';
+import { computeComparison, defaultComparison, presetComparison } from './compare';
 import { currentText, isDirty, structuredDirty } from './store';
 import type { Store } from './store';
-import type { Comparison, EvidenceCtx } from './types';
+import type { AppState, Comparison, LifecyclePreset, ResultsFile } from './types';
 
 let toastSeq = 1;
 
@@ -32,12 +33,35 @@ export interface Controller {
   startBackground(pollMs: number): () => void;
   setCompare(c: Comparison | null): void;
   ensureDefaultCompare(): void;
+  /** Switch to a product-owner view. Returns the reason when unavailable. */
+  applyPreset(preset: LifecyclePreset, opts?: { quiet?: boolean }): string | null;
   recomputeCompare(): Promise<void>;
-  setEvidence(ctx: EvidenceCtx): void;
-  resolveEvidenceRev(rev: string): Promise<EvidenceCtx | null>;
+  /** Re-read the results file when it changed on disk (or always, with force). */
+  pollResults(force?: boolean): Promise<void>;
+  /** Whether the person approved this exact command for this contract file. */
+  isCommandApproved(command: string): boolean;
+  approveCommand(command: string): void;
+  /** Run the validation command. Never runs an unapproved command; says why when it cannot start. */
+  runValidation(): Promise<'started' | 'not-configured' | 'needs-approval' | 'busy'>;
+  cancelValidation(): Promise<void>;
   setExpanded(map: Record<string, boolean>): void;
   reviewDifferences(): Promise<void>;
   initialize(): Promise<void>;
+}
+
+/** Folder the validation command runs in and the results path is relative to: the repository root, else the contract's folder. */
+export function runFolderOf(s: AppState): string | null {
+  if (s.git?.available && s.git.repoRoot) return s.git.repoRoot;
+  return s.filePath ? s.filePath.replace(/[\\/][^\\/]*$/, '') || '/' : null;
+}
+
+/** Absolute path of the configured results file, or null when validation is not configured. */
+export function resultsPathOf(s: AppState): string | null {
+  const rel = s.contract?.validation?.results?.trim();
+  const base = runFolderOf(s);
+  if (!rel || !base) return null;
+  if (rel.startsWith('/') || /^[A-Za-z]:[\\/]/.test(rel)) return rel;
+  return `${base.replace(/[\\/]+$/, '')}/${rel.replace(/^\.\//, '')}`;
 }
 
 export function createController(store: Store, host: OrbitHost): Controller {
@@ -82,7 +106,6 @@ export function createController(store: Store, host: OrbitHost): Controller {
         refs,
         keepContext,
         expanded: loadPref(filePrefKey(path, 'expanded'), {}),
-        evidenceCtx: loadPref<EvidenceCtx>(filePrefKey(path, 'evidence'), { kind: 'none' }),
       });
       dispatch({ type: 'setRecent', recent: pushRecent(path) });
       if (!keepContext && !parse.ok && !opts.quiet) {
@@ -371,7 +394,8 @@ export function createController(store: Store, host: OrbitHost): Controller {
     const s = getState();
     if (!s.compare) return '';
     const usesUnsaved = s.compare.base.type === 'unsaved' || s.compare.target.type === 'unsaved';
-    return JSON.stringify([s.compare, s.diskSha, s.git?.headCommit, s.git?.available, s.filePath, usesUnsaved ? cid(s.contract) : 0]);
+    const refs = s.refs.map((r) => `${r.name}@${r.commit}`).join(',');
+    return JSON.stringify([s.compare, s.diskSha, s.git?.headCommit, s.git?.available, s.filePath, refs, usesUnsaved ? cid(s.contract) : 0]);
   }
 
   function setCompare(c: Comparison | null) {
@@ -381,26 +405,118 @@ export function createController(store: Store, host: OrbitHost): Controller {
   function ensureDefaultCompare() {
     const s = getState();
     if (s.compare || !s.git?.available) return;
+    if (presetComparison('actual', s.git, s.refs, isDirty(s)).ok) {
+      applyPreset('actual', { quiet: true });
+      return;
+    }
     const d = defaultComparison(s.git, isDirty(s));
     if (d) setCompare(d);
   }
 
-  function setEvidence(ctx: EvidenceCtx) {
-    dispatch({ type: 'setEvidence', ctx });
-    const p = getState().filePath;
-    if (p) savePref(filePrefKey(p, 'evidence'), ctx);
+  function applyPreset(preset: LifecyclePreset, opts: { quiet?: boolean } = {}): string | null {
+    const s = getState();
+    const r = presetComparison(preset, s.git, s.refs, isDirty(s));
+    if (!r.ok) {
+      if (!opts.quiet) toast(r.reason, 'error');
+      return r.reason;
+    }
+    setCompare(r.comparison);
+    return null;
   }
 
-  async function resolveEvidenceRev(rev: string): Promise<EvidenceCtx | null> {
-    const s = getState();
-    if (!s.git?.available || !s.git.repoRoot || !s.git.relPath) return null;
+  // ── validation: the results file and the test command ──
+  let resultsBusy = false;
+  async function pollResults(force = false) {
+    if (resultsBusy) return;
+    resultsBusy = true;
     try {
-      const f = await host.gitReadFileAt(s.git.repoRoot, rev, s.git.relPath);
-      return { kind: 'rev', label: rev, commit: f.commit };
-    } catch (e) {
-      toast(e instanceof Error ? e.message : String(e), 'error');
-      return null;
+      const s = getState();
+      const path = resultsPathOf(s);
+      if (!path) {
+        if (s.resultsFile) dispatch({ type: 'setResultsFile', file: null });
+        return;
+      }
+      const st = await host.statFile(path).catch(() => null);
+      const cur = getState();
+      if (resultsPathOf(cur) !== path) return;
+      if (!st?.exists) {
+        if (cur.resultsFile?.path !== path || cur.resultsFile.state !== 'missing') dispatch({ type: 'setResultsFile', file: { path, state: 'missing', at: null, cases: [] } });
+        return;
+      }
+      if (!force && cur.resultsFile?.path === path && cur.resultsFile.sha === st.sha256) return;
+      const at = new Date(st.modifiedMs ?? Date.now()).toISOString();
+      let file: ResultsFile;
+      try {
+        const snap = await host.readFile(path);
+        const parsed = parseJUnit(snap.text);
+        file = parsed.ok
+          ? { path, state: 'ok', at, sha: snap.sha256, cases: parsed.cases }
+          : { path, state: 'invalid', at, sha: snap.sha256, cases: [], message: parsed.message };
+      } catch (e) {
+        file = { path, state: 'invalid', at, sha: st.sha256, cases: [], message: e instanceof Error ? e.message : String(e) };
+      }
+      if (resultsPathOf(getState()) === path) dispatch({ type: 'setResultsFile', file });
+    } finally {
+      resultsBusy = false;
     }
+  }
+
+  // Approvals are per contract file and exact command text, so a changed command (e.g. from another branch) asks again.
+  const sessionApprovals = new Set<string>();
+  const approvalKey = (path: string) => filePrefKey(path, 'approvedCommands');
+  function isCommandApproved(command: string): boolean {
+    const p = getState().filePath;
+    if (!p) return false;
+    return sessionApprovals.has(`${p}\n${command}`) || loadPref<string[]>(approvalKey(p), []).includes(command);
+  }
+  function approveCommand(command: string) {
+    const p = getState().filePath;
+    if (!p) return;
+    sessionApprovals.add(`${p}\n${command}`);
+    savePref(approvalKey(p), [command, ...loadPref<string[]>(approvalKey(p), []).filter((c) => c !== command)].slice(0, 10));
+  }
+
+  let runSeq = 0;
+  async function runValidation(): Promise<'started' | 'not-configured' | 'needs-approval' | 'busy'> {
+    const s = getState();
+    const v = s.contract?.validation;
+    const cwd = runFolderOf(s);
+    if (!v || !cwd) return 'not-configured';
+    if (s.run) return 'busy';
+    if (!isCommandApproved(v.command)) return 'needs-approval';
+    const runId = `run-${Date.now()}-${++runSeq}`;
+    dispatch({ type: 'runStarted', run: { runId, command: v.command, startedAt: Date.now(), output: '' } });
+    // Batch streamed output so a chatty test run does not re-render per line.
+    let pending = '';
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const flush = () => {
+      timer = undefined;
+      if (pending) dispatch({ type: 'runOutput', runId, text: pending });
+      pending = '';
+    };
+    try {
+      const outcome = await host.runCommand(cwd, v.command, runId, (text) => {
+        pending += text;
+        timer ??= setTimeout(flush, 100);
+      });
+      clearTimeout(timer);
+      flush();
+      dispatch({ type: 'runFinished', runId, outcome: { ...outcome, command: v.command, finishedAt: new Date().toISOString() } });
+      await pollResults(true);
+      if (outcome.cancelled) toast('Test run cancelled', 'info');
+    } catch (e) {
+      clearTimeout(timer);
+      flush();
+      const message = e instanceof Error ? e.message : String(e);
+      dispatch({ type: 'runFinished', runId, outcome: { exitCode: null, cancelled: false, durationMs: 0, output: message, command: v.command, finishedAt: new Date().toISOString() } });
+      toast(message, 'error');
+    }
+    return 'started';
+  }
+
+  async function cancelValidation() {
+    const r = getState().run;
+    if (r) await host.cancelCommand(r.runId);
   }
 
   function setExpanded(map: Record<string, boolean>) {
@@ -435,15 +551,25 @@ export function createController(store: Store, host: OrbitHost): Controller {
   }
 
   function startBackground(pollMs: number) {
-    const timer = setInterval(() => void poll(), pollMs);
+    const timer = setInterval(() => {
+      void poll();
+      void pollResults();
+    }, pollMs);
     const onFocus = () => {
       void poll();
       void refreshGit();
+      void pollResults();
     };
     window.addEventListener('focus', onFocus);
     let lastKey = '';
+    let lastResultsPath: string | null = null;
     let debounce: ReturnType<typeof setTimeout> | undefined;
     const unsub = store.subscribe(() => {
+      const rp = resultsPathOf(getState());
+      if (rp !== lastResultsPath) {
+        lastResultsPath = rp;
+        void pollResults(true);
+      }
       const k = compareKey();
       if (k === lastKey) return;
       lastKey = k;
@@ -489,9 +615,13 @@ export function createController(store: Store, host: OrbitHost): Controller {
     startBackground,
     setCompare,
     ensureDefaultCompare,
+    applyPreset,
     recomputeCompare,
-    setEvidence,
-    resolveEvidenceRev,
+    pollResults,
+    isCommandApproved,
+    approveCommand,
+    runValidation,
+    cancelValidation,
     setExpanded,
     reviewDifferences,
     initialize,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { allIds, generateId, referencesTo, removeEntity, removeTest, validateContract } from '../src/index.js';
-import { beh, contract, ent, ev, rel, SHA_A, tdef } from './fixtures.js';
+import { beh, contract, ent, rel, tdef } from './fixtures.js';
 
 const c = () =>
   contract({
@@ -12,7 +12,6 @@ const c = () =>
     ],
     relationships: [rel('r.1', 'cap.mid', 'sys.s'), rel('r.2', 'cap.leaf', 'cap.mid'), rel('r.3', 'cap.root', 'sys.s')],
     tests: [tdef('t.1'), tdef('t.2')],
-    evidence: [ev('e.1', 't.1', 'passed', '2026-01-01T00:00:00Z', SHA_A), ev('e.2', 't.2', 'passed', '2026-01-01T00:00:00Z')],
   });
 
 describe('generateId', () => {
@@ -37,7 +36,6 @@ describe('allIds', () => {
     expect([...ids.behaviors]).toEqual(['b.1']);
     expect(ids.relationships.size).toBe(3);
     expect(ids.tests.has('t.2')).toBe(true);
-    expect(ids.evidence.has('e.1')).toBe(true);
   });
 });
 
@@ -50,9 +48,8 @@ describe('referencesTo', () => {
   });
   it('describes test references', () => {
     const refs = referencesTo(c(), 'test', 't.1');
-    expect(refs).toHaveLength(2);
+    expect(refs).toHaveLength(1);
     expect(refs[0]).toContain("behavior 'b.1'");
-    expect(refs[1]).toContain('e.1');
     expect(referencesTo(c(), 'test', 'nope')).toEqual([]);
   });
   it('behaviors are never referenced', () => {
@@ -84,20 +81,18 @@ describe('removeEntity', () => {
 });
 
 describe('removeTest', () => {
-  it('unmap + removeEvidence yields a valid contract', () => {
-    const out = removeTest(c(), 't.1', { unmap: true, removeEvidence: true });
+  it('unmap yields a valid contract', () => {
+    const out = removeTest(c(), 't.1', { unmap: true });
     expect(out.tests.map((t) => t.id)).toEqual(['t.2']);
     expect(out.entities[0]!.behaviors[0]!.testIds).toEqual([]);
-    expect(out.evidence.map((e) => e.id)).toEqual(['e.2']);
     expect(validateContract(out)).toEqual([]);
   });
   it('leaves dangling references when not asked to clean them (validator catches it)', () => {
-    const out = removeTest(c(), 't.1', { unmap: false, removeEvidence: false });
+    const out = removeTest(c(), 't.1', { unmap: false });
     expect(out.entities[0]!.behaviors[0]!.testIds).toEqual(['t.1']);
-    expect(out.evidence).toHaveLength(2);
-    expect(validateContract(out).map((d) => d.code).sort()).toEqual(['ref.behavior.test', 'ref.evidence.test']);
+    expect(validateContract(out).map((d) => d.code)).toEqual(['ref.behavior.test']);
   });
   it('throws for unknown tests', () => {
-    expect(() => removeTest(c(), 'nope', { unmap: true, removeEvidence: true })).toThrow(/does not exist/);
+    expect(() => removeTest(c(), 'nope', { unmap: true })).toThrow(/does not exist/);
   });
 });

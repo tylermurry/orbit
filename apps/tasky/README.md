@@ -41,10 +41,12 @@ test('creates a task in the selected list [test.tasky.tasks.create]', ...)
 The contract's `tests[].location` is `<file path> › <title without the bracket tag>`. The integration test
 `tests/fixture.test.ts` checks that every contract test id exists in a real test file here.
 
-### Evidence
+### Validating in Orbit
 
-`node scripts/generate-evidence.mjs --contract examples/tasky.orbit.json --run --write` runs these suites and appends
-real results to the contract's `evidence` (see the script header). It is an example external producer, not part of Orbit.
+`npm run validate -w @orbit/tasky` runs the unit and end-to-end suites and writes one combined JUnit file,
+`apps/tasky/test-results/junit.xml`. The Tasky contract's `validation` points at both, so **Validate capabilities** in
+Orbit runs it and updates every test status. Orbit links each result to a contract test by the `[test.id]` tag in its
+title.
 
 ## Architecture to contract mapping
 

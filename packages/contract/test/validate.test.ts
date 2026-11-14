@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createEmptyContract, parseContract, schema, serializeContract, validateContract, validateSemantics } from '../src/index.js';
-import { beh, contract, ent, ev, rel, SHA_A, tdef } from './fixtures.js';
+import { beh, contract, ent, rel, tdef } from './fixtures.js';
 
 const codes = (text: string) => parseContract(text).diagnostics.map((d) => d.code);
 const json = (v: unknown) => JSON.stringify(v, null, 2);
@@ -11,7 +11,7 @@ const valid = () =>
     entities: [ent('cap.a', { behaviors: [beh('b.1', ['t.1'])] }), ent('sys.s')],
     relationships: [rel('r.1', 'cap.a', 'sys.s', 'implementedBy')],
     tests: [tdef('t.1')],
-    evidence: [ev('e.1', 't.1', 'passed', '2026-11-13T18:00:00Z', SHA_A)],
+    validation: { command: 'npm test', results: 'test-results/junit.xml' },
   });
 
 describe('parseContract', () => {
@@ -52,7 +52,7 @@ describe('parseContract', () => {
   });
 
   it('maps schema errors to line and column', () => {
-    const text = '{\n  "schemaVersion": 2,\n  "product": {"id": "p", "name": "P", "summary": "S"},\n  "entities": [], "relationships": [], "tests": [], "evidence": []\n}';
+    const text = '{\n  "schemaVersion": 2,\n  "product": {"id": "p", "name": "P", "summary": "S"},\n  "entities": [], "relationships": [], "tests": []\n}';
     const r = parseContract(text);
     const d = r.diagnostics.find((x) => x.code === 'schema.const')!;
     expect(d).toMatchObject({ path: '/schemaVersion', line: 2, column: 20 });
@@ -109,20 +109,23 @@ describe('parseContract', () => {
     expect(r.diagnostics.some((d) => d.code === 'schema.type' && d.path === '/entities/0/behaviors')).toBe(true);
   });
 
-  it('reports bad executedAt and commit; keeps the evidence for display', () => {
-    const c = valid();
-    c.evidence[0]!.executedAt = 'not a date';
-    c.evidence[0]!.commit = 'ABC';
-    const r = parseContract(json(c));
-    expect(r.diagnostics.map((d) => d.code).sort()).toEqual(['schema.format', 'schema.pattern']);
-    expect(r.contract?.evidence).toHaveLength(1);
-    expect(r.partial).toBe(false);
+  it('keeps the validation block, and rejects an empty command or unknown keys', () => {
+    expect(parseContract(json(valid())).contract!.validation).toEqual({ command: 'npm test', results: 'test-results/junit.xml' });
+    const blank = JSON.parse(json(valid()));
+    blank.validation.command = ' ';
+    const r = parseContract(JSON.stringify(blank));
+    expect(r.ok).toBe(false);
+    expect(r.contract?.validation).toBeUndefined(); // unusable for display, so dropped
+    const extra = JSON.parse(json(valid()));
+    extra.validation.timeout = 5;
+    expect(parseContract(JSON.stringify(extra)).ok).toBe(false);
   });
 
-  it('accepts RFC3339 offsets and fractional seconds', () => {
-    const c = valid();
-    c.evidence[0]!.executedAt = '2026-11-13T18:00:00.123+02:00';
-    expect(parseContract(json(c)).ok).toBe(true);
+  it('rejects the retired evidence array', () => {
+    const old = JSON.parse(json(valid()));
+    old.evidence = [];
+    expect(parseContract(JSON.stringify(old)).diagnostics.some((d) => d.path === '' || d.path.startsWith('/evidence'))).toBe(true);
+    expect(parseContract(JSON.stringify(old)).ok).toBe(false);
   });
 
   it('flags duplicate ids for every namespace, behaviors globally', () => {
@@ -130,11 +133,10 @@ describe('parseContract', () => {
       entities: [ent('cap.a', { behaviors: [beh('b.1')] }), ent('cap.a'), ent('cap.b', { behaviors: [beh('b.1')] })],
       relationships: [rel('r', 'cap.a', 'cap.b'), rel('r', 'cap.b', 'cap.a')],
       tests: [tdef('t'), tdef('t')],
-      evidence: [ev('e', 't', 'passed', '2026-01-01T00:00:00Z'), ev('e', 't', 'failed', '2026-01-02T00:00:00Z')],
     });
     const d = parseContract(json(c)).diagnostics.filter((x) => x.code === 'id.duplicate');
     expect(d.map((x) => x.path).sort()).toEqual(
-      ['/entities/1/id', '/entities/2/behaviors/0/id', '/evidence/1/id', '/relationships/1/id', '/tests/1/id'].sort(),
+      ['/entities/1/id', '/entities/2/behaviors/0/id', '/relationships/1/id', '/tests/1/id'].sort(),
     );
   });
 
@@ -184,13 +186,11 @@ describe('parseContract', () => {
     const c = contract({
       entities: [ent('cap.a', { behaviors: [beh('b', ['t', 't', 'missing'])] })],
       tests: [tdef('t')],
-      evidence: [ev('e', 'ghost', 'passed', '2026-01-01T00:00:00Z')],
     });
     const r = parseContract(json(c));
     const by = (code: string) => r.diagnostics.filter((d) => d.code === code);
     expect(by('ref.behavior.test')[0]).toMatchObject({ severity: 'error', path: '/entities/0/behaviors/0/testIds/2' });
     expect(by('behavior.testIds.duplicate')[0]).toMatchObject({ severity: 'warning', path: '/entities/0/behaviors/0/testIds/1' });
-    expect(by('ref.evidence.test')).toHaveLength(1);
     expect(r.contract!.entities[0]!.behaviors).toHaveLength(1); // kept for display
   });
 
@@ -241,7 +241,7 @@ describe('validateContract / validateSemantics', () => {
 describe('serializeContract', () => {
   it('writes canonical key order, 2-space indent, trailing newline', () => {
     const messy = {
-      evidence: [{ details: 'd', commit: SHA_A, executedAt: '2026-01-01T00:00:00Z', status: 'passed', testId: 't', id: 'e' }],
+      validation: { results: 'r.xml', command: 'npm test' },
       tests: [{ location: 'l', name: 'n', id: 't' }],
       relationships: [{ description: 'x', targetId: 'b', sourceId: 'a', type: 'uses', id: 'r' }],
       entities: [{ behaviors: [{ testIds: ['t'], expected: 'x', name: 'n', id: 'b' }], description: '', summary: 's', name: 'n', parentId: null, kind: 'capability', id: 'a' }],
@@ -250,14 +250,14 @@ describe('serializeContract', () => {
     };
     const out = serializeContract(messy as never);
     expect(out.endsWith('}\n')).toBe(true);
-    expect(Object.keys(JSON.parse(out))).toEqual(['schemaVersion', 'product', 'entities', 'relationships', 'tests', 'evidence']);
+    expect(Object.keys(JSON.parse(out))).toEqual(['schemaVersion', 'product', 'entities', 'relationships', 'tests', 'validation']);
     const parsed = JSON.parse(out);
     expect(Object.keys(parsed.product)).toEqual(['id', 'name', 'summary', 'description']);
     expect(Object.keys(parsed.entities[0])).toEqual(['id', 'kind', 'parentId', 'name', 'summary', 'description', 'behaviors']);
     expect(Object.keys(parsed.entities[0].behaviors[0])).toEqual(['id', 'name', 'expected', 'testIds']);
     expect(Object.keys(parsed.relationships[0])).toEqual(['id', 'type', 'sourceId', 'targetId', 'description']);
     expect(Object.keys(parsed.tests[0])).toEqual(['id', 'name', 'location']);
-    expect(Object.keys(parsed.evidence[0])).toEqual(['id', 'testId', 'status', 'executedAt', 'commit', 'details']);
+    expect(Object.keys(parsed.validation)).toEqual(['command', 'results']);
     expect(out).toContain('\n  "product": {\n    "id"');
   });
 
@@ -314,7 +314,7 @@ describe('schema', () => {
       (x: typeof c) => (((x.entities as { behaviors: Record<string, unknown>[] }[])[0]!.behaviors[0]!).zz = 1),
       (x: typeof c) => ((x.relationships as Record<string, unknown>[])[0]!.zz = 1),
       (x: typeof c) => ((x.tests as Record<string, unknown>[])[0]!.zz = 1),
-      (x: typeof c) => ((x.evidence as Record<string, unknown>[])[0]!.zz = 1),
+      (x: typeof c) => ((x.validation as Record<string, unknown>).zz = 1),
     ]) {
       const copy = JSON.parse(json(c));
       mutate(copy);
@@ -338,10 +338,8 @@ describe('examples/invalid.orbit.json', () => {
       'ref.relationship.target',
       'relationship.self',
       'schema.enum',
-      'schema.format',
-      'schema.pattern',
+      'schema.minLength',
       'ref.behavior.test',
-      'ref.evidence.test',
     ]) expect(got, code).toContain(code);
   });
 

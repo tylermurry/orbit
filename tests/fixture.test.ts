@@ -104,19 +104,15 @@ describe('examples/tasky.orbit.json', () => {
     for (const t of contract.tests) expect(referenced.has(t.id), `${t.id} is not mapped to a behavior`).toBe(true);
   });
 
-  it('carries real evidence records only for defined tests', () => {
-    const defined = new Set(contract.tests.map((t) => t.id));
-    expect(contract.evidence.length).toBeGreaterThan(0);
-    for (const e of contract.evidence) {
-      expect(defined.has(e.testId), e.id).toBe(true);
-      expect(e.id).toMatch(/^run\.[a-z0-9.-]+\.\d{8}T\d{6}Z/);
-      if (e.commit === undefined) expect(e.details, e.id).toMatch(/commit unknown/);
-    }
+  it('says how to run Tasky\'s whole suite and where the JUnit results are', () => {
+    expect(contract.validation).toEqual({ command: 'npm run validate -w @orbit/tasky', results: 'apps/tasky/test-results/junit.xml' });
   });
 
-  it('is the source of the demo base snapshot (semantically identical apart from evidence)', () => {
+  it('is the source of the demo base snapshot (semantically identical apart from the test setup)', () => {
     const base = parseContract(readFileSync(join(root, 'examples/demo/01-base.orbit.json'), 'utf8')).contract as OrbitContract;
-    const d = diffContracts({ ...contract, evidence: [] }, base);
+    const { validation: _v, ...product } = contract;
+    void _v;
+    const d = diffContracts(product, base);
     expect(d.changes).toEqual([]);
   });
 });

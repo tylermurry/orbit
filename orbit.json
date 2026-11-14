@@ -119,7 +119,25 @@
       "kind": "capability",
       "parentId": "cap.exploration",
       "name": "Hierarchy Navigation and Search",
-      "summary": "Searchable, keyboard-navigable trees for capabilities (Product) and systems (Engineering).",
+      "summary": "Searchable, keyboard-navigable trees for capabilities (Product) and systems (Engineering). Text in the hierarchy is not selectable.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.exploration.tree.collapse",
+      "kind": "capability",
+      "parentId": "cap.exploration.tree",
+      "name": "Collapse and Expand Hierarchy",
+      "summary": "Expand or collapse any branch, or expand all / collapse all at once, to focus on the part of the hierarchy that matters.",
+      "description": "",
+      "behaviors": []
+    },
+    {
+      "id": "cap.exploration.tree.reorder",
+      "kind": "capability",
+      "parentId": "cap.exploration.tree",
+      "name": "Custom Ordering and Regrouping",
+      "summary": "Drag items (or press Alt+Up/Down) to place them before or after a sibling, or nest them under another item of the same kind; the order is saved in the contract file.",
       "description": "",
       "behaviors": []
     },
@@ -130,7 +148,72 @@
       "name": "Entity Detail",
       "summary": "Show summary, behaviors, mapped tests, relationships and evidence for the selected entity.",
       "description": "",
-      "behaviors": []
+      "behaviors": [
+        {
+          "id": "behavior.exploration.detail.breadcrumbs-show-where-an-entity-sits",
+          "name": "Breadcrumbs show where an entity sits",
+          "expected": "The detail view shows the entity's ancestors as breadcrumbs above the title; selecting a breadcrumb navigates to that ancestor, and top-level entities show none.",
+          "testIds": [
+            "test.e2e.navigate-open"
+          ]
+        },
+        {
+          "id": "behavior.exploration.detail.title-and-description-edit-in-place",
+          "name": "Title and description edit in place",
+          "expected": "The title and description are borderless, document-style editors with no text box chrome; the title is a single line that cannot be saved empty, the description grows with its content, and edits commit when the field loses focus (Escape reverts).",
+          "testIds": [
+            "test.e2e.manual-editing"
+          ]
+        },
+        {
+          "id": "behavior.exploration.detail.kind-and-change-tags-sit-with-the-title",
+          "name": "Kind and change tags sit with the title",
+          "expected": "The entity's kind tag and, while comparing, its change status (added, modified, removed or potentially affected) are shown above the title, with a Delete action when the file is editable.",
+          "testIds": [
+            "test.e2e.change-highlighting"
+          ]
+        },
+        {
+          "id": "behavior.exploration.detail.change-explanation-while-comparing",
+          "name": "Change explanation while comparing",
+          "expected": "When an entity differs in the active comparison, the detail view states how it changed, and for potentially affected entities shows the relationship chain back to the changed entity.",
+          "testIds": [
+            "test.e2e.change-highlighting"
+          ]
+        },
+        {
+          "id": "behavior.exploration.detail.removed-entities-are-read-only-ghosts",
+          "name": "Removed entities are read-only ghosts",
+          "expected": "An entity that exists only in the comparison base is viewable but not editable, with a note explaining that it was removed and which revision is being shown.",
+          "testIds": [
+            "test.e2e.change-highlighting"
+          ]
+        },
+        {
+          "id": "behavior.exploration.detail.assurance-and-behaviors-roll-up-the-subtree",
+          "name": "Assurance and behaviors roll up the subtree",
+          "expected": "The detail view summarizes behaviors across the entity and all its descendants without double counting, filterable by status, and lists the entity's own behaviors with their tests and evidence.",
+          "testIds": [
+            "test.e2e.rollups"
+          ]
+        },
+        {
+          "id": "behavior.exploration.detail.relationships-listed-with-a-focused-graph",
+          "name": "Relationships listed with a focused graph",
+          "expected": "The detail view shows the entity's incoming and outgoing relationships as a one-hop graph and as a text list, and selecting a connected entity navigates to it.",
+          "testIds": [
+            "test.e2e.focused-graph"
+          ]
+        },
+        {
+          "id": "behavior.exploration.detail.deleting-a-parent-keeps-its-children",
+          "name": "Deleting a parent keeps its children",
+          "expected": "Deleting an entity asks for confirmation, lists what refers to it, and moves its children up to the entity's parent rather than deleting them.",
+          "testIds": [
+            "test.e2e.delete-parent"
+          ]
+        }
+      ]
     },
     {
       "id": "cap.exploration.graph",
@@ -142,18 +225,9 @@
       "behaviors": []
     },
     {
-      "id": "cap.assurance",
-      "kind": "capability",
-      "parentId": null,
-      "name": "Verification Assurance",
-      "summary": "Show how well behaviors are backed by tests and evidence, conservatively and by commit.",
-      "description": "",
-      "behaviors": []
-    },
-    {
       "id": "cap.assurance.rollups",
       "kind": "capability",
-      "parentId": "cap.assurance",
+      "parentId": null,
       "name": "Assurance Rollups",
       "summary": "Count each behavior once across an entity subtree and classify test and evidence gaps.",
       "description": "",
@@ -162,7 +236,7 @@
     {
       "id": "cap.assurance.freshness",
       "kind": "capability",
-      "parentId": "cap.assurance",
+      "parentId": null,
       "name": "Evidence Freshness by Commit",
       "summary": "Classify evidence as current, potentially outdated or unknown for a chosen inspected commit.",
       "description": "",
@@ -171,7 +245,7 @@
     {
       "id": "cap.assurance.library",
       "kind": "capability",
-      "parentId": "cap.assurance",
+      "parentId": null,
       "name": "Tests and Evidence Library",
       "summary": "Browse and manage test definitions and evidence history independent of the tree.",
       "description": "",
@@ -223,6 +297,15 @@
       "behaviors": []
     },
     {
+      "id": "cap.impact.highlighting.changes-only",
+      "kind": "capability",
+      "parentId": "cap.impact.highlighting",
+      "name": "Show Changes Only",
+      "summary": "While comparing, the hierarchy defaults to showing only changed and affected items (plus their ancestors), with a toggle to show everything.",
+      "description": "",
+      "behaviors": []
+    },
+    {
       "id": "cap.impact.workspace",
       "kind": "capability",
       "parentId": "cap.impact",
@@ -232,18 +315,9 @@
       "behaviors": []
     },
     {
-      "id": "cap.ai-access",
-      "kind": "capability",
-      "parentId": null,
-      "name": "AI Agent Access",
-      "summary": "Let external AI agents do everything a user can in the running app, under the same safeguards.",
-      "description": "",
-      "behaviors": []
-    },
-    {
       "id": "cap.ai-access.connection",
       "kind": "capability",
-      "parentId": "cap.ai-access",
+      "parentId": null,
       "name": "Secure Local Connection",
       "summary": "Opt-in, localhost-only MCP endpoint with token management, client setup snippets and a stdio bridge.",
       "description": "",
@@ -252,7 +326,7 @@
     {
       "id": "cap.ai-access.query",
       "kind": "capability",
-      "parentId": "cap.ai-access",
+      "parentId": null,
       "name": "Agent Querying",
       "summary": "Read-only tools to inspect status, contract, entities, assurance, tests, evidence, diagnostics and refs.",
       "description": "",
@@ -261,7 +335,7 @@
     {
       "id": "cap.ai-access.editing",
       "kind": "capability",
-      "parentId": "cap.ai-access",
+      "parentId": null,
       "name": "Agent Editing",
       "summary": "Validated, dry-runnable, undoable edits including atomic multi-operation batches and guarded saves.",
       "description": "",
@@ -270,41 +344,44 @@
     {
       "id": "cap.ai-access.visibility",
       "kind": "capability",
-      "parentId": "cap.ai-access",
+      "parentId": null,
       "name": "Live Visibility and Navigation",
       "summary": "Agent actions show as toasts and an activity log, and agents can steer the user's view and comparison.",
-      "description": "",
-      "behaviors": []
-    },
-    {
-      "id": "cap.interop",
-      "kind": "capability",
-      "parentId": null,
-      "name": "Contract Interoperability",
-      "summary": "Keep the contract usable by external tools and agents without Orbit's GUI.",
-      "description": "",
-      "behaviors": []
-    },
-    {
-      "id": "cap.interop.schema",
-      "kind": "capability",
-      "parentId": "cap.interop",
-      "name": "Public Schema and CLI Validation",
-      "summary": "Ship a JSON Schema and a validate command with human and machine-readable diagnostics.",
-      "description": "",
-      "behaviors": []
-    },
-    {
-      "id": "cap.interop.evidence-producers",
-      "kind": "capability",
-      "parentId": "cap.interop",
-      "name": "External Evidence Production",
-      "summary": "Convert external test reports into evidence records without Orbit running tests.",
       "description": "",
       "behaviors": []
     }
   ],
   "relationships": [],
-  "tests": [],
-  "evidence": []
+  "tests": [
+    {
+      "id": "test.e2e.navigate-open",
+      "name": "User can open a contract and navigate its tree, breadcrumbs, behaviors and relationships",
+      "location": "apps/orbit/tests/e2e/navigate.spec.ts › AC-02 open and navigate › capability tree in Product, system tree in Engineering, with details, behaviors, tests and relationships"
+    },
+    {
+      "id": "test.e2e.manual-editing",
+      "name": "User can edit entities, behaviors and relationships in the UI and save them",
+      "location": "apps/orbit/tests/e2e/crud.spec.ts › AC-03 complete manual editing through the UI, saved and re-opened"
+    },
+    {
+      "id": "test.e2e.change-highlighting",
+      "name": "User can see which entities and behaviors were added, modified, removed or potentially affected",
+      "location": "apps/orbit/tests/e2e/impact.spec.ts › AC-10 embedded change context + AC-11 impact › Product tree highlights added/modified/removed(ghost)/potentially-affected; removed entities stay inspectable"
+    },
+    {
+      "id": "test.e2e.rollups",
+      "name": "User can see each behavior counted once in rollups that update when evidence changes",
+      "location": "apps/orbit/tests/e2e/assurance.spec.ts › AC-07 rollups count each behavior once and update ancestors when child evidence changes"
+    },
+    {
+      "id": "test.e2e.focused-graph",
+      "name": "User can explore an entity's relationships in a labeled graph and a text list",
+      "location": "apps/orbit/tests/e2e/navigate.spec.ts › AC-08 focused graph: labeled typed edges, navigation by click, textual list, kind badges"
+    },
+    {
+      "id": "test.e2e.delete-parent",
+      "name": "User can delete a parent entity without losing its children",
+      "location": "apps/orbit/tests/e2e/crud.spec.ts › delete a parent entity reparents children and removes its relationships"
+    }
+  ]
 }

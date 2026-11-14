@@ -31,9 +31,9 @@ export function AiButton() {
   return (
     <>
       <Tooltip content={tooltipFor(m)}>
-        <Button variant="surface" color="gray" size="2" className="topbar-btn ai-btn" aria-label={`AI access: ${STATE_LABEL[m.state]}`} data-testid="ai-button" data-state={m.state} onClick={() => setOpen(true)}>
+        <Button variant="surface" color="gray" size="2" className="topbar-btn ai-btn" aria-label={`MCP: ${STATE_LABEL[m.state]}`} data-testid="ai-button" data-state={m.state} onClick={() => setOpen(true)}>
           <span className="ai-dot" data-state={m.state} aria-hidden />
-          AI
+          MCP
         </Button>
       </Tooltip>
       <McpDialog open={open} onOpenChange={setOpen} />
@@ -229,7 +229,7 @@ export function McpDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                       <Code size="1">{a.tool}</Code>
                     </Table.Cell>
                     <Table.Cell>
-                      <Badge size="1" variant="soft" color={a.ok ? (a.mutated ? 'indigo' : 'gray') : 'red'}>
+                      <Badge variant="soft" radius="full" color={a.ok ? (a.mutated ? 'indigo' : 'gray') : 'red'}>
                         {a.ok ? (a.mutated ? 'Changed' : 'OK') : 'Error'}
                       </Badge>
                     </Table.Cell>

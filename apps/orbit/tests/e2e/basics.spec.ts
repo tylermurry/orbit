@@ -65,7 +65,7 @@ test.describe('shell polish', () => {
     // structured undo / redo via keyboard (focus outside text fields)
     await page.getByRole('tree').focus();
     await page.keyboard.press('Control+z');
-    await expect(page.getByLabel('Entity name')).toHaveValue('Task Discovery');
+    await expect(page.getByLabel('Entity name')).toHaveValue('Task Management');
     await expect(page).toHaveTitle('Tasky — tasky.orbit.json — Orbit');
     await page.keyboard.press('Control+Shift+z');
     await expect(page.getByLabel('Entity name')).toHaveValue('Renamed Capability');

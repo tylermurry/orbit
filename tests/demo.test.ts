@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { diffContracts, parseContract, testAssurance, behaviorAssurance, type OrbitContract } from '@orbit/contract';
+import { diffContracts, parseContract, type OrbitContract } from '@orbit/contract';
 
 const root = resolve(fileURLToPath(import.meta.url), '..', '..');
 const script = join(root, 'scripts/create-demo-repo.mjs');
@@ -94,7 +94,7 @@ describe('main -> proposal', () => {
     expect(totals.behavior).toEqual({ added: 1, removed: 0, modified: 0 });
     expect(totals.relationship).toEqual({ added: 1, removed: 0, modified: 0 });
     expect(totals.test).toEqual({ added: 1, removed: 0, modified: 0 });
-    for (const c of ['product', 'entity', 'evidence'] as const) expect(totals[c]).toEqual(zero);
+    for (const c of ['product', 'entity'] as const) expect(totals[c]).toEqual(zero);
   });
 
   it('reports the added behavior and relationship as product-guarantee changes and the test as verification', () => {
@@ -128,7 +128,6 @@ describe('main -> implementation', () => {
     expect(totals.behavior).toEqual({ added: 1, removed: 0, modified: 4 });
     expect(totals.relationship).toEqual({ added: 0, removed: 1, modified: 1 });
     expect(totals.test).toEqual({ added: 1, removed: 0, modified: 0 });
-    expect(totals.evidence).toEqual({ added: 8, removed: 0, modified: 0 });
     expect(totals.product).toEqual(zero);
   });
 
@@ -154,10 +153,6 @@ describe('main -> implementation', () => {
 
     expect(changes.find((c) => c.key === 'relationship:rel.complete-delete.implemented-by.task-repository')).toMatchObject({ kind: 'removed' });
     expect(changes.find((c) => c.key === 'behavior:behavior.tasks.edit-notes')).toMatchObject({ kind: 'added', ownerAfter: 'cap.task-management.create-edit' });
-    // evidence is verification metadata, never a product guarantee
-    const evidence = changes.filter((c) => c.category === 'evidence');
-    expect(evidence).toHaveLength(8);
-    expect(evidence.every((c) => c.group === 'verification' && c.entityIds.length === 0)).toBe(true);
   });
 
   it('shows the removed entity as a ghost that is directly changed', () => {
@@ -216,68 +211,6 @@ describe('main -> implementation', () => {
     expect(r.target?.relationships.some((x) => x.id === 'rel.today-overdue.depends-on.complete-delete')).toBe(false);
     expect(r.directlyChangedEntityIds).toContain('cap.task-discovery.today-overdue');
     expect(r.potentiallyAffected.some((p) => p.entityId === 'cap.task-discovery.today-overdue')).toBe(false);
-  });
-});
-
-describe('evidence freshness in the implementation contract', () => {
-  const contract = () => contractAt('implementation');
-  const codeCommit = () => info.commits.implementationCode;
-
-  it('cites real commits of the demo repository, never the contract commit itself', () => {
-    const shas = new Set(contract().evidence.map((e) => e.commit).filter(Boolean));
-    expect(shas).toEqual(new Set([info.commits.implementationCode, info.commits.main]));
-    expect(shas.has(info.commits.implementationContract)).toBe(false);
-    expect(git('cat-file', '-t', info.commits.implementationCode)).toBe('commit');
-    expect(contract().evidence.some((e) => e.commit === undefined)).toBe(true);
-  });
-
-  it('classifies current, stale, unknown and missing evidence for the implementation code commit', () => {
-    const c = contract();
-    const ctx = { inspectedCommit: codeCommit() };
-
-    const edit = testAssurance(c, 'test.tasky.tasks.edit', ctx);
-    expect(edit.freshness).toBe('current');
-    expect(edit.current?.status).toBe('failed');
-    expect(edit.history.map((e) => e.status)).toEqual(['failed', 'passed']);
-
-    const create = testAssurance(c, 'test.tasky.tasks.create', ctx);
-    expect(create.freshness).toBe('stale');
-    expect(create.current).toBeUndefined();
-    expect(create.latestRecorded?.status).toBe('passed');
-
-    const del = testAssurance(c, 'test.tasky.tasks.delete', ctx);
-    expect(del.freshness).toBe('unknown');
-    expect(del.current).toBeUndefined();
-    expect(del.latestRecorded?.commit).toBeUndefined();
-
-    expect(testAssurance(c, 'test.tasky.views.today-overdue', ctx)).toMatchObject({ freshness: 'current', current: { status: 'passed' } });
-    expect(testAssurance(c, 'test.tasky.local-date.rollover', ctx).current?.status).toBe('error');
-    expect(testAssurance(c, 'test.tasky.tasks.edit-notes', ctx).current?.status).toBe('skipped');
-
-    const none = testAssurance(c, 'test.tasky.lists.create-rename', ctx);
-    expect(none.freshness).toBe('unknown');
-    expect(none.latestRecorded).toBeUndefined();
-  });
-
-  it('rolls evidence up conservatively per behavior', () => {
-    const c = contract();
-    const ctx = { inspectedCommit: codeCommit() };
-    expect(behaviorAssurance(c, 'behavior.tasks.edit', ctx)?.status).toBe('failing');
-    expect(behaviorAssurance(c, 'behavior.today.due-today', ctx)?.status).toBe('passing');
-    expect(behaviorAssurance(c, 'behavior.localdate.rollover', ctx)?.status).toBe('failing');
-    expect(behaviorAssurance(c, 'behavior.tasks.create', ctx)?.status).toBe('no-current-evidence'); // stale + untested sibling
-    expect(behaviorAssurance(c, 'behavior.tasks.edit-notes', ctx)?.status).toBe('no-current-evidence'); // skipped is neither pass nor fail
-    expect(behaviorAssurance(c, 'behavior.discovery.responsive-layout', ctx)?.status).toBe('untested');
-  });
-
-  it('judges the same evidence differently for another inspected revision, and unknown without one', () => {
-    const c = contract();
-    const onMain = testAssurance(c, 'test.tasky.tasks.create', { inspectedCommit: info.commits.main });
-    expect(onMain.freshness).toBe('current');
-    expect(onMain.current?.status).toBe('passed');
-    const standalone = testAssurance(c, 'test.tasky.tasks.edit', { inspectedCommit: null });
-    expect(standalone.freshness).toBe('unknown');
-    expect(standalone.current).toBeUndefined();
   });
 });
 

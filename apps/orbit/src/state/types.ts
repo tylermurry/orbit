@@ -1,15 +1,44 @@
 import type { Diagnostic, EntityKind, OrbitContract, SemanticDiff } from '@orbit/contract';
-import type { FileStat, GitContext, GitRef } from '../host/types';
+import type { FileStat, GitContext, GitRef, RunOutcome } from '../host/types';
+import type { JUnitCase } from '../lib/junit';
 
 export type ViewId = 'product' | 'engineering' | 'impact';
 
-export type RevSel = { type: 'working' } | { type: 'unsaved' } | { type: 'ref'; name: string } | { type: 'sha'; sha: string };
+/** `baseline` = merge-base of HEAD and the base branch (resolved on every comparison). */
+export type RevSel = { type: 'working' } | { type: 'unsaved' } | { type: 'ref'; name: string } | { type: 'sha'; sha: string } | { type: 'baseline'; branch: string };
+
+/**
+ * The three product-owner views of a feature branch:
+ * - proposal:    baseline -> proposal tag   (what was proposed)
+ * - vs-proposal: proposal tag -> latest     (how the actual work differs from the proposal)
+ * - actual:      baseline -> latest         (everything that changed on this branch)
+ * "latest" is the working tree, or unsaved edits when there are any.
+ */
+export type LifecyclePreset = 'proposal' | 'vs-proposal' | 'actual';
 export interface Comparison {
   base: RevSel;
   target: RevSel;
 }
 
-export type EvidenceCtx = { kind: 'none' } | { kind: 'head' } | { kind: 'rev'; label: string; commit: string };
+/** The results file named by the contract's validation config, as last read from disk. */
+export interface ResultsFile {
+  /** Absolute path. */
+  path: string;
+  state: 'ok' | 'missing' | 'invalid';
+  /** When the run that wrote it happened (the file's modification time), RFC3339. */
+  at: string | null;
+  sha?: string;
+  cases: JUnitCase[];
+  message?: string;
+}
+
+/** A validation run in progress. */
+export interface RunState {
+  runId: string;
+  command: string;
+  startedAt: number;
+  output: string;
+}
 
 export interface SnapMeta {
   sel: RevSel;
@@ -74,12 +103,16 @@ export interface AppState {
   compare: Comparison | null;
   compareResult: CompareResult | null;
   impactSelection: string | null;
-  evidenceCtx: EvidenceCtx;
+
+  // validation
+  resultsFile: ResultsFile | null;
+  run: RunState | null;
+  lastRun: (RunOutcome & { command: string; finishedAt: string }) | null;
+  runDialog: boolean;
 
   // ui
   diagnosticsOpen: boolean;
   libraryOpen: boolean;
-  libraryTab: 'tests' | 'evidence';
   libraryFocusTest: string | null;
   productDialog: boolean;
   newDialog: boolean;

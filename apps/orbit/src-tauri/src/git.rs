@@ -1,7 +1,8 @@
-//! Read-only Git access by shelling out to the `git` executable.
+//! Git access by shelling out to the `git` executable. Read-only, with one narrow write.
 //!
 //! Guarantee: only these subcommands are ever run: `rev-parse`, `symbolic-ref` (read form),
-//! `for-each-ref`, `log --no-walk`, `ls-tree`, `show`. Every invocation sets
+//! `for-each-ref`, `log --no-walk`, `ls-tree`, `show`, `merge-base`, and `tag <name> <commit>`
+//! (the single write: a lightweight `orbit/proposal/<branch>` tag, see [`git_tag_proposal`]). Every invocation sets
 //! `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0` and `-c core.fsmonitor=false`, so Git never
 //! refreshes the index or spawns a daemon. `status`, `add`, `checkout`, `fetch`, ... are never run.
 
@@ -419,4 +420,63 @@ pub fn git_list_refs(repo_root: &str) -> Result<Vec<GitRef>, String> {
             Some(GitRef { name, kind, commit, subject, date })
         })
         .collect())
+}
+
+pub fn git_merge_base(repo_root: &str, a: &str, b: &str) -> Result<Option<String>, String> {
+    let root = absolutize(repo_root)?;
+    let ca = resolve_commit(&root, a)?;
+    let cb = resolve_commit(&root, b)?;
+    match run_git(&root, &["merge-base", &ca, &cb], None) {
+        Ok(o) if !o.text().is_empty() => Ok(Some(o.text())),
+        // exit 1 with no output: no common ancestor
+        Ok(_) | Err(GitErr::Failed { code: Some(1), .. }) => Ok(None),
+        Err(e) => Err(describe(&e)),
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProposalTag {
+    pub tag: String,
+    pub commit: String,
+    pub replaced: bool,
+}
+
+fn valid_branch(branch: &str) -> bool {
+    !branch.is_empty()
+        && !branch.starts_with('-')
+        && !branch.contains("..")
+        && branch
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.'))
+}
+
+/// Point the lightweight tag `orbit/proposal/<branch>` at HEAD. The only Git write Orbit performs.
+pub fn git_tag_proposal(repo_root: &str, branch: &str, replace: bool) -> Result<ProposalTag, String> {
+    if !valid_branch(branch) {
+        return Err(format!("'{branch}' is not a branch name Orbit can tag a proposal for."));
+    }
+    let root = absolutize(repo_root)?;
+    let commit = resolve_commit(&root, "HEAD")?;
+    let tag = format!("orbit/proposal/{branch}");
+    let full = format!("refs/tags/{tag}");
+    let existing = run_git(&root, &["rev-parse", "--verify", "-q", &format!("{full}^{{commit}}")], None)
+        .ok()
+        .map(|o| o.text())
+        .filter(|s| !s.is_empty());
+    if let Some(old) = &existing {
+        if !replace {
+            return Err(format!(
+                "Tag '{tag}' already exists (at {}). Pass replace: true to move it to HEAD.",
+                &old[..7.min(old.len())]
+            ));
+        }
+    }
+    let mut args = vec!["tag"];
+    if replace {
+        args.push("-f");
+    }
+    args.push(&tag);
+    args.push(&commit);
+    run_git(&root, &args, None).map_err(|e| describe(&e))?;
+    Ok(ProposalTag { tag, commit, replaced: existing.is_some() })
 }

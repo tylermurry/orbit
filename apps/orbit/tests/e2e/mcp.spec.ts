@@ -79,7 +79,7 @@ test.describe('AI tool runtime (window.__orbitMcp)', () => {
     const cmp = await ai(page, 'compare', { base: 'main', target: 'implementation', show: true });
     expect(cmp.isError).toBeFalsy();
     expect(cmp.data.totalChanges).toBe(17);
-    await expect(page.getByTestId('impact-view')).toContainText('main → implementation');
+    await expect(page.getByTestId('impact-title')).toHaveText('Custom comparison');
     await expect(page.getByTestId('change-row')).toHaveCount(17);
     await ai(page, 'clear_comparison');
   });

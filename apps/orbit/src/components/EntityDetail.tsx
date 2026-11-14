@@ -1,41 +1,29 @@
 import { useMemo, useState } from 'react';
-import { Button, Callout, Code, Flex, Text } from '@radix-ui/themes';
-import { InfoCircledIcon, TrashIcon } from '@radix-ui/react-icons';
-import { ancestorsOf, descendantIdsOf, wouldCreateCycle } from '@orbit/contract';
-import type { Behavior, Entity, EntityDiffState, OrbitContract } from '@orbit/contract';
-import { useApp, useAssurance, useCtrl, useDispatch, useEdit, useInspected } from '../state/context';
-import { AssuranceSection } from './AssuranceSection';
+import { Button, Code, Flex, Text } from '@radix-ui/themes';
+import { TrashIcon } from '@radix-ui/react-icons';
+import { ancestorsOf, focusedRelations } from '@orbit/contract';
+import type { Entity, OrbitContract } from '@orbit/contract';
+import { useAssurance, useDispatch, useEdit } from '../state/context';
 import type { Bucket } from './AssuranceSection';
 import { BehaviorsSection } from './BehaviorsSection';
 import { EntityDeleteDialog } from './EntityDialogs';
-import { EntityPicker } from './EntityPicker';
-import { ImpactChain } from './ImpactChain';
 import { RelationshipsSection } from './RelationshipsSection';
-import { ChangeMarker, CopyId, DraftArea, DraftField, KindBadge } from './common';
+import { InlineText, KindBadge, summaryFrom } from './common';
 
-export function EntityDetail({ entity, contract, readOnly, ghostNote, state, states }: { entity: Entity; contract: OrbitContract; readOnly: boolean; ghostNote?: string; state?: EntityDiffState; states?: Record<string, EntityDiffState> }) {
+export function EntityDetail({ entity, contract, readOnly }: { entity: Entity; contract: OrbitContract; readOnly: boolean }) {
   const edit = useEdit();
   const d = useDispatch();
-  const ctrl = useCtrl();
-  const commit = useInspected();
-  const expanded = useApp((s) => s.expanded);
   const assurance = useAssurance(contract);
   const summary = assurance.get(entity.id);
   const [bucket, setBucket] = useState<Bucket>('all');
   const [deleting, setDeleting] = useState(false);
   const ancestors = useMemo(() => ancestorsOf(contract, entity.id).reverse(), [contract, entity.id]);
-  const descendantBehaviors = useMemo(() => {
-    const byId = new Map(contract.entities.map((e) => [e.id, e]));
-    const out: { behavior: Behavior; owner: Entity }[] = [];
-    for (const id of descendantIdsOf(contract, entity.id)) {
-      const e = byId.get(id);
-      e?.behaviors.forEach((b) => out.push({ behavior: b, owner: e }));
-    }
-    return out;
-  }, [contract, entity.id]);
-  const nameOf = (id: string) => contract.entities.find((e) => e.id === id)?.name ?? id;
+  const noBehaviors = entity.behaviors.length === 0;
+  const noRels = (() => {
+    const { incoming, outgoing } = focusedRelations(contract, entity.id);
+    return incoming.length + outgoing.length === 0;
+  })();
   const set = (patch: Partial<Entity>) => edit((c) => ({ ...c, entities: c.entities.map((e) => (e.id === entity.id ? { ...e, ...patch } : e)) }));
-  const allow = useMemo(() => (e: Entity) => e.kind === entity.kind && e.id !== entity.id && !wouldCreateCycle(contract, entity.id, e.id), [contract, entity.id, entity.kind]);
 
   return (
     <div className="detail-inner" data-testid="entity-detail" data-entity-id={entity.id}>
@@ -52,92 +40,28 @@ export function EntityDetail({ entity, contract, readOnly, ghostNote, state, sta
         </nav>
       )}
       <Flex justify="between" align="center" mb="2" gap="3">
-        <Flex align="center" gap="2">
-          <KindBadge kind={entity.kind} />
-          {state && state.status !== 'unchanged' && <ChangeMarker status={state.status} long />}
-        </Flex>
+        <KindBadge kind={entity.kind} />
         {!readOnly && (
-          <Button size="2" variant="soft" color="red" onClick={() => setDeleting(true)} aria-label={`Delete ${entity.name}`}>
+          <Button size="1" variant="ghost" color="red" onClick={() => setDeleting(true)} aria-label={`Delete ${entity.name}`}>
             <TrashIcon aria-hidden /> Delete
           </Button>
         )}
       </Flex>
+      <InlineText value={entity.name} label="Entity name" disabled={readOnly} singleLine placeholder="Untitled" validate={(v) => v.trim().length > 0} onCommit={(v) => set({ name: v })} className="doc-title" />
 
-      {ghostNote && (
-        <Callout.Root color="red" variant="surface" size="1" mb="3" data-testid="ghost-note">
-          <Callout.Icon>
-            <InfoCircledIcon />
-          </Callout.Icon>
-          <Callout.Text>{ghostNote}</Callout.Text>
-        </Callout.Root>
-      )}
+      <InlineText
+        value={entity.description || entity.summary}
+        label="Description"
+        disabled={readOnly}
+        placeholder="Describe this…"
+        onCommit={(v) => set({ description: v, summary: summaryFrom(v, entity.summary) })}
+        className="doc-body"
+      />
 
-      <div className="name-field">
-        <DraftField value={entity.name} label="Entity name" size="3" disabled={readOnly} validate={(v) => v.trim().length > 0} onCommit={(v) => set({ name: v })} className="name-input" />
+      <div className={noBehaviors && noRels ? 'empty-actions' : undefined}>
+        {summary && <BehaviorsSection contract={contract} entity={entity} summary={summary} bucket={bucket} onBucket={setBucket} readOnly={readOnly} />}
+        <RelationshipsSection contract={contract} entity={entity} readOnly={readOnly} />
       </div>
-      <div className="meta-row">
-        <Flex align="center" gap="2">
-          <Text size="1" color="gray">
-            Id
-          </Text>
-          <CopyId id={entity.id} />
-        </Flex>
-        <Flex align="center" gap="2">
-          <Text size="1" color="gray">
-            Parent
-          </Text>
-          {readOnly ? (
-            <Text size="2">{entity.parentId ? nameOf(entity.parentId) : 'No parent (top level)'}</Text>
-          ) : (
-            <EntityPicker
-              contract={contract}
-              value={entity.parentId}
-              noneLabel="No parent (top level)"
-              label="Parent"
-              allow={allow}
-              onChange={(pid) => {
-                set({ parentId: pid });
-                if (pid) ctrl.setExpanded({ ...expanded, [pid]: true });
-              }}
-            />
-          )}
-        </Flex>
-      </div>
-      <div className="text-fields">
-        <Text as="div" size="1" color="gray" mb="1">
-          Summary
-        </Text>
-        <DraftField value={entity.summary} label="Summary" disabled={readOnly} validate={(v) => v.trim().length > 0} onCommit={(v) => set({ summary: v })} />
-        <Text as="div" size="1" color="gray" mt="3" mb="1">
-          Description
-        </Text>
-        <DraftArea value={entity.description} label="Description" rows={3} disabled={readOnly} placeholder="Optional longer description" onCommit={(v) => set({ description: v })} />
-      </div>
-
-      {state && state.status !== 'unchanged' && (
-        <Callout.Root color={state.status === 'affected' ? 'violet' : state.status === 'removed' ? 'red' : state.status === 'added' ? 'green' : 'amber'} variant="surface" size="1" mt="3" data-testid="state-note">
-          <Callout.Icon>
-            <InfoCircledIcon />
-          </Callout.Icon>
-          <Callout.Text>
-            {state.status === 'affected' && state.impact ? (
-              <>
-                <strong>Potentially affected</strong> (inferred from relationships, not observed): <ImpactChain path={state.impact} nameOf={nameOf} />
-              </>
-            ) : state.reasons.length ? (
-              <>
-                <strong>{state.status === 'added' ? 'Added' : state.status === 'removed' ? 'Removed' : 'Modified'} in this comparison:</strong> {state.reasons.join('; ')}
-              </>
-            ) : (
-              <strong>{state.status}</strong>
-            )}
-          </Callout.Text>
-        </Callout.Root>
-      )}
-
-      {summary && <AssuranceSection summary={summary} bucket={bucket} onBucket={setBucket} hasCommit={!!commit} contract={contract} />}
-      {summary && <BehaviorsSection contract={contract} entity={entity} summary={summary} bucket={bucket} onBucket={setBucket} readOnly={readOnly} descendantBehaviors={descendantBehaviors} />}
-      <RelationshipsSection contract={contract} entity={entity} readOnly={readOnly} states={states} />
 
       {deleting && (
         <EntityDeleteDialog

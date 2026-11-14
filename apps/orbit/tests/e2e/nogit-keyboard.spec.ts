@@ -4,15 +4,14 @@ import { parseContract } from '@orbit/contract';
 import { FILE, fileText, launch } from './helpers';
 
 test.describe('AC-12 Git independence', () => {
-  test('without Git: Impact explains, compare is disabled, everything else works and saves', async ({ page }) => {
+  test('without Git: the change views are hidden, Impact explains, everything else works and saves', async ({ page }) => {
     await launch(page, {});
-    await expect(page.getByRole('button', { name: /Compare unavailable/ })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Change views' })).toHaveCount(0);
     await page.keyboard.press('Control+3');
     const nogit = page.getByTestId('impact-nogit');
     await expect(nogit).toContainText('Version comparison needs the contract to be inside a local Git repository');
     await expect(nogit).toContainText('not inside a Git repository');
     await expect(nogit).toContainText('Nothing is wrong with your contract');
-    await expect(page.getByRole('contentinfo', { name: 'Status' })).toContainText('No Git repository');
 
     await page.keyboard.press('Control+1');
     const name = page.getByLabel('Entity name');
@@ -20,10 +19,10 @@ test.describe('AC-12 Git independence', () => {
     await name.press('Enter');
     await page.keyboard.press('Control+s');
     await expect(page.getByTestId('save-button')).toHaveAttribute('data-dirty', 'false');
-    expect(parseContract((await fileText(page, '/home/user/tasky.orbit.json'))!).contract!.entities.find((e) => e.id === 'cap.task-discovery')!.name).toBe('Edited without git');
-    // evidence control has no HEAD option
-    await page.getByRole('button', { name: /Evidence context/ }).click();
-    await expect(page.getByRole('radio', { name: /HEAD/ })).toBeDisabled();
+    expect(parseContract((await fileText(page, '/home/user/tasky.orbit.json'))!).contract!.entities.find((e) => e.id === 'cap.task-management')!.name).toBe('Edited without git');
+    // evidence cannot be checked against code, and nothing offers to
+    await expect(page.getByTestId('evidence-line')).toContainText('not checked against any code version');
+    await expect(page.getByRole('button', { name: 'Check latest code' })).toHaveCount(0);
   });
 
   test('git executable missing is described actionably', async ({ page }) => {
@@ -124,11 +123,10 @@ test.describe('AC-17 desktop viewport + keyboard', () => {
   });
 });
 
-test('top bar controls never overlap, even with a comparison and evidence context active', async ({ page }) => {
+test('top bar controls never overlap, even with a change view active', async ({ page }) => {
   await launch(page, { path: FILE, git: true });
-  await page.getByRole('button', { name: 'Use HEAD' }).first().click();
   await page.keyboard.press('Control+3');
-  await expect(page.getByTestId('impact-view')).toContainText('HEAD → Working tree');
+  await expect(page.getByTestId('impact-title')).toHaveText('View actual');
   const boxes = await page.evaluate(() =>
     Array.from(document.querySelectorAll('.topbar .identity, .topbar-center, .topbar-right > *'))
       .map((el) => {
@@ -140,4 +138,14 @@ test('top bar controls never overlap, even with a comparison and evidence contex
   );
   for (let i = 1; i < boxes.length; i++) expect(boxes[i].l, `${boxes[i - 1].n} overlaps ${boxes[i].n}`).toBeGreaterThanOrEqual(boxes[i - 1].r - 1);
   expect(boxes[boxes.length - 1].r).toBeLessThanOrEqual(1280);
+  // each view button and its details arrow keep their full size
+  const parts = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.change-views button')).map((el) => {
+      const r = el.getBoundingClientRect();
+      return { n: el.getAttribute('aria-label') ?? el.textContent ?? '', l: r.left, r: r.right, clipped: el.scrollWidth > el.clientWidth + 1 };
+    }),
+  );
+  expect(parts).toHaveLength(6);
+  for (let i = 1; i < parts.length; i++) expect(parts[i].l, `${parts[i - 1].n} overlaps ${parts[i].n}`).toBeGreaterThanOrEqual(parts[i - 1].r - 1);
+  for (const p of parts) expect(p.clipped, `${p.n} is clipped`).toBe(false);
 });

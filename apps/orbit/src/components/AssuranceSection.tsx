@@ -1,47 +1,63 @@
-import { Button, Callout, Flex, Text } from '@radix-ui/themes';
-import { InfoCircledIcon } from '@radix-ui/react-icons';
-import type { AssuranceSummary, OrbitContract } from '@orbit/contract';
-import { shortSha } from '../lib/format';
-import { useApp, useCtrl } from '../state/context';
+import { Button, Flex, Text } from '@radix-ui/themes';
+import type { AssuranceBucket, AssuranceSummary } from '@orbit/contract';
+import { relativeTime } from '../lib/format';
+import { useApp, useDispatch } from '../state/context';
+import { proposalTime } from '../state/store';
 
-export type Bucket = 'all' | 'withTests' | 'passingCurrent' | 'failingCurrent' | 'untested' | 'noCurrentEvidence';
+export type Bucket = AssuranceBucket;
 
 export const BUCKET_LABEL: Record<Bucket, string> = {
   all: 'All behaviors',
   withTests: 'Behaviors with tests',
-  passingCurrent: 'Behaviors with passing evidence',
-  failingCurrent: 'Failing behaviors',
+  passing: 'Passing behaviors',
+  failing: 'Failing behaviors',
+  unconfirmed: 'Unconfirmed behaviors',
+  planned: 'Behaviors with only planned tests',
   untested: 'Behaviors without tests',
-  noCurrentEvidence: 'Mapped, no current evidence',
 };
 
-export function AssuranceSection({ summary, bucket, onBucket, hasCommit, contract }: { summary: AssuranceSummary; bucket: Bucket; onBucket: (b: Bucket) => void; hasCommit: boolean; contract: OrbitContract }) {
-  const ctx = useApp((s) => s.evidenceCtx);
-  const git = useApp((s) => s.git);
-  const ctrl = useCtrl();
-  void contract;
+/** One line on where test results come from and how current they are. */
+export function ResultsLine() {
+  const validation = useApp((s) => s.contract?.validation);
+  const file = useApp((s) => s.resultsFile);
+  const since = useApp(proposalTime);
+  const d = useDispatch();
+  let text: string;
+  if (!validation) text = 'Tests are not set up to run yet.';
+  else if (!file || file.state === 'missing') text = 'No test results yet.';
+  else if (file.state === 'invalid') text = 'The test results file could not be read.';
+  else text = `Last test run ${relativeTime(file.at!)}${since ? `; results from before the proposal (${relativeTime(since)}) are unconfirmed` : ''}.`;
+  return (
+    <Flex align="center" gap="2" data-testid="results-line">
+      <Text size="1" color="gray">
+        {text}
+      </Text>
+      {!validation && (
+        <Button size="1" variant="ghost" onClick={() => d({ type: 'ui', patch: { runDialog: true } })}>
+          Set up
+        </Button>
+      )}
+    </Flex>
+  );
+}
+
+export function AssuranceSection({ summary, bucket, onBucket }: { summary: AssuranceSummary; bucket: Bucket; onBucket: (b: Bucket) => void }) {
   const stats: { key: Bucket; label: string; value: number; tone: string }[] = [
     { key: 'all', label: 'Total', value: summary.total, tone: 'neutral' },
-    { key: 'withTests', label: 'With tests', value: summary.withTests, tone: 'neutral' },
-    { key: 'passingCurrent', label: 'Has passing evidence', value: summary.passingCurrent, tone: 'good' },
-    { key: 'failingCurrent', label: 'Failing', value: summary.failingCurrent, tone: 'bad' },
-    { key: 'untested', label: 'No tests', value: summary.untested, tone: 'warn' },
-    { key: 'noCurrentEvidence', label: 'No current evidence', value: summary.noCurrentEvidence, tone: 'warn' },
+    { key: 'passing', label: 'Passing', value: summary.passing, tone: 'good' },
+    { key: 'failing', label: 'Failing', value: summary.failing, tone: 'bad' },
+    { key: 'unconfirmed', label: 'Unconfirmed', value: summary.unconfirmed, tone: 'warn' },
+    { key: 'planned', label: 'Planned', value: summary.planned, tone: 'planned' },
+    { key: 'untested', label: 'No tests', value: summary.untested, tone: 'neutral' },
   ];
   const seg = (n: number, cls: string) => (summary.total ? <span className={`seg ${cls}`} style={{ width: `${(n / summary.total) * 100}%` }} /> : null);
-  const evidenceLine =
-    ctx.kind === 'none'
-      ? 'No code revision selected — evidence freshness is unknown.'
-      : `Evidence checked against commit ${shortSha(ctx.kind === 'head' ? git?.headCommit : ctx.commit)} (${ctx.kind === 'head' ? 'HEAD' : ctx.label}).`;
   return (
     <section aria-labelledby="sec-assurance" className="section">
-      <Flex justify="between" align="baseline" mb="2">
+      <Flex justify="between" align="baseline" mb="2" gap="3" wrap="wrap">
         <h3 id="sec-assurance" className="section-title">
           Assurance
         </h3>
-        <Text size="1" color="gray" data-testid="evidence-line">
-          {evidenceLine}
-        </Text>
+        <ResultsLine />
       </Flex>
       <div className="stats" role="group" aria-label="Assurance counts for this entity and its sub-items">
         {stats.map((st) => (
@@ -53,29 +69,12 @@ export function AssuranceSection({ summary, bucket, onBucket, hasCommit, contrac
       </div>
       {summary.total > 0 && (
         <div className="stackbar" aria-hidden="true">
-          {seg(summary.passingCurrent, 'seg-good')}
-          {seg(summary.failingCurrent, 'seg-bad')}
-          {seg(summary.noCurrentEvidence, 'seg-warn')}
+          {seg(summary.passing, 'seg-good')}
+          {seg(summary.failing, 'seg-bad')}
+          {seg(summary.unconfirmed, 'seg-warn')}
+          {seg(summary.planned, 'seg-planned')}
           {seg(summary.untested, 'seg-none')}
         </div>
-      )}
-      {ctx.kind === 'none' && git?.available && git.headCommit && (
-        <Callout.Root size="1" variant="surface" mt="3">
-          <Callout.Icon>
-            <InfoCircledIcon />
-          </Callout.Icon>
-          <Flex justify="between" align="center" gap="3" width="100%">
-            <Callout.Text>Check evidence against HEAD ({shortSha(git.headCommit)})?</Callout.Text>
-            <Button size="1" variant="soft" onClick={() => ctrl.setEvidence({ kind: 'head' })}>
-              Use HEAD
-            </Button>
-          </Flex>
-        </Callout.Root>
-      )}
-      {!hasCommit && ctx.kind === 'none' && !git?.available && (
-        <Text as="p" size="1" color="gray" mt="2">
-          Recorded results are shown with provenance, but without a code revision none can be called current.
-        </Text>
       )}
     </section>
   );

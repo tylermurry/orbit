@@ -1,10 +1,10 @@
 import { createContext, useContext, useMemo, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { computeAssurance, parseContract } from '@orbit/contract';
-import type { AssuranceSummary, Diagnostic, OrbitContract, ParseResult, SemanticDiff } from '@orbit/contract';
+import type { AssuranceContext, AssuranceSummary, Diagnostic, OrbitContract, ParseResult, SemanticDiff } from '@orbit/contract';
 import type { OrbitHost } from '../host/types';
 import type { Controller } from './controller';
-import { currentText, inspectedCommit } from './store';
+import { assuranceContext, currentText } from './store';
 import type { Action, Store } from './store';
 import type { AppState } from './types';
 
@@ -54,13 +54,14 @@ export function useEdit(): (fn: (c: OrbitContract) => OrbitContract) => void {
   return useMemo(() => (fn) => d({ type: 'edit', fn }), [d]);
 }
 
-export function useInspected(): string | null {
-  return useApp(inspectedCommit);
+/** Test results and the proposal time that assurance is judged against. */
+export function useAssuranceCtx(): AssuranceContext {
+  return useApp(assuranceContext);
 }
 
 export function useAssurance(contract: OrbitContract | null): Map<string, AssuranceSummary> {
-  const commit = useInspected();
-  return useMemo(() => (contract ? computeAssurance(contract, { inspectedCommit: commit }) : new Map()), [contract, commit]);
+  const ctx = useAssuranceCtx();
+  return useMemo(() => (contract ? computeAssurance(contract, ctx) : new Map()), [contract, ctx]);
 }
 
 // Small parse cache: diagnostics are derived from the text the user would see in the Raw editor.

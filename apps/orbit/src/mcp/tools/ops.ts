@@ -2,10 +2,10 @@
 // a new (immutable) contract plus a human summary. Operations throw ToolError for reference/rule violations.
 // They are used both by the individual write tools and by apply_edits (one accumulator, one undo step).
 import { allIds, behaviorIndex, generateId, referencesTo, removeEntity, removeTest, wouldCreateCycle } from '@orbit/contract';
-import type { Behavior, Entity, EntityKind, Evidence, EvidenceStatus, OrbitContract, Relationship, RelationshipType, TestDefinition } from '@orbit/contract';
-import { EVIDENCE_STATUSES, RELATIONSHIP_TYPES } from '@orbit/contract';
+import type { Behavior, Entity, EntityKind, OrbitContract, Relationship, RelationshipType, TestDefinition } from '@orbit/contract';
+import { RELATIONSHIP_TYPES } from '@orbit/contract';
 import { REL_INFO } from '../../lib/model';
-import { behaviorCandidates, clip, closest, entityCandidates, evidenceCandidates, notFound, relationshipCandidates, testCandidates } from './helpers';
+import { behaviorCandidates, clip, closest, entityCandidates, notFound, relationshipCandidates, testCandidates } from './helpers';
 import { S } from './schema';
 import { ToolError } from './types';
 import type { JsonSchema } from './types';
@@ -90,26 +90,6 @@ function checkParent(c: OrbitContract, kind: EntityKind, parentId: string, selfI
   }
   return p;
 }
-
-function parseCommit(raw: string, env: OpEnv): string {
-  const v = raw.trim();
-  if (v.toUpperCase() === 'HEAD') {
-    if (!env.headCommit) throw new ToolError("commit 'HEAD' cannot be resolved: the open file is not in a git repository with commits.", { suggestions: ['Pass the full 40-character commit sha, or omit commit when it is unknown.'] });
-    return env.headCommit;
-  }
-  if (!/^[0-9a-fA-F]{40}$/.test(v)) throw new ToolError(`commit must be a full 40-character hex sha or 'HEAD' (got '${clip(v, 50)}').`, { suggestions: ['Use list_git_refs to find commit shas; omit commit when it is unknown (Orbit never guesses one).'] });
-  return v.toLowerCase();
-}
-
-function parseExecutedAt(raw: string): string {
-  const v = raw.trim();
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(v) || Number.isNaN(Date.parse(v))) {
-    throw new ToolError(`executedAt must be an RFC 3339 timestamp like 2026-11-14T10:30:00Z (got '${clip(v, 50)}').`);
-  }
-  return v;
-}
-
-const nowRfc3339 = (env: OpEnv) => env.now().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 const idProp = (what: string) => S.nonEmpty(`Optional stable id for the new ${what}. Omit to auto-generate from the name. Ids can never change afterwards.`);
 
@@ -208,7 +188,7 @@ export const OPS: OpDef[] = [
     name: 'delete_entity',
     title: 'Delete capability or system',
     description:
-      "Delete an entity together with its behaviors and every relationship that points to or from it. Child entities are moved up to the entity's parent (children: 'reparent', default) or the delete is refused when it has children (children: 'block'). Tests and evidence are never deleted. The result lists the implications (what else was removed) - the same list the UI's confirmation dialog shows. Undoable; use dryRun: true to preview.",
+      "Delete an entity together with its behaviors and every relationship that points to or from it. Child entities are moved up to the entity's parent (children: 'reparent', default) or the delete is refused when it has children (children: 'block'). Tests are never deleted. The result lists the implications (what else was removed) - the same list the UI's confirmation dialog shows. Undoable; use dryRun: true to preview.",
     schema: S.obj({ id: S.nonEmpty('Entity id to delete.'), children: S.oneOf(['reparent', 'block'], "'reparent' (default) moves children to the grandparent; 'block' refuses if there are children.") }, ['id']),
     destructive: true,
     idempotent: true,
@@ -318,7 +298,7 @@ export const OPS: OpDef[] = [
   op<{ behaviorId: string; testIds: string[] }>({
     name: 'map_tests',
     title: 'Map tests to a behavior',
-    description: 'Add tests (by id, must exist) to a behavior. Already-mapped ids are ignored. Mapping a test does not create evidence; Orbit never runs tests.',
+    description: 'Add tests (by id, must exist) to a behavior. Already-mapped ids are ignored. Mapping a test does not run it (run_tests does).',
     schema: S.obj({ behaviorId: S.nonEmpty('Behavior id.'), testIds: { ...S.strList('Test ids to add.'), minItems: 1 } }, ['behaviorId', 'testIds']),
     destructive: false,
     idempotent: true,
@@ -340,7 +320,7 @@ export const OPS: OpDef[] = [
   op<{ behaviorId: string; testIds: string[] }>({
     name: 'unmap_tests',
     title: 'Unmap tests from a behavior',
-    description: 'Remove tests from a behavior (the tests and their evidence stay in the contract). Ids that are not mapped are ignored with a warning.',
+    description: 'Remove tests from a behavior (the tests stay in the contract). Ids that are not mapped are ignored with a warning.',
     schema: S.obj({ behaviorId: S.nonEmpty('Behavior id.'), testIds: { ...S.strList('Test ids to remove.'), minItems: 1 } }, ['behaviorId', 'testIds']),
     destructive: false,
     idempotent: true,
@@ -360,34 +340,36 @@ export const OPS: OpDef[] = [
 
   // ───────────────────────────── tests ─────────────────────────────
 
-  op<{ name: string; location: string; id?: string }>({
+  op<{ name: string; location: string; id?: string; placeholder?: boolean }>({
     name: 'create_test',
     title: 'Create test definition',
-    description: "Register an automated test (an external artifact) so behaviors can reference it. 'location' says where it lives, e.g. 'apps/tasky/tests/e2e/lists.spec.ts › creates a list'. Id defaults to 'test.<slug>'.",
-    schema: S.obj({ name: S.nonEmpty('Human-readable test name.'), location: S.nonEmpty('File path and test title where the test lives.'), id: idProp('test') }, ['name', 'location']),
+    description: "Register an automated test (an external artifact) so behaviors can reference it. 'location' says where it lives, e.g. 'apps/tasky/tests/e2e/lists.spec.ts › creates a list'. placeholder: true registers a PLANNED test that does not exist yet - use it when proposing a change, so the product owner sees the intended test surface for each behavior (location = where it will live). Placeholders never count as coverage; once the test is written, update_test { placeholder: false }. Id defaults to 'test.<slug>'.",
+    schema: S.obj({ name: S.nonEmpty('Human-readable test name.'), location: S.nonEmpty('File path and test title where the test lives (or will live, for a placeholder).'), placeholder: S.bool('Planned, not implemented yet.'), id: idProp('test') }, ['name', 'location']),
     destructive: false,
     idempotent: false,
     run(c, a) {
       const ids = allIds(c);
       const id = a.id ? trim(a.id) : generateId('test', ids.tests, a.name);
       if (ids.tests.has(id)) throw new ToolError(`A test with id '${id}' already exists.`, { suggestions: ['Omit id to auto-generate one, or use update_test.'] });
-      const t: TestDefinition = { id, name: trim(a.name), location: trim(a.location) };
-      return { contract: { ...c, tests: [...c.tests, t] }, summary: `Created test ${q(t.name)}`, result: { test: t } };
+      const t: TestDefinition = { id, name: trim(a.name), location: trim(a.location), ...(a.placeholder ? { placeholder: true as const } : {}) };
+      return { contract: { ...c, tests: [...c.tests, t] }, summary: `Created ${t.placeholder ? 'placeholder ' : ''}test ${q(t.name)}`, result: { test: t } };
     },
   }),
 
-  op<{ id: string; name?: string; location?: string }>({
+  op<{ id: string; name?: string; location?: string; placeholder?: boolean }>({
     name: 'update_test',
     title: 'Update test definition',
-    description: 'Change a test definition\'s name and/or location (the id is permanent). Mappings and evidence stay attached.',
-    schema: S.obj({ id: S.nonEmpty('Test id.'), name: S.nonEmpty('New name.'), location: S.nonEmpty('New location.') }, ['id']),
+    description: "Change a test definition's name, location and/or placeholder flag (the id is permanent). placeholder: false marks a planned test as implemented. Mappings and evidence stay attached.",
+    schema: S.obj({ id: S.nonEmpty('Test id.'), name: S.nonEmpty('New name.'), location: S.nonEmpty('New location.'), placeholder: S.bool('true = planned, not implemented; false = implemented.') }, ['id']),
     destructive: false,
     idempotent: true,
     run(c, a) {
       const t = c.tests.find((x) => x.id === a.id);
       if (!t) throw notFound('Test', a.id, testCandidates(c));
-      needAny(a, ['name', 'location'], `test '${a.id}'`);
-      const nt = { ...t, ...(a.name !== undefined ? { name: trim(a.name) } : {}), ...(a.location !== undefined ? { location: trim(a.location) } : {}) };
+      needAny(a, ['name', 'location', 'placeholder'], `test '${a.id}'`);
+      const nt: TestDefinition = { ...t, ...(a.name !== undefined ? { name: trim(a.name) } : {}), ...(a.location !== undefined ? { location: trim(a.location) } : {}) };
+      if (a.placeholder === true) nt.placeholder = true;
+      else if (a.placeholder === false) delete nt.placeholder;
       return { contract: { ...c, tests: c.tests.map((x) => (x.id === t.id ? nt : x)) }, summary: `Updated test ${q(nt.name)}`, result: { test: nt } };
     },
   }),
@@ -395,7 +377,7 @@ export const OPS: OpDef[] = [
   op<{ id: string }>({
     name: 'delete_test',
     title: 'Delete test definition',
-    description: "Delete a test definition, unmap it from every behavior and delete all of its evidence records - exactly what the UI's delete does. The result lists those implications. Undoable; use dryRun: true to preview.",
+    description: "Delete a test definition and unmap it from every behavior - exactly what the UI's delete does. The result lists those implications. Undoable; use dryRun: true to preview.",
     schema: S.obj({ id: S.nonEmpty('Test id.') }, ['id']),
     destructive: true,
     idempotent: true,
@@ -404,100 +386,35 @@ export const OPS: OpDef[] = [
       if (!t) throw notFound('Test', a.id, testCandidates(c));
       const implications = referencesTo(c, 'test', t.id);
       return {
-        contract: removeTest(c, t.id, { unmap: true, removeEvidence: true }),
+        contract: removeTest(c, t.id, { unmap: true }),
         summary: `Deleted test ${q(t.name)}`,
-        result: { deleted: t, implications, removedEvidence: c.evidence.filter((e) => e.testId === t.id).map((e) => e.id) },
+        result: { deleted: t, implications },
       };
     },
   }),
 
-  // ───────────────────────────── evidence ─────────────────────────────
+  // ───────────────────────────── validation ─────────────────────────────
 
-  op<{ testId: string; status: EvidenceStatus; executedAt?: string; commit?: string; details?: string; id?: string }>({
-    name: 'create_evidence',
-    title: 'Record test evidence',
+  op<{ command?: string | null; results?: string }>({
+    name: 'set_validation',
+    title: 'Set how tests are run',
     description:
-      "Record a test run result (evidence). status: passed | failed | skipped | error. executedAt is RFC 3339 (default: now). commit is the 40-hex git sha the run was for, or 'HEAD' to use the open repository's current HEAD; omit it when unknown (never guess - evidence without a commit has unknown freshness). Evidence only counts as 'current' when its commit equals the inspected commit (see set_evidence_context).",
-    schema: S.obj(
-      {
-        testId: S.nonEmpty('Existing test id.'),
-        status: S.oneOf([...EVIDENCE_STATUSES], 'Result of the run.'),
-        executedAt: S.str('RFC 3339 timestamp, e.g. 2026-11-14T10:30:00Z. Default: now.'),
-        commit: S.str("Full 40-hex commit sha, or 'HEAD'. Omit when unknown."),
-        details: S.str('Optional free text (runner, environment, failure summary).'),
-        id: idProp('evidence record'),
-      },
-      ['testId', 'status'],
-    ),
+      "Set the command that runs the ENTIRE test suite (run from the repository root, or the contract's folder outside git) and the JUnit XML file it writes (relative to the same folder). Orbit reads test status from that file, matching each test by its location: '<file> › <describe> › <test title>' as the runner reports it. command: null removes the validation setup. Saved in the contract; a person must approve a new or changed command before it runs.",
+    schema: S.obj({ command: S.nullableStr("Shell command, e.g. 'npm test'; null to remove the setup."), results: S.nonEmpty("Results file, e.g. 'test-results/junit.xml'.") }),
     destructive: false,
-    idempotent: false,
-    run(c, a, env) {
-      if (!c.tests.some((t) => t.id === a.testId)) throw notFound('Test', a.testId, testCandidates(c));
-      const ids = allIds(c);
-      const id = a.id ? trim(a.id) : generateId('run', ids.evidence, a.testId.replace(/^test\./, ''));
-      if (ids.evidence.has(id)) throw new ToolError(`An evidence record with id '${id}' already exists.`, { suggestions: ['Omit id to auto-generate one.'] });
-      const ev: Evidence = {
-        id,
-        testId: a.testId,
-        status: a.status,
-        executedAt: a.executedAt ? parseExecutedAt(a.executedAt) : nowRfc3339(env),
-        ...(a.commit ? { commit: parseCommit(a.commit, env) } : {}),
-        ...(a.details && trim(a.details) ? { details: trim(a.details) } : {}),
-      };
-      const t = c.tests.find((x) => x.id === a.testId)!;
-      return { contract: { ...c, evidence: [...c.evidence, ev] }, summary: `Recorded ${a.status} evidence for test ${q(t.name)}`, result: { evidence: ev } };
-    },
-  }),
-
-  op<{ id: string; testId?: string; status?: EvidenceStatus; executedAt?: string; commit?: string | null; details?: string | null }>({
-    name: 'update_evidence',
-    title: 'Update evidence record',
-    description: "Change an evidence record. commit: null removes the commit (freshness becomes unknown); 'HEAD' resolves like create_evidence. details: null removes the details.",
-    schema: S.obj(
-      {
-        id: S.nonEmpty('Evidence id.'),
-        testId: S.nonEmpty('Existing test id.'),
-        status: S.oneOf([...EVIDENCE_STATUSES], 'Result of the run.'),
-        executedAt: S.str('RFC 3339 timestamp.'),
-        commit: S.nullableStr("40-hex sha, 'HEAD', or null to remove."),
-        details: S.nullableStr('Free text, or null to remove.'),
-      },
-      ['id'],
-    ),
-    destructive: false,
-    idempotent: true,
-    run(c, a, env) {
-      const ev = c.evidence.find((x) => x.id === a.id);
-      if (!ev) throw notFound('Evidence record', a.id, evidenceCandidates(c));
-      needAny(a, ['testId', 'status', 'executedAt', 'commit', 'details'], `evidence '${a.id}'`);
-      if (a.testId !== undefined && !c.tests.some((t) => t.id === a.testId)) throw notFound('Test', a.testId, testCandidates(c));
-      const next: Evidence = { ...ev };
-      if (a.testId !== undefined) next.testId = a.testId;
-      if (a.status !== undefined) next.status = a.status;
-      if (a.executedAt !== undefined) next.executedAt = parseExecutedAt(a.executedAt);
-      if (a.commit !== undefined) {
-        if (a.commit === null || !a.commit.trim()) delete next.commit;
-        else next.commit = parseCommit(a.commit, env);
-      }
-      if (a.details !== undefined) {
-        if (a.details === null || !a.details.trim()) delete next.details;
-        else next.details = trim(a.details);
-      }
-      return { contract: { ...c, evidence: c.evidence.map((x) => (x.id === ev.id ? next : x)) }, summary: `Updated evidence '${ev.id}'`, result: { evidence: next } };
-    },
-  }),
-
-  op<{ id: string }>({
-    name: 'delete_evidence',
-    title: 'Delete evidence record',
-    description: 'Delete one evidence record. Undoable.',
-    schema: S.obj({ id: S.nonEmpty('Evidence id.') }, ['id']),
-    destructive: true,
     idempotent: true,
     run(c, a) {
-      const ev = c.evidence.find((x) => x.id === a.id);
-      if (!ev) throw notFound('Evidence record', a.id, evidenceCandidates(c));
-      return { contract: { ...c, evidence: c.evidence.filter((x) => x.id !== ev.id) }, summary: `Deleted evidence '${ev.id}'`, result: { deleted: ev } };
+      if (a.command === null) {
+        if (!c.validation) throw new ToolError('No validation setup to remove.');
+        const next = { ...c };
+        delete next.validation;
+        return { contract: next, summary: 'Removed the test setup', result: { validation: null } };
+      }
+      const command = a.command !== undefined ? trim(a.command) : c.validation?.command;
+      const results = a.results !== undefined ? trim(a.results) : c.validation?.results;
+      if (!command || !results) throw new ToolError('Both a command and a results file are needed.', { suggestions: ["set_validation({ command: 'npm test', results: 'test-results/junit.xml' })"] });
+      const validation = { command, results };
+      return { contract: { ...c, validation }, summary: `Set the test command to ${q(command)}`, result: { validation } };
     },
   }),
 

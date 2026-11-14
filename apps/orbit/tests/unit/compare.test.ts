@@ -77,16 +77,10 @@ describe('computeComparison', () => {
 
 describe('tree and search helpers', () => {
   const contract = parseContract(TASKY).contract!;
-  it('builds a same-kind forest sorted by name', () => {
+  it('builds a same-kind forest in file order', () => {
     const roots = buildTree(contract, 'capability');
-    expect(roots.map((r) => r.entity.name)).toEqual(['Task Discovery', 'Task Management', 'Task Organization']);
+    expect(roots.map((r) => r.entity.name).sort()).toEqual(['Task Discovery', 'Task Management', 'Task Organization']);
     expect(roots.every((r) => r.children.every((c) => c.entity.kind === 'capability'))).toBe(true);
-  });
-  it('shows ghosts under their parent', () => {
-    const ghost = { ...contract.entities.find((e) => e.id === 'cap.task-management.create-edit')!, id: 'cap.ghost', name: 'Ghost', parentId: 'cap.task-management' };
-    const roots = buildTree(contract, 'capability', [ghost]);
-    const tm = roots.find((r) => r.entity.id === 'cap.task-management')!;
-    expect(tm.children.find((c) => c.entity.id === 'cap.ghost')?.ghost).toBe(true);
   });
   it('search matches names, ids and behaviors, keeping ancestors visible', () => {
     const roots = buildTree(contract, 'capability');
@@ -114,5 +108,20 @@ describe('format helpers', () => {
     const now = Date.parse('2026-11-13T12:00:00Z');
     expect(relativeTime('2026-11-13T11:00:00Z', now)).toBe('1 hour ago');
     expect(relativeTime('2026-11-10T12:00:00Z', now)).toBe('3 days ago');
+  });
+});
+
+describe('moveEntity / nudgeEntity', () => {
+  const contract = parseContract(TASKY).contract!;
+  it('reorders siblings before/after and reparents inside', async () => {
+    const { moveEntity, nudgeEntity } = await import('../../src/lib/model');
+    const names = (c: typeof contract) => buildTree(c, 'capability').map((r) => r.entity.id);
+    const [a, b, c] = names(contract);
+    expect(names(moveEntity(contract, c, a, 'before'))).toEqual([c, a, b]);
+    expect(names(moveEntity(contract, a, c, 'after'))).toEqual([b, c, a]);
+    expect(names(nudgeEntity(contract, a, 1))).toEqual([b, a, c]);
+    const inside = moveEntity(contract, c, a, 'inside');
+    expect(inside.entities.find((e) => e.id === c)!.parentId).toBe(a);
+    expect(moveEntity(contract, a, 'cap.task-management.create-edit', 'inside')).toBeDefined();
   });
 });

@@ -1,17 +1,20 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { parseContract, serializeContract } from '@orbit/contract';
-import { DEMO, REL, SHA, TASKY, gitSeed, launch } from './helpers';
+import { DEMO, REL, SHA, TASKY, compareVia, gitSeed, launch } from './helpers';
 
 const item = (page: Page, name: string) => page.getByRole('treeitem', { name: new RegExp(`^${name}`) });
 const row = (page: Page, key: string) => page.locator(`[data-change-key="${key}"]`);
+const views = (page: Page) => page.getByRole('banner').getByRole('group', { name: 'Change views' });
+const viewBtn = (page: Page, name: string) => views(page).getByRole('button', { name, exact: true });
+const title = (page: Page) => page.getByTestId('impact-title');
 
 test.describe('AC-09 semantic diff', () => {
-  test('HEAD → Working tree: totals, field-level before/after, owner moves, and the direct vs potential split', async ({ page }) => {
+  test('View actual (the default): totals, field-level before/after, owner moves, and the direct vs potential split', async ({ page }) => {
     await launch(page, { git: true, text: DEMO.implementation });
     await page.keyboard.press('Control+3');
     const view = page.getByTestId('impact-view');
-    await expect(view).toContainText('HEAD → Working tree');
+    await expect(title(page)).toHaveText('View actual');
     await expect(page.getByTestId('change-row')).toHaveCount(17);
     await expect(page.getByTestId('direct-count')).toContainText('3');
     await expect(page.getByTestId('potential-count')).toContainText('3');
@@ -58,10 +61,10 @@ test.describe('AC-09 semantic diff', () => {
   test('reformat/reorder-only revisions yield no semantic changes', async ({ page }) => {
     await launch(page, { git: true, text: DEMO.base });
     await page.keyboard.press('Control+3');
-    await page.getByRole('combobox', { name: 'Target revision' }).click();
-    await page.getByRole('option', { name: /^reformat/ }).click();
-    await expect(page.getByTestId('no-changes')).toContainText('No semantic changes between HEAD and reformat');
-    await expect(page.getByTestId('no-changes')).toContainText('Choose branches');
+    await compareVia(page, 'HEAD', 'reformat');
+    await expect(title(page)).toHaveText('Custom comparison');
+    await expect(page.getByTestId('no-changes')).toContainText('No product changes in this view');
+    await expect(page.getByTestId('no-changes')).toContainText('Formatting and ordering differences are ignored');
   });
 
   test('test mapping changes show added/removed test chips', async ({ page }) => {
@@ -86,14 +89,19 @@ test.describe('AC-09 semantic diff', () => {
     await page.getByLabel('Entity name').fill('Renamed in Orbit');
     await page.getByLabel('Entity name').press('Enter');
     await page.keyboard.press('Control+3');
-    await expect(page.getByTestId('impact-view')).toContainText('HEAD → Unsaved edits');
+    await expect(title(page)).toHaveText('View actual');
+    await expect(viewBtn(page, 'View actual')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('change-row')).toHaveCount(1);
-    await row(page, 'entity:cap.task-discovery').click();
+    await row(page, 'entity:cap.task-management').click();
     await expect(page.getByTestId('change-detail').locator('[data-field="name"]')).toContainText('Renamed in Orbit');
-    await page.getByRole('combobox', { name: 'Target revision' }).click();
-    await page.getByRole('option', { name: 'Working tree (saved file)' }).click();
+    // a renamed entity shows its title as a text diff in the detail view while comparing
+    await page.keyboard.press('Control+1');
+    const diffTitle = page.getByTestId('text-diff').first();
+    await expect(diffTitle.locator('del').first()).toBeVisible();
+    await expect(diffTitle).toContainText(/Renamed.*in Orbit/);
+    await page.keyboard.press('Control+3');
+    await compareVia(page, 'HEAD', 'working'); // the saved file has no changes
     await expect(page.getByTestId('no-changes')).toBeVisible();
-    await expect(page.getByTestId('impact-view')).toContainText('You have unsaved changes; “Working tree” compares the saved file');
   });
 });
 
@@ -107,7 +115,9 @@ test.describe('AC-10 embedded change context + AC-11 impact', () => {
 
   test('Product tree highlights added/modified/removed(ghost)/potentially-affected; removed entities stay inspectable', async ({ page }) => {
     const tree = page.getByRole('tree', { name: 'Capabilities' });
-    await expect(page.getByLabel('Legend').first()).toContainText('Potentially affected');
+    // compare mode defaults to showing changes only; unchanged items are checked after turning that off
+    await expect(item(page, 'Custom Lists')).toHaveCount(0);
+    await expect(page.getByTestId('show-changes')).toHaveAttribute('aria-pressed', 'true');
     await expect(item(page, 'Complete and Delete Tasks')).toHaveAttribute('data-status', 'removed');
     await expect(item(page, 'Complete and Delete Tasks')).toHaveClass(/ghost/);
     await expect(item(page, 'Complete and Delete Tasks')).toContainText('Removed');
@@ -115,6 +125,7 @@ test.describe('AC-10 embedded change context + AC-11 impact', () => {
     await expect(item(page, 'Create and Edit Tasks').getByRole('img', { name: 'Modified' })).toBeVisible();
     await expect(item(page, 'Inbox and All Tasks')).toHaveAttribute('data-status', 'affected');
     await expect(item(page, 'Today and Overdue')).toHaveAttribute('data-status', 'affected');
+    await page.getByTestId('show-changes').click();
     await expect(item(page, 'Custom Lists')).toHaveAttribute('data-status', 'unchanged');
     // a parent is not "modified" by its children, but summarises them
     await expect(item(page, 'Task Management')).toHaveAttribute('data-status', 'unchanged');
@@ -125,22 +136,26 @@ test.describe('AC-10 embedded change context + AC-11 impact', () => {
     await expect(page.getByTestId('ghost-note')).toContainText('removed in the comparison target');
     await expect(page.getByLabel('Entity name')).toBeDisabled();
     await expect(page.getByRole('button', { name: /^Delete / })).toHaveCount(0);
-    await expect(page.getByTestId('entity-detail')).toContainText('Mark a task done'.slice(0, 4)); // base behaviors remain readable
+    await expect(page.getByTestId('entity-detail')).toContainText('Complete and reopen'); // base behaviors remain readable
+    await item(page, 'Create and Edit Tasks').click();
+    await expect(page.locator('[data-testid="behavior-card"][data-change="added"], [data-testid="behavior-card"][data-change="modified"], [data-testid="behavior-card"][data-change="removed"]').first()).toBeVisible();
     await item(page, 'Today and Overdue').click();
-    await expect(page.getByTestId('state-note')).toContainText('Potentially affected');
-    await expect(page.getByTestId('state-note')).toContainText('(changed)');
+    const affected = page.locator('[data-testid="behavior-card"][data-change="affected"]').first();
+    await expect(affected).toContainText('Potentially affected');
+    await expect(affected.getByTestId('behavior-impact')).toContainText('(changed)');
   });
 
   test('Engineering view shows the shared-system change and its consumers; clearing the comparison removes ghosts', async ({ page }) => {
     await page.keyboard.press('Control+2');
     await expect(item(page, 'Local Date Evaluation')).toHaveAttribute('data-status', 'modified');
     await expect(item(page, 'Task Filtering and Sorting')).toHaveAttribute('data-status', 'affected');
+    await expect(item(page, 'Task Repository')).toHaveCount(0);
+    await page.getByTestId('show-changes').click();
     await expect(item(page, 'Task Repository')).toHaveAttribute('data-status', 'unchanged');
 
     await page.keyboard.press('Control+1');
-    await page.getByRole('button', { name: /Comparison HEAD/ }).click();
-    await page.getByRole('button', { name: 'Clear comparison' }).click();
-    await page.keyboard.press('Escape');
+    await viewBtn(page, 'View actual').click(); // clicking the active view turns it off
+    await expect(viewBtn(page, 'View actual')).toHaveAttribute('aria-pressed', 'false');
     await expect(item(page, 'Complete and Delete Tasks')).toHaveCount(0);
     await expect(item(page, 'Create and Edit Tasks')).not.toHaveAttribute('data-status', 'modified');
   });
@@ -167,7 +182,7 @@ test.describe('AC-10 embedded change context + AC-11 impact', () => {
     // jump into Engineering with the comparison still active
     await page.getByRole('button', { name: 'Show in Engineering' }).click();
     await expect(page.getByTestId('entity-detail').getByLabel('Entity name')).toHaveValue('Local Date Evaluation');
-    await expect(page.getByRole('contentinfo', { name: 'Status' })).toContainText('Comparing HEAD → Working tree');
+    await expect(page.getByRole('contentinfo', { name: 'Status' })).toContainText('Showing View actual');
     await expect(item(page, 'Task Filtering and Sorting')).toHaveAttribute('data-status', 'affected');
   });
 });
@@ -181,6 +196,7 @@ test('AC-11 a changed source does not mark unrelated dependencies as affected', 
   await expect(page.getByText('No other entity depends on anything that changed.')).toBeVisible();
   await page.keyboard.press('Control+1');
   await expect(item(page, 'Today and Overdue')).toHaveAttribute('data-status', 'modified');
+  await page.getByTestId('show-changes').click();
   await expect(item(page, 'Create and Edit Tasks')).toHaveAttribute('data-status', 'unchanged');
 });
 
@@ -192,12 +208,10 @@ test.describe('revisions: errors and edge cases', () => {
     git.refs.push({ name: 'broken', kind: 'branch', commit: bad });
     await launch(page, { git, text: DEMO.base });
     await page.keyboard.press('Control+3');
-    await page.getByRole('combobox', { name: 'Target revision' }).click();
-    await page.getByRole('option', { name: /^broken/ }).click();
+    await compareVia(page, 'HEAD', 'broken');
     const blocked = page.getByTestId('compare-blocked');
-    await expect(blocked).toContainText('contains an invalid contract');
-    await expect(blocked).toContainText('will not fall back to a text diff');
-    await expect(page.getByTestId('impact-view')).toContainText('Target: broken');
+    await expect(blocked).toContainText('is not a valid contract');
+    await expect(page.getByTestId('impact-view')).toContainText('Target: Another version');
     await expect(page.getByTestId('impact-view')).toContainText(/line \d+/);
     await expect(page.getByTestId('change-row')).toHaveCount(0);
   });
@@ -205,10 +219,7 @@ test.describe('revisions: errors and edge cases', () => {
   test('unknown ref gives an actionable error', async ({ page }) => {
     await launch(page, { git: true, text: DEMO.base });
     await page.keyboard.press('Control+3');
-    await page.getByRole('combobox', { name: 'Base revision' }).click();
-    await page.getByRole('option', { name: 'Commit SHA…' }).click();
-    await page.getByLabel('Base revision commit SHA').fill('deadbeef');
-    await page.getByLabel('Base revision commit SHA').press('Enter');
+    await compareVia(page, 'deadbeef', 'working');
     await expect(page.getByTestId('compare-error')).toContainText("Cannot resolve revision 'deadbeef'");
   });
 
@@ -217,35 +228,106 @@ test.describe('revisions: errors and edge cases', () => {
     git.commits[SHA.base].files = {};
     await launch(page, { git, text: TASKY });
     await page.keyboard.press('Control+3');
-    await expect(page.getByTestId('status-added')).toContainText('does not exist in HEAD');
-    await expect(page.getByTestId('impact-view')).toContainText('Not committed yet — HEAD has no version of this path.');
+    await expect(page.getByTestId('status-added')).toContainText('does not exist in Baseline');
     await expect(page.getByTestId('change-row').first()).toBeVisible();
   });
 
-  test('detached HEAD is labelled', async ({ page }) => {
+  test('detached HEAD: View actual still works and nothing git-ish is shown', async ({ page }) => {
     await launch(page, { git: gitSeed({ head: 'detached' }), text: DEMO.base });
     await page.keyboard.press('Control+3');
-    await expect(page.getByTestId('impact-view')).toContainText('HEAD is detached at a1a1a1a');
-    await expect(page.getByRole('contentinfo', { name: 'Status' })).toContainText('detached HEAD a1a1a1a');
+    await expect(title(page)).toHaveText('View actual');
+    await expect(page.getByTestId('impact-view')).not.toContainText('HEAD');
+    await expect(page.getByRole('contentinfo', { name: 'Status' })).not.toContainText('HEAD');
+  });
+});
+
+test('a view button toggles its comparison; its arrow shows the git details without changing anything', async ({ page }) => {
+  await launch(page, { git: true, text: DEMO.implementation });
+  const actual = viewBtn(page, 'View actual');
+  await expect(actual).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: 'View actual details' }).click();
+  const pop = page.getByTestId('details-actual');
+  await expect(pop).toContainText('Baseline');
+  await expect(pop).toContainText('merge-base');
+  await expect(pop).toContainText('a1a1a1a');
+  await expect(actual).toHaveAttribute('aria-pressed', 'false'); // opening details does not turn the view on
+  await page.keyboard.press('Escape');
+  await actual.click();
+  await expect(actual).toHaveAttribute('aria-pressed', 'true');
+  await actual.click();
+  await expect(actual).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('a renamed behavior shows its text as a diff while comparing', async ({ page }) => {
+  await launch(page, { git: true, text: DEMO.base });
+  await page.getByRole('treeitem', { name: /^Create and Edit Tasks/ }).click();
+  const card = page.getByTestId('behavior-card').first();
+  await card.getByRole('button', { name: /^Edit / }).click();
+  const text = card.getByLabel('Behavior', { exact: true });
+  await text.fill('User can rename this behavior');
+  await text.press('Enter');
+  await page.keyboard.press('Control+3'); // defaults to View actual (latest = unsaved edits)
+  await page.keyboard.press('Control+1');
+  const diffed = page.getByTestId('behavior-card').first().getByTestId('text-diff');
+  await expect(diffed.locator('del').first()).toBeVisible();
+  await expect(diffed).toContainText('rename this behavior');
+});
+
+test.describe('product-owner change views', () => {
+  /** main: base. Branch feat: base -> proposal (tagged). Working tree: implementation. */
+  const featureRepo = (tagged: boolean) => {
+    const g = gitSeed();
+    g.commits[SHA.proposal].parents = [SHA.base];
+    g.refs.push({ name: 'feat', kind: 'branch', commit: SHA.proposal });
+    if (tagged) g.refs.push({ name: 'orbit/proposal/feat', kind: 'tag', commit: SHA.proposal });
+    g.head = { branch: 'feat' };
+    return g;
+  };
+
+  const evidence = (page: Page) => page.evaluate(() => window.__orbitMcp!.callTool('get_status', {}).then((r) => (r.structuredContent as { evidenceContext: { kind: string } }).evidenceContext.kind));
+
+  test('View proposal, Actual vs proposal and View actual pick the right sides and drive evidence', async ({ page }) => {
+    await launch(page, { git: featureRepo(true), text: DEMO.implementation });
+    await page.keyboard.press('Control+3');
+
+    await viewBtn(page, 'View proposal').click();
+    await expect(title(page)).toHaveText('View proposal');
+    await expect(viewBtn(page, 'View proposal')).toHaveAttribute('aria-pressed', 'true');
+    expect(await evidence(page)).toBe('none');
+
+    await viewBtn(page, 'Actual vs proposal').click();
+    await expect(title(page)).toHaveText('Actual vs proposal');
+    expect(await evidence(page)).toBe('head');
+
+    await viewBtn(page, 'View actual').click();
+    await expect(title(page)).toHaveText('View actual');
+    await expect(viewBtn(page, 'View actual')).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('shallow clone note and compare popover from the top bar', async ({ page }) => {
-    const git = gitSeed();
-    git.shallow = true;
-    await launch(page, { git, text: DEMO.implementation });
-    await page.getByRole('button', { name: 'Compare revisions' }).click();
-    const pop = page.getByRole('dialog');
-    await expect(pop).toContainText('Compare revisions');
-    await pop.getByRole('combobox', { name: 'Base revision' }).click();
-    const opts = page.getByRole('listbox');
-    await expect(opts).toContainText('Working tree');
-    await expect(opts).toContainText('HEAD');
-    await expect(opts).toContainText('Branches');
-    await expect(opts).toContainText('Tags');
-    await page.getByRole('option', { name: /^proposal/ }).click();
-    await page.keyboard.press('Escape');
+  test('git details appear only in the dropdowns', async ({ page }) => {
+    await launch(page, { git: featureRepo(true), text: DEMO.implementation });
     await page.keyboard.press('Control+3');
-    await expect(page.getByTestId('impact-view')).toContainText('shallow clone');
-    await expect(page.getByTestId('impact-view')).toContainText('proposal → Working tree');
+    await viewBtn(page, 'Actual vs proposal').click();
+    await expect(page.getByTestId('change-row').first()).toBeVisible();
+    for (const t of [/\bfeat\b/, /orbit\/proposal/, /\bHEAD\b/, /\bmain\b/, /c3c3c3c/]) {
+      await expect(page.getByRole('banner')).not.toContainText(t);
+      await expect(page.getByTestId('impact-view')).not.toContainText(t);
+      await expect(page.getByRole('contentinfo', { name: 'Status' })).not.toContainText(t);
+    }
+    await page.getByRole('button', { name: 'Actual vs proposal details' }).click();
+    const pop = page.getByTestId('details-vs-proposal');
+    await expect(pop).toContainText('orbit/proposal/feat');
+    await expect(pop).toContainText('c3c3c3c');
+    await expect(pop).toContainText('feat');
+  });
+
+  test('proposal views are disabled until a proposal is tagged', async ({ page }) => {
+    await launch(page, { git: featureRepo(false), text: DEMO.implementation });
+    await page.keyboard.press('Control+3');
+    await expect(viewBtn(page, 'View proposal')).toBeDisabled();
+    await expect(viewBtn(page, 'Actual vs proposal')).toBeDisabled();
+    await expect(viewBtn(page, 'View actual')).toBeEnabled();
+    await page.getByRole('button', { name: 'View proposal details' }).click();
+    await expect(page.getByTestId('details-proposal')).toContainText('No proposal has been recorded');
   });
 });

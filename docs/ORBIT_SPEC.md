@@ -156,6 +156,13 @@ Illustrative complete shape:
 - Validate on load, before any structured save, after raw JSON editing, and before computing a comparison. JSON Schema checks structure; semantic validation checks cross-references/cycles/uniqueness.
 - The shipped schema is part of the public format; README explains how external agents can generate/update files and run validation without Orbit's GUI.
 
+> **Superseded (2026-11-14):** the `evidence` array, commit freshness and the inspected-commit setting described in the
+> rest of this section were removed. Test results now come from the JUnit XML file named by the contract's optional
+> `validation` block (`command`, `results`), produced by **Validate capabilities**; results are never stored in the
+> contract. A test is passing/failing only for results at or after the proposal's commit time, otherwise unconfirmed,
+> and placeholder tests (`placeholder: true`) are planned. See `README.md` ("Test results") and
+> `packages/contract/API.md` ("Assurance").
+
 ### Evidence and commit self-reference caveat (important)
 
 A Git commit cannot normally contain its **own** complete SHA inside a tracked JSON file: inserting that SHA changes the commit. Consequently, commit-aware status is best-effort provenance, **not a promise that a committed contract can always contain “current” evidence for itself**. Orbit should mark evidence as current only if its recorded SHA exactly matches the revision of code being inspected, potentially outdated if different, and unknown if absent. For a working tree, compare against `HEAD` only if that is explicitly identified as the inspected code revision; explain this in the UI. External tools may generate evidence into an uncommitted working-tree contract after testing a commit. Do not invent SHA values, infer test results from Git alone, silently change evidence status, or introduce a second persistent store to conceal this tradeoff.
@@ -331,7 +338,7 @@ Include a repeatable demonstration that produces a meaningful semantic diff **wi
 
 **AC-12: Git independence.** Any JSON file outside Git is fully viewable/editable, and Git-specific UI degrades gracefully without blocking work.
 
-**AC-13: Git read-only.** Orbit's comparison features do not modify worktree, index, refs, or repository configuration; test this mechanically.
+**AC-13: Git read-only.** Orbit's comparison features do not modify worktree, index, refs, or repository configuration; test this mechanically. Exception (added later): the MCP tool `mark_proposal` creates or moves the lightweight tag `orbit/proposal/<branch>` and nothing else.
 
 **AC-14: Tasky user flows.** Users can create/edit/complete/delete tasks; create/rename/delete custom lists; filter Inbox/Today/All Tasks; see overdue items Today; retain changes on reload; and delete a list without losing its tasks.
 

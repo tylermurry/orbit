@@ -1,6 +1,6 @@
 import { computeAssurance, diffContracts, parseContract } from '@orbit/contract';
-import type { AssuranceSummary, Diagnostic, OrbitContract } from '@orbit/contract';
-import { canon, currentText, inspectedCommit, isDirty } from '../../state/store';
+import type { AssuranceContext, AssuranceSummary, Diagnostic, OrbitContract } from '@orbit/contract';
+import { assuranceContext, canon, currentText, isDirty } from '../../state/store';
 import type { AppState } from '../../state/types';
 import { ToolError } from './types';
 import type { ToolContext } from './types';
@@ -32,16 +32,17 @@ export function requireEditable(ctx: ToolContext): OrbitContract {
   return c;
 }
 
-export function inspected(s: AppState): string | null {
-  return inspectedCommit(s);
+/** Test results and the proposal time that assurance is judged against. */
+export function actxOf(s: AppState): AssuranceContext {
+  return assuranceContext(s);
 }
 
-// ── assurance memo (one entry per contract object + inspected commit) ──
-let assuranceMemo: { c: OrbitContract; commit: string | null; map: Map<string, AssuranceSummary> } | null = null;
-export function assuranceFor(c: OrbitContract, commit: string | null): Map<string, AssuranceSummary> {
-  if (assuranceMemo && assuranceMemo.c === c && assuranceMemo.commit === commit) return assuranceMemo.map;
-  const map = computeAssurance(c, { inspectedCommit: commit });
-  assuranceMemo = { c, commit, map };
+// ── assurance memo (one entry per contract object + assurance context) ──
+let assuranceMemo: { c: OrbitContract; ctx: AssuranceContext; map: Map<string, AssuranceSummary> } | null = null;
+export function assuranceFor(c: OrbitContract, ctx: AssuranceContext): Map<string, AssuranceSummary> {
+  if (assuranceMemo && assuranceMemo.c === c && assuranceMemo.ctx === ctx) return assuranceMemo.map;
+  const map = computeAssurance(c, ctx);
+  assuranceMemo = { c, ctx, map };
   return map;
 }
 
@@ -132,7 +133,6 @@ export const entityCandidates = (c: OrbitContract): Candidate[] => c.entities.ma
 export const testCandidates = (c: OrbitContract): Candidate[] => c.tests.map((t) => ({ id: t.id, name: t.name }));
 export const behaviorCandidates = (c: OrbitContract): Candidate[] => c.entities.flatMap((e) => e.behaviors.map((b) => ({ id: b.id, name: b.name })));
 export const relationshipCandidates = (c: OrbitContract): Candidate[] => c.relationships.map((r) => ({ id: r.id, name: `${r.type} ${r.sourceId} ${r.targetId}` }));
-export const evidenceCandidates = (c: OrbitContract): Candidate[] => c.evidence.map((e) => ({ id: e.id, name: `${e.testId} ${e.status}` }));
 
 export function entityRef(c: OrbitContract, id: string): { id: string; name: string; kind: string } {
   const e = c.entities.find((x) => x.id === id);

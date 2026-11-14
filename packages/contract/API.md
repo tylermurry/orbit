@@ -1,6 +1,6 @@
 # @orbit/contract — public API (v1)
 
-Shared by `apps/orbit` (UI), `scripts/*` (validation CLI, evidence producer, demo), and tests.
+Shared by `apps/orbit` (UI), `scripts/*` (validation CLI, demo), and tests.
 Types live in `src/types.ts`. Everything below is exported from `src/index.ts`. Pure TypeScript, no
 Node-only APIs in `src/` (must run in a browser/Tauri webview). Node CLIs live in `/scripts`.
 
@@ -27,11 +27,10 @@ validateContract(value: unknown): Diagnostic[]          // schema + semantic, no
 validateSemantics(contract: OrbitContract): Diagnostic[] // cross-reference checks only
 ```
 Semantic rules (codes):
-- `id.duplicate` — duplicate entity / relationship / test / evidence id within its namespace; duplicate behavior id **globally**.
+- `id.duplicate` — duplicate entity / relationship / test id within its namespace; duplicate behavior id **globally**.
 - `ref.parent.missing`, `ref.parent.kind` (parent must have same kind), `hierarchy.cycle` (parent chain cycle; report every entity on the cycle).
 - `ref.relationship.source`, `ref.relationship.target` (unknown entity), `relationship.self` (source === target).
 - `ref.behavior.test` — behavior testId not in `tests` (**severity: error** — references must resolve).
-- `ref.evidence.test` — evidence testId not in tests.
 - `behavior.testIds.duplicate` (warning).
 - Timestamps: RFC3339 `executedAt` (`schema.format`), `commit` must match `^[0-9a-f]{40}$`.
 Messages must be actionable: name the id, the field, and what to do ("Entity 'cap.x' has parentId 'sys.y' which is a system; capabilities must have capability parents.").
@@ -40,9 +39,9 @@ Messages must be actionable: name the id, the field, and what to do ("Entity 'ca
 serializeContract(contract: OrbitContract): string
 ```
 Canonical output: 2-space indent, trailing newline, keys in schema order
-(`schemaVersion, product, entities, relationships, tests, evidence`; entity: `id, kind, parentId, name, summary, description, behaviors`;
-behavior: `id, name, expected, testIds`; relationship: `id, type, sourceId, targetId, description?`; test: `id, name, location`;
-evidence: `id, testId, status, executedAt, commit?, details?`; product: `id, name, summary, description?`).
+(`schemaVersion, product, entities, relationships, tests, validation?`; entity: `id, kind, parentId, name, summary, description, behaviors`;
+behavior: `id, name, expected, testIds`; relationship: `id, type, sourceId, targetId, description?`; test: `id, name, location, placeholder?` (`placeholder: true` = planned, not implemented; never counts as coverage);
+validation: `command, results`; product: `id, name, summary, description?`).
 Array order is preserved as given (never re-sorted — avoids churn).
 
 ```ts
@@ -70,17 +69,20 @@ Result sorted by path length then entityId.
 ## Assurance — `src/assurance.ts`
 
 ```ts
-evidenceFreshness(evidence: Evidence, ctx: AssuranceContext): Freshness
+resultStatus(result: TestResult | undefined, since: string | null): TestStatus
 testAssurance(contract, testId, ctx): TestAssurance
 behaviorAssurance(contract, behaviorId, ctx): BehaviorAssurance | undefined
 entityAssurance(contract, entityId, ctx): AssuranceSummary          // entity + same-kind descendants, each behavior once
 computeAssurance(contract, ctx): Map<string, AssuranceSummary>      // every entity, efficient (memoized subtree)
 ```
-Rules (spec §4 "Assurance summary computation"): latest = max `executedAt` (tie-break by evidence id);
-`current` = latest evidence whose `commit === ctx.inspectedCommit`; with `inspectedCommit: null` nothing is
-current (all freshness `unknown`), so passing/failing counts are 0 and mapped behaviors land in `noCurrentEvidence`.
-Test mapping to an undefined test does not count as "with tests". Mapped-but-no-evidence is never "passing".
-`skipped` current evidence counts as neither passing nor failing.
+Test results are not part of the contract: the app reads them from the JUnit file named by `validation.results` and
+passes them in as `ctx = { results: Map<testId, TestResult>, since }`, where `since` is the proposal's commit time
+(null when there is no proposal).
+- Test status: `undefined` (unknown id), `planned` (placeholder), `passing` / `failing` (a passed / failed result at or
+  after `since`), else `unconfirmed` (no result, a result from before the proposal, or skipped).
+- Behavior status, by precedence, over real tests only (defined, not placeholders): `failing` if any fails; `passing`
+  if all pass; `unconfirmed` otherwise. With no real tests: `planned` if placeholders are mapped, else `untested`.
+- Summary counts `passing + failing + unconfirmed = withTests` and `withTests + planned + untested = total`.
 
 ## Semantic diff — `src/diff.ts`
 
@@ -90,12 +92,12 @@ diffContracts(base: OrbitContract | null, target: OrbitContract | null): Semanti
 - Compare by id; ignore array order, key order, formatting, `testIds` order (set compare).
 - Entities: fields `name, summary, description, kind, parentId`. Behaviors (indexed globally by id): fields
   `name, expected, testIds`, plus `owner` when the owning entity changed (report `ownerBefore/ownerAfter`; not add+remove).
-- Relationships: `type, sourceId, targetId, description`. Tests: `name, location`. Evidence: `testId, status, executedAt, commit, details`. Product: `id, name, summary, description` (one change with id = product id, kind 'modified').
-- `group`: entity/behavior(name/expected/owner)/relationship/product → 'guarantee'; test, evidence, and behavior changes
+- Relationships: `type, sourceId, targetId, description`. Tests: `name, location, placeholder`. Product: `id, name, summary, description` (one change with id = product id, kind 'modified').
+- `group`: entity/behavior(name/expected/owner)/relationship/product → 'guarantee'; test and behavior changes
   where only `testIds` changed → 'verification'.
 - `entityIds` / direct changes: entity changes → that entity; behavior add/remove/modify → owning entity (both owners on
   ownership change) **only when group is 'guarantee'**; relationship add/remove/modify → its sourceId (base and target
-  source). Test/evidence/testIds-only changes never mark an entity as directly changed.
+  source). Test/testIds-only changes never mark an entity as directly changed.
 - `potentiallyAffected = potentialImpact(union of base and target relationships (dedupe by id; keep both versions if
   endpoints changed), directlyChangedEntityIds)`.
 - `entityStates` for every entity in base ∪ target: added/removed(ghost: true)/modified/affected/unchanged with reasons and
@@ -106,9 +108,9 @@ diffContracts(base: OrbitContract | null, target: OrbitContract | null): Semanti
 
 ```ts
 generateId(prefix: string, existing: Iterable<string>, name?: string): string  // e.g. ('cap', ids, 'Custom Lists') → 'cap.custom-lists' (+ '-2' if taken)
-allIds(contract): { entities: Set<string>; behaviors: Set<string>; relationships: Set<string>; tests: Set<string>; evidence: Set<string> }
+allIds(contract): { entities: Set<string>; behaviors: Set<string>; relationships: Set<string>; tests: Set<string> }
 referencesTo(contract, kind: 'entity' | 'behavior' | 'test', id: string): string[]   // human descriptions of what references it (for delete confirmations)
 removeEntity(contract, id, opts: { children: 'reparent-to-grandparent' | 'block' }): OrbitContract  // also removes its relationships; throws if children and 'block'
-removeTest(contract, id, opts: { unmap: boolean; removeEvidence: boolean }): OrbitContract
+removeTest(contract, id, opts: { unmap: boolean }): OrbitContract
 ```
 (The UI may do other edits with plain immutable updates.)

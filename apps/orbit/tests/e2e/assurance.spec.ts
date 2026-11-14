@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { parseContract } from '@orbit/contract';
-import { SHA, TASKY, launch } from './helpers';
+import { TASKY, launch } from './helpers';
 
 const c = parseContract(TASKY).contract!;
 const behavior = c.entities.flatMap((e) => e.behaviors).find((b) => b.id === 'behavior.today.due-today')!;
@@ -32,8 +32,8 @@ async function addEvidence(page: Page, status: 'Passed' | 'Failed', when: string
 test('AC-07 rollups count each behavior once and update ancestors when child evidence changes', async ({ page }) => {
   await launch(page, { git: true });
   await item(page, 'Task Discovery').click();
-  // Without a code revision nothing can be "passing" or "failing"
-  await expect(page.getByTestId('evidence-line')).toContainText('freshness is unknown');
+  // With Git, evidence is judged against the latest code (HEAD) by default
+  await expect(page.getByTestId('evidence-line')).toContainText('checked against the latest code');
   await expect(stat(page, 'all')).toHaveText('8');
   await expect(stat(page, 'withTests')).toHaveText('6');
   await expect(stat(page, 'untested')).toHaveText('2');
@@ -41,9 +41,6 @@ test('AC-07 rollups count each behavior once and update ancestors when child evi
   await expect(stat(page, 'noCurrentEvidence')).toHaveText('6');
   expect(Number(await stat(page, 'all').innerText())).toBe(8);
 
-  // choose HEAD as the inspected revision (suggestion callout offers it)
-  await page.getByRole('button', { name: 'Use HEAD' }).first().click();
-  await expect(page.getByTestId('evidence-line')).toContainText(`commit ${SHA.base.slice(0, 7)} (HEAD)`);
   await expect(stat(page, 'passingCurrent')).toHaveText('0'); // fixture evidence has no commit => not current
   await expect(item(page, 'Task Discovery').getByTestId('assurance-chip')).toHaveAttribute('aria-label', '0 of 8 have passing evidence');
 
@@ -61,8 +58,8 @@ test('AC-07 rollups count each behavior once and update ancestors when child evi
   const filter = page.getByTestId('bucket-filter');
   await expect(filter).toContainText(`Showing ${nTree} of 8`);
   const card = page.locator('[data-behavior-id="behavior.today.due-today"]');
-  await expect(card).toContainText('Has passing evidence');
-  await expect(card.getByTestId('test-row')).toContainText('Current');
+  await expect(card).toHaveAttribute('data-status', 'passing');
+  await expect(card.getByTestId('test-row')).not.toContainText(/outdated|freshness unknown/); // current evidence carries no caveat
   await card.getByRole('button', { name: 'Go to Today and Overdue' }).click();
   await expect(page.getByTestId('entity-detail').getByLabel('Entity name')).toHaveValue('Today and Overdue');
 
@@ -76,8 +73,7 @@ test('AC-07 rollups count each behavior once and update ancestors when child evi
 
   await addEvidence(page, 'Passed', '2026-11-14T09:00', 'f'.repeat(40));
   await item(page, 'Today and Overdue').click();
-  await page.locator('[data-behavior-id="behavior.today.due-today"]').getByRole('button', { name: /History/ }).click();
-  await expect(page.locator('[data-behavior-id="behavior.today.due-today"]').getByRole('table')).toContainText('Potentially outdated');
+  await expect(page.locator('[data-behavior-id="behavior.today.due-today"]').getByTestId('test-row')).toContainText('Failed'); // the later current failure still wins over an older run on another commit
 
   // undo reverts all the way back through ancestors
   await page.getByRole('tree').focus();
@@ -87,14 +83,18 @@ test('AC-07 rollups count each behavior once and update ancestors when child evi
   await expect(stat(page, 'failingCurrent')).toHaveText('0');
 });
 
-test('evidence context is explained, per-file, and unavailable states are not misleading', async ({ page }) => {
+test('evidence context is plain-language, offered back when off, and remembered per file', async ({ page }) => {
   await launch(page, { git: true });
-  await page.getByRole('button', { name: /Evidence context/ }).click();
-  const pop = page.getByRole('dialog').or(page.locator('[role=dialog]')).last();
-  await expect(pop).toContainText('can never contain its own SHA');
-  await pop.getByRole('radio', { name: /HEAD/ }).click();
-  await expect(page.getByRole('button', { name: /Evidence context: HEAD/ })).toBeVisible();
+  await item(page, 'Task Discovery').click();
+  const line = page.getByTestId('evidence-line');
+  await expect(line).toContainText('checked against the latest code');
+  await page.evaluate(() => window.__orbitMcp!.callTool('set_evidence_context', { mode: 'none' }));
+  await expect(line).toContainText('not checked against any code version');
+  await page.getByRole('button', { name: 'Check latest code' }).click();
+  await expect(line).toContainText('checked against the latest code');
+  await page.evaluate(() => window.__orbitMcp!.callTool('set_evidence_context', { mode: 'none' }));
   await page.reload();
-  // persisted per file
-  await expect(page.getByRole('button', { name: /Evidence context: HEAD/ })).toBeVisible();
+  await item(page, 'Task Discovery').click();
+  await expect(line).toContainText('not checked against any code version'); // persisted per file
+  await expect(page.getByRole('banner')).not.toContainText(/\bHEAD\b/);
 });

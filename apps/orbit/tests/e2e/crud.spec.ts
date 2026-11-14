@@ -3,6 +3,17 @@ import { parseContract } from '@orbit/contract';
 import type { OrbitContract } from '@orbit/contract';
 import { FILE, fileText, launch } from './helpers';
 
+/** Drag one tree row onto the middle of another (nests it inside). */
+async function dragInside(page: import('@playwright/test').Page, from: string, to: string) {
+  const a = (await item(page, from).boundingBox())!;
+  const b = (await item(page, to).boundingBox())!;
+  await page.mouse.move(a.x + 60, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(a.x + 60, a.y + a.height / 2 + 10, { steps: 3 });
+  await page.mouse.move(b.x + 60, b.y + b.height / 2, { steps: 8 });
+  await page.mouse.up();
+}
+
 const item = (page: import('@playwright/test').Page, name: string) => page.getByRole('treeitem', { name: new RegExp(`^${name}`) });
 const saved = async (page: import('@playwright/test').Page): Promise<OrbitContract> => {
   const p = parseContract((await fileText(page, FILE))!);
@@ -19,7 +30,7 @@ test('AC-03 complete manual editing through the UI, saved and re-opened', async 
   let dlg = page.getByRole('dialog', { name: 'Add capability' });
   await dlg.getByLabel('Name').fill('Reminders');
   await expect(dlg.getByLabel('Id')).toHaveValue('cap.reminders');
-  await dlg.getByLabel('Summary').fill('Nudge people about tasks');
+  await dlg.getByLabel('Description').fill('Nudge people about tasks');
   await dlg.getByRole('radio', { name: 'Top level' }).click();
   await dlg.getByRole('button', { name: 'Add capability' }).click();
   await expect(page.getByTestId('entity-detail').getByLabel('Entity name')).toHaveValue('Reminders');
@@ -27,51 +38,64 @@ test('AC-03 complete manual editing through the UI, saved and re-opened', async 
   await page.getByRole('button', { name: 'Add capability' }).click();
   dlg = page.getByRole('dialog', { name: 'Add capability' });
   await dlg.getByLabel('Name').fill('Snooze');
-  await dlg.getByLabel('Summary').fill('Postpone a reminder');
+  await dlg.getByLabel('Description').fill('Postpone a reminder');
   await expect(dlg.getByRole('radio', { name: /Inside “Reminders”/ })).toBeChecked();
   await dlg.getByRole('button', { name: 'Add capability' }).click();
-  await expect(page.getByTestId('entity-detail').getByLabel('Parent: Reminders')).toBeVisible();
+  await expect(page.getByTestId('entity-detail').getByLabel('Entity name')).toHaveValue('Snooze');
 
   const name = page.getByTestId('entity-detail').getByLabel('Entity name');
   await name.fill('Snooze Reminder');
   await name.press('Enter');
   await page.getByTestId('entity-detail').getByLabel('Description', { exact: true }).fill('Delay a reminder by a chosen time.');
-  await page.getByTestId('entity-detail').getByLabel('Summary', { exact: true }).click(); // blur description
+  await page.getByTestId('entity-detail').getByLabel('Entity name').click(); // blur description
 
-  // reparent Snooze under Task Management (same-kind picker, no cycles, no systems)
-  await page.getByLabel('Parent: Reminders').click();
-  const list = page.getByRole('listbox', { name: 'Parent' });
-  await expect(list.getByRole('option', { name: /Snooze Reminder/ })).toHaveCount(0); // not itself
-  await expect(list.getByRole('option', { name: /Task Repository/ })).toHaveCount(0); // never a system
-  await list.getByRole('option', { name: /^Task Management/ }).click();
-  await expect(page.getByLabel('Parent: Task Management')).toBeVisible();
+  // reparent Snooze under Task Management by dragging it onto that row
+  await dragInside(page, 'Snooze Reminder', 'Task Management');
+  await expect(page.getByTestId('entity-detail').getByRole('navigation', { name: 'Ancestors' })).toContainText('Task Management');
   await expect(page.getByLabel('Entity name', { exact: true })).toHaveValue('Snooze Reminder');
 
   // ── behaviors + test mapping (create a test inline) ──
   await item(page, 'Reminders').click();
   await page.getByRole('button', { name: 'Add behavior' }).click();
-  dlg = page.getByRole('dialog', { name: 'Add behavior' });
-  await dlg.getByLabel('Behavior name').fill('Remind at due time');
-  await expect(dlg.getByLabel('Behavior id')).toHaveValue('behavior.reminders.remind-at-due-time');
-  await dlg.getByLabel('Expected outcome').fill('A reminder fires when its due time arrives.');
-  await dlg.getByRole('button', { name: 'Create test…' }).click();
-  await dlg.getByLabel('New test name').fill('Reminder fires on time');
-  await dlg.getByLabel('New test location').fill('apps/tasky/tests/reminders.spec.ts#fires');
-  await dlg.getByRole('button', { name: 'Add test' }).click();
-  await dlg.getByLabel('Map test Create task integration test').or(dlg.getByLabel(/Map test End-to-end: first run/)).first().check();
-  await dlg.getByRole('button', { name: 'Add behavior' }).click();
-  const card = page.locator('[data-behavior-id="behavior.reminders.remind-at-due-time"]');
-  await expect(card).toContainText('Remind at due time');
-  await expect(card.getByTestId('test-row')).toHaveCount(2);
-  await expect(card.getByTestId('test-row').first()).toContainText('Reminder fires on time');
+  await page.keyboard.type('User can be reminded at the due time'); // a new behavior arrives focused with its text selected
+  await page.keyboard.press('Enter');
+  const card = page.locator('[data-behavior-id="behavior.reminders.new-behavior"]');
+  await expect(card).toContainText('User can be reminded at the due time');
+  await expect(card).not.toContainText('behavior.reminders'); // ids are never shown
 
-  // edit the behavior; id is read-only
-  await card.getByRole('button', { name: /Edit behavior/ }).click();
-  dlg = page.getByRole('dialog', { name: 'Edit behavior' });
-  await expect(dlg.getByLabel('Behavior id')).toHaveAttribute('readonly', '');
-  await dlg.getByLabel('Expected outcome').fill('A reminder fires exactly when its due time arrives.');
-  await dlg.getByRole('button', { name: 'Save behavior' }).click();
-  await expect(card).toContainText('exactly when its due time');
+  // map a new test, then an existing one, through the ... menu
+  await card.getByRole('button', { name: 'Add test mapping' }).click();
+  dlg = page.getByRole('dialog', { name: 'Add test mapping' });
+  await dlg.getByLabel('New test title').fill('User can see a reminder fire on time');
+  await dlg.getByLabel('New test location').fill('apps/tasky/tests/reminders.spec.ts#fires');
+  await dlg.getByRole('button', { name: 'Create and map' }).click();
+  await card.getByRole('button', { name: 'Add test mapping' }).click();
+  dlg = page.getByRole('dialog', { name: 'Add test mapping' });
+  await dlg.getByLabel('Map test Create task integration test').or(dlg.getByLabel(/Map test End-to-end: first run/)).first().check();
+  await dlg.getByRole('button', { name: 'Map tests' }).click();
+  await expect(card.getByTestId('test-row')).toHaveCount(2);
+  await expect(card.getByTestId('test-row').first()).toContainText('User can see a reminder fire on time');
+
+  // edit the behavior text in place with the pencil, like a bullet list (Escape discards)
+  await card.getByRole('button', { name: /^Edit User can be reminded/ }).click();
+  const text = card.getByLabel('Behavior', { exact: true });
+  await text.fill('Discarded');
+  await text.press('Escape');
+  await expect(card).toContainText('User can be reminded at the due time');
+  await card.getByRole('button', { name: /^Edit User can be reminded/ }).click();
+  await text.fill('User is reminded exactly when the due time arrives');
+  await text.press('Enter');
+  await expect(card).toContainText('User is reminded exactly when the due time arrives');
+
+  // open a test's file in the default editor (WebStorm); the in-memory host records the request
+  await card.getByTestId('test-row').first().getByRole('button', { name: /in editor/ }).click();
+  expect(await page.evaluate(() => window.__orbitMemoryHost!.openedInEditor)).toEqual(['/work/tasky/apps/tasky/tests/reminders.spec.ts']);
+
+  // collapse and expand with the chevron
+  await card.getByRole('button', { name: /^Collapse/ }).click();
+  await expect(card.getByTestId('test-row')).toHaveCount(0);
+  await card.getByRole('button', { name: /^Expand/ }).click();
+  await expect(card.getByTestId('test-row')).toHaveCount(2);
 
   // ── relationship: add + edit + delete ──
   await page.getByRole('button', { name: 'Add relationship' }).click();
@@ -172,9 +196,9 @@ test('AC-03 complete manual editing through the UI, saved and re-opened', async 
   expect(c.entities.find((e) => e.id === 'cap.snooze')).toBeUndefined();
   const rem = c.entities.find((e) => e.id === 'cap.reminders')!;
   expect(rem.behaviors).toHaveLength(1);
-  expect(rem.behaviors[0]).toMatchObject({ id: 'behavior.reminders.remind-at-due-time', expected: 'A reminder fires exactly when its due time arrives.' });
+  expect(rem.behaviors[0]).toMatchObject({ id: 'behavior.reminders.new-behavior', name: 'User is reminded exactly when the due time arrives', expected: 'User is reminded exactly when the due time arrives' });
   expect(rem.behaviors[0].testIds).toHaveLength(2);
-  const newTestId = rem.behaviors[0].testIds.find((t) => c.tests.find((x) => x.id === t)?.name === 'Reminder fires on time');
+  const newTestId = rem.behaviors[0].testIds.find((t) => c.tests.find((x) => x.id === t)?.name === 'User can see a reminder fire on time');
   expect(newTestId).toBeTruthy();
   expect(c.tests.find((t) => t.name.startsWith('Manual smoke'))).toBeUndefined();
   expect(c.relationships.find((r) => r.sourceId === 'cap.task-organization' && r.targetId === 'cap.reminders')).toBeTruthy();
@@ -184,18 +208,15 @@ test('AC-03 complete manual editing through the UI, saved and re-opened', async 
   await page.getByRole('button', { name: 'Open contract' }).click();
   await expect(item(page, 'Reminders')).toBeVisible();
   await item(page, 'Reminders').click();
-  await expect(page.locator('[data-behavior-id="behavior.reminders.remind-at-due-time"]')).toContainText('Reminder fires on time');
+  await expect(page.locator('[data-behavior-id="behavior.reminders.new-behavior"]')).toContainText('User can see a reminder fire on time');
 });
 
-test('reparent moves the subtree; cycles are prevented by the picker', async ({ page }) => {
+test('reparent by drag moves the subtree; cycles are prevented', async ({ page }) => {
   await launch(page, { path: FILE });
   await item(page, 'Task Management').click();
-  await page.getByLabel('Parent: No parent (top level)').click();
-  const list = page.getByRole('listbox', { name: 'Parent' });
-  await expect(list.getByRole('option', { name: /Create and Edit Tasks/ })).toHaveCount(0); // descendant -> would create a cycle
-  await expect(list.getByRole('option', { name: /Complete and Delete Tasks/ })).toHaveCount(0);
-  await list.getByRole('option', { name: /^Task Organization/ }).click();
-  await expect(page.getByLabel('Parent: Task Organization')).toBeVisible();
+  await dragInside(page, 'Task Management', 'Task Organization');
+  await dragInside(page, 'Task Organization', 'Task Management'); // nesting a parent inside its own descendant is ignored
+  await expect(item(page, 'Task Management')).toHaveAttribute('aria-level', '2');
   await page.keyboard.press('Control+s');
   await expect(page.getByTestId('save-button')).toHaveAttribute('data-dirty', 'false');
   const c = parseContract((await fileText(page, FILE))!).contract!;

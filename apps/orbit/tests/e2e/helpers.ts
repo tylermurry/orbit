@@ -81,3 +81,9 @@ export async function launch(page: Page, o: Opts = {}) {
 export const fileText = (page: Page, p: string) => page.evaluate((x) => window.__orbitMemoryHost!.getFile(x), p);
 export const externalWrite = (page: Page, p: string, t: string) => page.evaluate(([x, y]) => window.__orbitMemoryHost!.externalWrite(x, y), [p, t]);
 export const writes = (page: Page) => page.evaluate(() => window.__orbitMemoryHost!.writes.length);
+
+/** Set an arbitrary comparison the way the AI does (the UI only offers the three product-owner views). */
+export async function compareVia(page: Page, base: string, target: string) {
+  const r = await page.evaluate(([b, t]) => window.__orbitMcp!.callTool('compare', { base: b, target: t }), [base, target] as const);
+  return r;
+}

@@ -1,8 +1,6 @@
-import { Button, Callout, Flex, Text } from '@radix-ui/themes';
-import { ExclamationTriangleIcon, InfoCircledIcon } from '@radix-ui/react-icons';
-import { shortSha } from '../lib/format';
-import { useApp, useAppState, useCtrl, useDiagnostics, useDispatch } from '../state/context';
-import { revLabel } from '../state/compare';
+import { Button, Callout, Flex } from '@radix-ui/themes';
+import { ExclamationTriangleIcon } from '@radix-ui/react-icons';
+import { useAppState, useCtrl, useDiagnostics, useDispatch } from '../state/context';
 import { requestRaw } from './TopBar';
 
 export function Banners() {
@@ -62,9 +60,6 @@ export function Banners() {
               This file has {errors} error{errors === 1 ? '' : 's'}. Showing the valid parts read-only. Fix them in Raw JSON.
             </Callout.Text>
             <Flex gap="2" flexShrink="0">
-              <Button size="1" variant="soft" onClick={() => d({ type: 'ui', patch: { diagnosticsOpen: true } })}>
-                Diagnostics
-              </Button>
               <Button size="1" onClick={() => requestRaw(true)}>
                 Open Raw JSON
               </Button>
@@ -73,43 +68,5 @@ export function Banners() {
         </Callout.Root>
       )}
     </div>
-  );
-}
-
-export function StatusStrip() {
-  const s = useAppState();
-  const diagnostics = useDiagnostics();
-  const result = useApp((x) => x.compareResult);
-  const errors = diagnostics.filter((x) => x.severity === 'error').length;
-  const warnings = diagnostics.length - errors;
-  if (!s.filePath) return <footer className="statusbar" aria-label="Status" />;
-  const git = s.git;
-  let cmp = '';
-  if (s.compare) {
-    cmp = `${revLabel(s.compare.base)} → ${revLabel(s.compare.target)}`;
-    if (result?.status === 'ready') cmp += ` · ${result.diff.changes.length} changes`;
-    else if (result?.status === 'blocked') cmp += ' · blocked';
-  }
-  return (
-    <footer className="statusbar" aria-label="Status">
-      <Text size="1" className="truncate" title={s.filePath} style={{ flex: '0 1 40%' }}>
-        {s.filePath}
-      </Text>
-      <Text size="1" color="gray">
-        {git?.available ? (git.detached ? `detached HEAD ${shortSha(git.headCommit)}` : `${git.headBranch ?? '?'} @ ${shortSha(git.headCommit) || 'no commits'}`) : 'No Git repository'}
-      </Text>
-      <Text size="1" color={errors ? 'red' : warnings ? 'amber' : 'green'} data-testid="validation-status">
-        {errors ? `${errors} error${errors === 1 ? '' : 's'}` : warnings ? `Valid · ${warnings} warning${warnings === 1 ? '' : 's'}` : 'Valid'}
-      </Text>
-      <Text size="1" color="gray" className="truncate" style={{ marginLeft: 'auto' }}>
-        {cmp ? (
-          <>
-            <InfoCircledIcon style={{ verticalAlign: '-2px' }} aria-hidden /> Comparing {cmp}
-          </>
-        ) : (
-          'No comparison'
-        )}
-      </Text>
-    </footer>
   );
 }

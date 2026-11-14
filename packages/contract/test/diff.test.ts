@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { diffContracts, parseContract, serializeContract } from '../src/index.js';
 import type { OrbitContract } from '../src/index.js';
-import { beh, contract, ent, ev, rel, SHA_A, tdef } from './fixtures.js';
+import { beh, contract, ent, rel, tdef } from './fixtures.js';
 
 const clone = (c: OrbitContract): OrbitContract => JSON.parse(JSON.stringify(c));
 
@@ -16,7 +16,6 @@ const base = (): OrbitContract =>
     ],
     relationships: [rel('r.tasks.repo', 'cap.tasks', 'sys.repo', 'implementedBy'), rel('r.repo.storage', 'sys.repo', 'sys.storage', 'uses'), rel('r.lists.tasks', 'cap.lists', 'cap.tasks')],
     tests: [tdef('t.create'), tdef('t.other')],
-    evidence: [ev('e1', 't.create', 'passed', '2026-01-01T00:00:00Z', SHA_A)],
   });
 
 describe('no-op comparisons', () => {
@@ -35,7 +34,6 @@ describe('no-op comparisons', () => {
     t.entities.reverse();
     t.relationships.reverse();
     t.tests.reverse();
-    t.evidence.reverse();
     t.entities = t.entities.map((e) => ({ ...e, behaviors: [...e.behaviors].reverse() }));
     const reformatted = parseContract(JSON.stringify(t)).contract!; // minified, then parsed
     const viaSerialize = parseContract(serializeContract(reformatted)).contract!;
@@ -276,27 +274,22 @@ describe('relationships and impact', () => {
 });
 
 describe('verification metadata', () => {
-  it('tests and evidence changes are verification-group and never touch entities', () => {
+  it('test changes are verification-group and never touch entities', () => {
     const t = base();
     t.tests[0]!.location = 'moved.ts';
     t.tests.push(tdef('t.new'));
-    t.evidence[0]!.status = 'failed';
-    t.evidence.push(ev('e2', 't.create', 'passed', '2026-02-01T00:00:00Z', SHA_A));
     const d = diffContracts(base(), t);
     expect(d.changes.every((c) => c.group === 'verification' && c.entityIds.length === 0)).toBe(true);
     expect(d.totals.test).toEqual({ added: 1, removed: 0, modified: 1 });
-    expect(d.totals.evidence).toEqual({ added: 1, removed: 0, modified: 1 });
     expect(d.directlyChangedEntityIds).toEqual([]);
     expect(Object.values(d.entityStates).every((s) => s.status === 'unchanged')).toBe(true);
   });
 
-  it('removed test and evidence', () => {
+  it('removed tests', () => {
     const t = base();
     t.tests = [];
-    t.evidence = [];
     const d = diffContracts(base(), t);
     expect(d.totals.test.removed).toBe(2);
-    expect(d.totals.evidence.removed).toBe(1);
   });
 });
 

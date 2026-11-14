@@ -1,11 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Callout, Code, Dialog, Flex, Kbd, Text, TextArea, TextField } from '@radix-ui/themes';
-import { CrossCircledIcon, ExclamationTriangleIcon } from '@radix-ui/react-icons';
-import type { Diagnostic } from '@orbit/contract';
+import { useEffect, useState } from 'react';
+import { Button, Dialog, Flex, Kbd, Text, TextArea, TextField } from '@radix-ui/themes';
 import { slugify } from '../lib/format';
-import { requestRawJump } from '../lib/rawJump';
-import { useApp, useAppState, useCtrl, useDiagnostics, useDispatch, useEdit } from '../state/context';
-import { Sheet } from './common';
+import { useApp, useCtrl, useDispatch, useEdit } from '../state/context';
 
 export function Field({ label, children, hint, error }: { label: string; children: React.ReactNode; hint?: string; error?: string }) {
   return (
@@ -227,84 +223,3 @@ export function ShortcutsDialog() {
 }
 
 /** Try to map a JSON pointer to an entity (and behavior) so a diagnostic can jump to the field. */
-function resolveTarget(text: string, path: string): { entityId: string; behaviorId?: string } | null {
-  const m = /^\/entities\/(\d+)(?:\/behaviors\/(\d+))?/.exec(path);
-  if (!m) return null;
-  try {
-    const raw = JSON.parse(text) as { entities?: { id?: string; behaviors?: { id?: string }[] }[] };
-    const e = raw.entities?.[Number(m[1])];
-    if (!e?.id) return null;
-    const b = m[2] !== undefined ? e.behaviors?.[Number(m[2])]?.id : undefined;
-    return { entityId: e.id, behaviorId: b };
-  } catch {
-    return null;
-  }
-}
-
-export function DiagnosticsSheet() {
-  const s = useAppState();
-  const diagnostics = useDiagnostics();
-  const d = useDispatch();
-  const sorted = useMemo(() => [...diagnostics].sort((a, b) => (a.severity === b.severity ? (a.line ?? 0) - (b.line ?? 0) : a.severity === 'error' ? -1 : 1)), [diagnostics]);
-  const errors = diagnostics.filter((x) => x.severity === 'error').length;
-  const warnings = diagnostics.length - errors;
-
-  const toRaw = (x: Diagnostic) => {
-    d({ type: 'setRawMode', on: true });
-    d({ type: 'ui', patch: { diagnosticsOpen: false } });
-    requestRawJump({ line: x.line ?? 1, column: x.column ?? 1 });
-  };
-  const jump = (x: Diagnostic) => {
-    const text = s.rawDraft ?? s.diskText;
-    const t = !s.loadedInvalid || s.rawDraft === null ? resolveTarget(text, x.path) : null;
-    const known = t && s.contract?.entities.find((e) => e.id === t.entityId);
-    if (known && !s.rawMode && s.rawDraft === null) {
-      d({ type: 'selectEntity', id: known.id, kind: known.kind, behaviorId: t.behaviorId ?? null });
-      d({ type: 'ui', patch: { diagnosticsOpen: false } });
-    } else toRaw(x);
-  };
-
-  return (
-    <Sheet open={s.diagnosticsOpen} onOpenChange={(o) => d({ type: 'ui', patch: { diagnosticsOpen: o } })} title="Diagnostics" description={diagnostics.length === 0 ? 'No problems found.' : `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'}`}>
-      {diagnostics.length === 0 ? (
-        <Callout.Root color="green" variant="surface">
-          <Callout.Text>The contract is valid.</Callout.Text>
-        </Callout.Root>
-      ) : (
-        <ul className="diag-list" aria-label="Diagnostics">
-          {sorted.map((x, i) => (
-            <li key={i} className="diag-item" data-severity={x.severity}>
-              <button type="button" className="diag-main" onClick={() => jump(x)}>
-                <span className="diag-icon" aria-label={x.severity}>
-                  {x.severity === 'error' ? <CrossCircledIcon color="var(--red-10)" /> : <ExclamationTriangleIcon color="var(--amber-10)" />}
-                </span>
-                <span>
-                  <Text as="div" size="2">
-                    {x.message}
-                  </Text>
-                  <Text as="div" size="1" color="gray">
-                    <Code variant="ghost" size="1">
-                      {x.code}
-                    </Code>
-                    {x.path ? <> · {x.path}</> : null}
-                  </Text>
-                </span>
-              </button>
-              {x.line !== undefined && (
-                <Button size="1" variant="ghost" color="gray" onClick={() => toRaw(x)} aria-label={`Show line ${x.line} in Raw JSON`}>
-                  Line {x.line}
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      <Text as="p" size="1" color="gray" mt="3">
-        <Badge variant="outline" color="gray" mr="1">
-          Tip
-        </Badge>
-        Orbit never repairs files automatically. Fix errors in Raw JSON or the structured views.
-      </Text>
-    </Sheet>
-  );
-}

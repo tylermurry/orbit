@@ -1,15 +1,17 @@
-//! Orbit desktop backend: file access with conflict-safe atomic writes, and strictly read-only Git.
+//! Orbit desktop backend: file access with conflict-safe atomic writes, and read-only Git (plus the proposal tag).
 
 pub mod files;
 pub mod git;
 pub mod mcp;
+pub mod runner;
 
 use files::{Expected, FileSnapshot, FileStat, WriteResult};
-use git::{GitContext, GitFileAtRevision, GitRef};
+use git::{GitContext, GitFileAtRevision, GitRef, ProposalTag};
 use mcp::{McpManager, McpStatus};
+use runner::{RunOutcome, Runner};
 use std::sync::Arc;
 use tauri::async_runtime::spawn_blocking;
-use tauri::{Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 async fn blocking<T, F>(f: F) -> Result<T, String>
 where
@@ -37,6 +39,11 @@ async fn write_file_atomic(path: String, text: String, expected: Expected) -> Re
 }
 
 #[tauri::command]
+async fn open_in_editor(path: String) -> Result<(), String> {
+    blocking(move || files::open_in_editor(&path)).await
+}
+
+#[tauri::command]
 fn initial_file() -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
     files::initial_file_from(&args, std::env::var("ORBIT_FILE").ok())
@@ -55,6 +62,44 @@ async fn git_list_refs(repo_root: String) -> Result<Vec<GitRef>, String> {
 #[tauri::command]
 async fn git_read_file_at(repo_root: String, rev: String, rel_path: String) -> Result<GitFileAtRevision, String> {
     blocking(move || git::git_read_file_at(&repo_root, &rev, &rel_path)).await
+}
+
+#[tauri::command]
+async fn git_merge_base(repo_root: String, a: String, b: String) -> Result<Option<String>, String> {
+    blocking(move || git::git_merge_base(&repo_root, &a, &b)).await
+}
+
+#[tauri::command]
+async fn git_tag_proposal(repo_root: String, branch: String, replace: bool) -> Result<ProposalTag, String> {
+    blocking(move || git::git_tag_proposal(&repo_root, &branch, replace)).await
+}
+
+/// Streamed output of a validation run: `{ runId, text }`.
+pub const RUN_OUTPUT_EVENT: &str = "run:output";
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunOutput {
+    run_id: String,
+    text: String,
+}
+
+#[tauri::command]
+async fn run_command(app: AppHandle, runner: State<'_, Arc<Runner>>, cwd: String, command: String, run_id: String) -> Result<RunOutcome, String> {
+    let runner = runner.inner().clone();
+    blocking(move || {
+        let id = run_id.clone();
+        let emit = Arc::new(move |text: &str| {
+            let _ = app.emit(RUN_OUTPUT_EVENT, RunOutput { run_id: id.clone(), text: text.to_string() });
+        });
+        runner.run(&cwd, &command, &run_id, emit)
+    })
+    .await
+}
+
+#[tauri::command]
+fn cancel_command(runner: State<'_, Arc<Runner>>, run_id: String) -> bool {
+    runner.cancel(&run_id)
 }
 
 #[tauri::command]
@@ -83,6 +128,7 @@ pub fn run() {
         .setup(|app| {
             let mcp = McpManager::new(app.handle());
             app.manage(mcp.clone());
+            app.manage(Runner::new());
             mcp.start();
             Ok(())
         })
@@ -91,9 +137,14 @@ pub fn run() {
             stat_file,
             write_file_atomic,
             initial_file,
+            open_in_editor,
             git_context,
             git_list_refs,
             git_read_file_at,
+            git_merge_base,
+            git_tag_proposal,
+            run_command,
+            cancel_command,
             mcp_status,
             mcp_set_enabled,
             mcp_respond,

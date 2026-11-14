@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseContract } from '@orbit/contract';
-import { canUndo, currentText, initialState, inspectedCommit, isDirty, reducer, structuredDirty } from '../../src/state/store';
+import { assuranceContext, canUndo, currentText, initialState, isDirty, matchedResults, proposalTime, reducer, structuredDirty } from '../../src/state/store';
 import { FILE, INVALID, SHA1, TASKY, setup } from './util';
+import type { AppState } from '../../src/state/types';
 
 const rename = (name: string) => (c: import('@orbit/contract').OrbitContract) => ({
   ...c,
@@ -72,15 +73,33 @@ describe('document store', () => {
     expect(store.getState().loadedInvalid).toBe(true);
   });
 
-  it('derives the inspected commit from the evidence context', async () => {
-    const s0 = initialState();
-    expect(inspectedCommit(s0)).toBeNull();
-    const s1 = reducer(s0, { type: 'setEvidence', ctx: { kind: 'rev', label: 'v1', commit: SHA1 } });
-    expect(inspectedCommit(s1)).toBe(SHA1);
-    const s2 = reducer(s1, { type: 'setEvidence', ctx: { kind: 'head' } });
-    expect(inspectedCommit(s2)).toBeNull(); // no git context
-    const s3 = reducer(s2, { type: 'setGit', git: { available: true, headCommit: SHA1 }, refs: [] });
-    expect(inspectedCommit(s3)).toBe(SHA1);
+  it('matches the results file to contract tests and dates results by the proposal', () => {
+    const contract = parseContract(TASKY).contract!;
+    const t = contract.tests[0]!;
+    let s: AppState = { ...initialState(), contract };
+    expect(matchedResults(s).results.size).toBe(0);
+    s = reducer(s, { type: 'setResultsFile', file: { path: '/r.xml', state: 'ok', at: '2026-11-14T10:00:00.000Z', cases: [{ file: 'x', name: `anything [${t.id}]`, status: 'passed' }] } });
+    expect(matchedResults(s).results.get(t.id)).toEqual({ status: 'passed', at: '2026-11-14T10:00:00.000Z' });
+    expect(assuranceContext(s)).toBe(assuranceContext(s)); // memoized: assurance is only recomputed on change
+    expect(proposalTime(s)).toBeNull();
+    s = reducer(s, {
+      type: 'setGit',
+      git: { available: true, headCommit: SHA1, headBranch: 'feat' },
+      refs: [{ name: 'orbit/proposal/feat', kind: 'tag', commit: SHA1, subject: 'p', date: '2026-11-15T00:00:00Z' }],
+    });
+    expect(assuranceContext(s).since).toBe('2026-11-15T00:00:00Z');
+    s = reducer(s, { type: 'setResultsFile', file: { path: '/r.xml', state: 'missing', at: null, cases: [] } });
+    expect(matchedResults(s).results.size).toBe(0);
+  });
+
+  it('tracks a run and its streamed output, ignoring other runs', () => {
+    let s = reducer(initialState(), { type: 'runStarted', run: { runId: 'a', command: 'npm test', startedAt: 1, output: '' } });
+    s = reducer(s, { type: 'runOutput', runId: 'a', text: 'one\n' });
+    s = reducer(s, { type: 'runOutput', runId: 'b', text: 'stray\n' });
+    expect(s.run?.output).toBe('one\n');
+    s = reducer(s, { type: 'runFinished', runId: 'a', outcome: { exitCode: 1, cancelled: false, durationMs: 5, output: 'one\n', command: 'npm test', finishedAt: 'x' } });
+    expect(s.run).toBeNull();
+    expect(s.lastRun?.exitCode).toBe(1);
   });
 
   it('selecting an entity switches to the matching view', () => {
@@ -241,7 +260,7 @@ describe('create new', () => {
     expect(ok).toBe(true);
     const parsed = parseContract(host.getFile('/work/new/shop.orbit.json')!);
     expect(parsed.ok).toBe(true);
-    expect(parsed.contract).toMatchObject({ schemaVersion: 1, product: { id: 'shop', name: 'Shop' }, entities: [], relationships: [], tests: [], evidence: [] });
+    expect(parsed.contract).toMatchObject({ schemaVersion: 1, product: { id: 'shop', name: 'Shop' }, entities: [], relationships: [], tests: [] });
     expect(store.getState().filePath).toBe('/work/new/shop.orbit.json');
   });
 

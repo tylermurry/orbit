@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 import { Badge, Button, Code, Flex, Table, Text } from '@radix-ui/themes';
-import { potentialImpact } from '@orbit/contract';
-import type { Change, ChangeCategory, ChangeKind, Entity, Relationship, SemanticDiff } from '@orbit/contract';
+import { behaviorAssurance, potentialImpact } from '@orbit/contract';
+import type { Change, ChangeCategory, ChangeKind, Entity, EntityChangeStatus, Relationship, SemanticDiff } from '@orbit/contract';
 import { KIND_LABEL, REL_INFO } from '../lib/model';
-import { shortSha, wordDiff } from '../lib/format';
+import { wordDiff } from '../lib/format';
+import { useAssuranceCtx } from '../state/context';
+import { ChangePill, StatusPill, TestStatusBadge, testStatusReason } from './common';
 import { ImpactChain } from './ImpactChain';
 
 export const CATEGORY_LABEL: Record<ChangeCategory, string> = {
@@ -12,9 +14,8 @@ export const CATEGORY_LABEL: Record<ChangeCategory, string> = {
   behavior: 'Behaviors',
   relationship: 'Relationships',
   test: 'Tests',
-  evidence: 'Evidence',
 };
-export const CATEGORY_ORDER: ChangeCategory[] = ['product', 'entity', 'behavior', 'relationship', 'test', 'evidence'];
+export const CATEGORY_ORDER: ChangeCategory[] = ['product', 'entity', 'behavior', 'relationship', 'test'];
 export const KIND_SYMBOL: Record<ChangeKind, { symbol: string; label: string; cls: string }> = {
   added: { symbol: '＋', label: 'Added', cls: 'added' },
   modified: { symbol: '●', label: 'Modified', cls: 'modified' },
@@ -54,6 +55,7 @@ export function changeLabel(c: Change, nameOf: (id: string) => string, diff: Sem
 }
 
 export function ChangeList({ diff, selectedKey, onSelect, group, query, category }: { diff: SemanticDiff; selectedKey: string | null; onSelect: (key: string) => void; group: 'all' | 'guarantee' | 'verification'; query: string; category: string | null }) {
+  const actx = useAssuranceCtx();
   const { entities, nameOf } = useMemo(() => diffLookups(diff), [diff]);
   const q = query.trim().toLowerCase();
   const rows = useMemo(
@@ -92,12 +94,11 @@ export function ChangeList({ diff, selectedKey, onSelect, group, query, category
             <ul>
               {items.map((c) => {
                 const k = KIND_SYMBOL[c.kind];
+                const verified = c.category === 'behavior' && c.kind !== 'removed' && diff.target ? behaviorAssurance(diff.target, c.id, actx) : undefined;
                 return (
                   <li key={c.key}>
                     <button type="button" className={`change-row${selectedKey === c.key ? ' selected' : ''}${c.group === 'verification' ? ' secondary' : ''}`} onClick={() => onSelect(c.key)} aria-pressed={selectedKey === c.key} data-testid="change-row" data-change-key={c.key}>
-                      <span className={`marker marker-${k.cls}`} aria-label={k.label} role="img">
-                        <span aria-hidden>{k.symbol}</span>
-                      </span>
+                      <ChangePill status={k.cls as EntityChangeStatus} />
                       <span className="change-label">
                         <span className="truncate" style={{ display: 'block' }}>
                           {changeLabel(c, nameOf, diff)}
@@ -107,6 +108,7 @@ export function ChangeList({ diff, selectedKey, onSelect, group, query, category
                           {c.group === 'verification' ? ' · verification metadata' : ''}
                         </span>
                       </span>
+                      {verified && <StatusPill status={verified.status} />}
                     </button>
                   </li>
                 );
@@ -140,7 +142,8 @@ function show(v: unknown): string {
   return JSON.stringify(v);
 }
 
-export function ChangeDetail({ diff, change, onShowIn }: { diff: SemanticDiff; change: Change; onShowIn?: (entityId: string) => void }) {
+/** onShowIn jumps to the entity in Product/Engineering; canShowIn says whether it exists in the working copy. */
+export function ChangeDetail({ diff, change, onShowIn, canShowIn }: { diff: SemanticDiff; change: Change; onShowIn?: (entityId: string) => void; canShowIn?: (entityId: string) => boolean }) {
   const { entities, nameOf } = useMemo(() => diffLookups(diff), [diff]);
   const k = KIND_SYMBOL[change.kind];
   // Consumers of *this* change: reverse reachability over the union of base and target relationships.
@@ -167,19 +170,19 @@ export function ChangeDetail({ diff, change, onShowIn }: { diff: SemanticDiff; c
     return Object.entries(o).filter(([key]) => key !== 'behaviors');
   }, [change]);
   const moved = change.fields.find((f) => f.field === 'parentId');
+  const actx = useAssuranceCtx();
+  // For a behavior that exists after the change: is it covered by tests, and are they passing?
+  const verified = change.category === 'behavior' && change.kind !== 'removed' && diff.target ? behaviorAssurance(diff.target, change.id, actx) : undefined;
   const ownerMove = change.ownerBefore !== undefined && change.ownerAfter !== undefined && change.ownerBefore !== change.ownerAfter;
 
   return (
     <div className="change-detail" data-testid="change-detail">
       <Flex align="center" gap="2" mb="1" wrap="wrap">
-        <span className={`marker marker-${k.cls}`}>
-          <span aria-hidden>{k.symbol}</span>
-          <span aria-hidden>{k.label}</span>
-        </span>
+        <ChangePill status={k.cls as EntityChangeStatus} long />
         <Text size="1" color="gray" style={{ textTransform: 'capitalize' }}>
           {singular(change, entities)}
         </Text>
-        <Badge color={change.group === 'guarantee' ? 'indigo' : 'gray'} variant="soft">
+        <Badge color={change.group === 'guarantee' ? 'indigo' : 'gray'} variant="soft" radius="full">
           {change.group === 'guarantee' ? 'Product guarantee' : 'Verification metadata'}
         </Badge>
       </Flex>
@@ -239,12 +242,12 @@ export function ChangeDetail({ diff, change, onShowIn }: { diff: SemanticDiff; c
                     <Table.Cell colSpan={2}>
                       <Flex gap="1" wrap="wrap">
                         {(f.addedItems ?? []).map((t) => (
-                          <Badge key={'a' + t} color="green" variant="soft">
+                          <Badge key={'a' + t} color="green" variant="soft" radius="full">
                             + {t}
                           </Badge>
                         ))}
                         {(f.removedItems ?? []).map((t) => (
-                          <Badge key={'r' + t} color="red" variant="soft">
+                          <Badge key={'r' + t} color="red" variant="soft" radius="full">
                             − {t}
                           </Badge>
                         ))}
@@ -317,7 +320,31 @@ export function ChangeDetail({ diff, change, onShowIn }: { diff: SemanticDiff; c
         </div>
       )}
 
-      {onShowIn && targetEntityId && targetEntity && (
+      {verified && (
+        <div className="consumers" data-testid="behavior-verification">
+          <Flex align="center" gap="2" mb="2">
+            <Text size="2" weight="bold">
+              Verification
+            </Text>
+            <StatusPill status={verified.status} />
+          </Flex>
+          {verified.tests.length === 0 ? (
+            <Text size="2" color="gray">
+              No tests verify this behavior yet.
+            </Text>
+          ) : (
+            <ul className="verify-list">
+              {verified.tests.map((t) => (
+                <li key={t.testId}>
+                  <TestStatusBadge status={t.status} reason={testStatusReason(t.status, t.result, actx.since)} /> <Text size="2">{t.test?.name ?? t.testId}</Text>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {onShowIn && targetEntityId && targetEntity && (canShowIn?.(targetEntityId) ?? true) && (
         <Flex gap="2" mt="4">
           <Button variant={targetEntity.kind === 'capability' ? 'solid' : 'soft'} disabled={targetEntity.kind !== 'capability'} onClick={() => onShowIn(targetEntityId)}>
             Show in Product
@@ -334,7 +361,6 @@ export function ChangeDetail({ diff, change, onShowIn }: { diff: SemanticDiff; c
 function Value({ field, v, nameOf }: { field: string; v: unknown; nameOf: (id: string) => string }) {
   if (v === undefined || v === null || v === '') return <Text color="gray">—</Text>;
   if (field === 'parentId' || field === 'owner' || field === 'sourceId' || field === 'targetId') return <span>{nameOf(String(v))}</span>;
-  if (field === 'commit' && typeof v === 'string') return <Code size="1">{shortSha(v)}</Code>;
   if (field === 'id' || field === 'testId' || field === 'location' || field === 'type') return <Code size="1">{show(v)}</Code>;
   return <span className="wrap">{show(v)}</span>;
 }

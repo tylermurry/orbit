@@ -15,7 +15,7 @@ import type {
   SemanticDiff,
 } from './types.js';
 
-const CATEGORIES: ChangeCategory[] = ['product', 'entity', 'behavior', 'relationship', 'test', 'evidence'];
+const CATEGORIES: ChangeCategory[] = ['product', 'entity', 'behavior', 'relationship', 'test'];
 
 type Rec = Record<string, unknown>;
 
@@ -151,16 +151,10 @@ export function diffContracts(base: OrbitContract | null, target: OrbitContract 
     entityIds: (_k, b, t) => [...new Set([b?.sourceId, t?.sourceId].filter((x): x is string => x !== undefined))],
   });
 
-  // Tests & evidence (verification only) -------------------------------------
+  // Tests (verification only) -----------------------------------------------
   collection('test', mapById(base?.tests), mapById(target?.tests), {
-    fields: ['name', 'location'],
+    fields: ['name', 'location', 'placeholder'],
     label: (t) => t.name,
-    group: () => 'verification',
-    entityIds: () => [],
-  });
-  collection('evidence', mapById(base?.evidence), mapById(target?.evidence), {
-    fields: ['testId', 'status', 'executedAt', 'commit', 'details'],
-    label: (e) => `${e.testId} (${e.id})`,
     group: () => 'verification',
     entityIds: () => [],
   });

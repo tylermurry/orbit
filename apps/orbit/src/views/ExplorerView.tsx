@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Callout, Flex, Text } from '@radix-ui/themes';
 import { InfoCircledIcon } from '@radix-ui/react-icons';
-import type { Entity, EntityKind } from '@orbit/contract';
-import { buildTree } from '../lib/model';
+import type { EntityKind } from '@orbit/contract';
+import { buildTree, moveEntity, nudgeEntity } from '../lib/model';
 import { loadPref, savePref } from '../lib/prefs';
 import { EntityCreateDialog } from '../components/EntityDialogs';
 import { EntityDetail } from '../components/EntityDetail';
 import { Tree } from '../components/Tree';
-import { revLabel } from '../state/compare';
-import { useApp, useAssurance, useCtrl, useDiff, useDispatch, useInspected } from '../state/context';
+import { useApp, useAssurance, useCtrl, useDispatch } from '../state/context';
 
 const WIDTH_KEY = 'orbit.layout.treeWidth';
 
@@ -18,39 +17,15 @@ export function ExplorerView({ kind }: { kind: EntityKind }) {
   const selectedId = useApp((s) => s.selected[kind]);
   const expanded = useApp((s) => s.expanded);
   const search = useApp((s) => s.search);
-  const compare = useApp((s) => s.compare);
   const d = useDispatch();
   const ctrl = useCtrl();
-  const diff = useDiff();
-  const commit = useInspected();
   const assurance = useAssurance(contract);
   const [adding, setAdding] = useState(false);
   const [width, setWidth] = useState(() => loadPref<number>(WIDTH_KEY, 320));
   const dragging = useRef(false);
 
-  // Entities that exist in the comparison but not in the working copy are shown as read-only ghosts.
-  const ghosts = useMemo(() => {
-    if (!diff) return [] as Entity[];
-    const have = new Set(contract.entities.map((e) => e.id));
-    const out: Entity[] = [];
-    for (const id of Object.keys(diff.entityStates)) {
-      if (have.has(id)) continue;
-      const st = diff.entityStates[id];
-      const e = (st.status === 'removed' ? diff.base : diff.target ?? diff.base)?.entities.find((x) => x.id === id) ?? diff.base?.entities.find((x) => x.id === id);
-      if (e) out.push(e);
-    }
-    return out;
-  }, [diff, contract]);
-
-  const roots = useMemo(() => buildTree(contract, kind, ghosts), [contract, kind, ghosts]);
-  const ghostMap = useMemo(() => new Map(ghosts.map((g) => [g.id, g])), [ghosts]);
-
-  const live = selectedId ? contract.entities.find((e) => e.id === selectedId && e.kind === kind) : undefined;
-  const ghost = !live && selectedId ? ghostMap.get(selectedId) : undefined;
-  const entity = live ?? ghost ?? roots[0]?.entity;
-  const isGhost = !live && !!entity && ghostMap.has(entity.id);
-  const state = entity ? diff?.entityStates[entity.id] : undefined;
-  const detailContract = isGhost && diff ? ((state?.status === 'removed' ? diff.base : diff.target) ?? diff.base ?? contract) : contract;
+  const roots = useMemo(() => buildTree(contract, kind), [contract, kind]);
+  const entity = (selectedId ? contract.entities.find((e) => e.id === selectedId && e.kind === kind) : undefined) ?? roots[0]?.entity;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -71,16 +46,15 @@ export function ExplorerView({ kind }: { kind: EntityKind }) {
           roots={roots}
           selectedId={entity?.id ?? null}
           onSelect={(id, behaviorId) => d({ type: 'selectEntity', id, kind, behaviorId: behaviorId ?? null })}
-          diffStates={diff?.entityStates}
           assurance={assurance}
-          hasCommit={!!commit}
           readOnly={readOnlyDoc}
           expanded={expanded}
           onExpandedChange={ctrl.setExpanded}
           search={search}
           onSearch={(q) => d({ type: 'setSearch', search: q })}
           onAdd={() => setAdding(true)}
-          comparing={!!compare}
+          onMove={(id, targetId, pos) => d({ type: 'edit', fn: (c) => moveEntity(c, id, targetId, pos) })}
+          onNudge={(id, dir) => d({ type: 'edit', fn: (c) => nudgeEntity(c, id, dir) })}
         />
       </aside>
       <div
@@ -112,21 +86,7 @@ export function ExplorerView({ kind }: { kind: EntityKind }) {
       />
       <main className="detail" ref={scrollRef} aria-label="Details">
         {entity ? (
-          <EntityDetail
-            key={entity.id + (isGhost ? ':ghost' : '')}
-            entity={entity}
-            contract={detailContract}
-            readOnly={readOnlyDoc || isGhost}
-            state={state}
-            states={diff?.entityStates}
-            ghostNote={
-              isGhost
-                ? state?.status === 'removed'
-                  ? `This ${entity.kind} was removed in the comparison target. You are viewing the base version (${compare ? revLabel(compare.base) : 'base'}), read-only.`
-                  : `This ${entity.kind} exists in ${compare ? revLabel(compare.target) : 'the target'} but not in your working copy. Read-only.`
-                : undefined
-            }
-          />
+          <EntityDetail key={entity.id} entity={entity} contract={contract} readOnly={readOnlyDoc} />
         ) : (
           <Flex align="center" justify="center" className="detail-empty" direction="column" gap="2">
             <Callout.Root variant="surface" size="1">

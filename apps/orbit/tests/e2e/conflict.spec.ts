@@ -38,7 +38,7 @@ test.describe('AC-06 concurrent change safeguard', () => {
     await banner.getByRole('button', { name: 'Reload from disk' }).click();
     await page.getByRole('alertdialog', { name: 'Reload from disk?' }).getByRole('button', { name: /Discard my changes and reload/ }).click();
     await expect(banner).toHaveCount(0);
-    await expect(page.getByLabel('Entity name')).toHaveValue('Task Discovery');
+    await expect(page.getByLabel('Entity name')).toHaveValue('Task Management');
     await expect(page.getByTestId('save-button')).toHaveAttribute('data-dirty', 'false');
     await page.getByRole('button', { name: /Product settings/ }).click();
     await expect(page.getByLabel('Product summary')).toHaveValue('Edited by another program');
@@ -55,7 +55,7 @@ test.describe('AC-06 concurrent change safeguard', () => {
     await expect(page.getByTestId('file-name')).toContainText('mine.orbit.json');
     expect(await fileText(page, FILE)).toBe(ext);
     const mine = parseContract((await fileText(page, '/work/tasky/mine.orbit.json'))!).contract!;
-    expect(mine.entities.find((e) => e.id === 'cap.task-discovery')!.name).toBe('Mine');
+    expect(mine.entities.find((e) => e.id === 'cap.task-management')!.name).toBe('Mine');
   });
 
   test('clean document reloads automatically with a toast', async ({ page }) => {

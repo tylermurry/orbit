@@ -1,12 +1,12 @@
 import { useEffect, useMemo } from 'react';
 import { Flex } from '@radix-ui/themes';
-import { Banners, StatusStrip } from './components/Shell';
-import { DiagnosticsSheet, NewContractDialog, ProductDialog, ShortcutsDialog } from './components/Dialogs';
+import { Banners } from './components/Shell';
+import { NewContractDialog, ProductDialog, ShortcutsDialog } from './components/Dialogs';
 import { Prompts } from './components/Prompts';
 import { TopBar, registerNavHandlers, requestView } from './components/TopBar';
 import { Toasts } from './components/common';
 import { ReviewSheet } from './components/ReviewSheet';
-import { Library } from './components/Library';
+import { ValidationDialog } from './components/Validation';
 import { fileName } from './lib/format';
 import { setWindowTitle } from './lib/windowTitle';
 import { useAppState, useCtrl, useDispatch, useHost, useStore } from './state/context';
@@ -41,6 +41,7 @@ export function App() {
           d({ type: 'setRawMode', on: false });
           d({ type: 'setView', view: v });
           if (v === 'impact') ctrl.ensureDefaultCompare();
+          else ctrl.setCompare(null); // diffs only exist on the Impact screen
         }),
       requestRaw: (on: boolean) => {
         if (on) d({ type: 'setRawMode', on: true });
@@ -117,13 +118,11 @@ export function App() {
       <TopBar />
       <Banners />
       <div className="app-body">{body}</div>
-      <StatusStrip />
       <Toasts />
-      <DiagnosticsSheet />
       <ProductDialog />
       <NewContractDialog />
       <ShortcutsDialog />
-      <Library />
+      <ValidationDialog />
       <ReviewSheet />
       <Prompts />
     </Flex>

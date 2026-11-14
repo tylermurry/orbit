@@ -3,21 +3,27 @@
 **Orbit** is a local-first desktop app for modeling, visualizing, and comparing what a software product does.
 You open one JSON **product contract** that describes the product's user-facing **capabilities**, its internal
 **systems**, the **behaviors** each one guarantees, typed **relationships** between them, and the automated **tests**
-and test **evidence** behind each behavior. Orbit gives you three perspectives on that file:
+that verify each behavior. Orbit gives you three perspectives on that file:
 
 | View | For | What you see |
 |---|---|---|
 | **Product** | product owners | capability tree, behaviors, assurance rollups, focused relationship graph |
 | **Engineering** | engineering leads | the same for internal systems |
-| **Impact** | everyone | a semantic diff between two Git revisions of the contract, and the *potential* downstream impact |
+| **Impact** | everyone | what changed (Proposal, Actual vs. Proposal, Actual), the *potential* downstream impact, and whether each changed behavior is tested and passing |
+
+**Validate capabilities** runs the product's whole test suite with one command you configure, then reads the JUnit XML
+results it writes. That is what every test's status comes from: **Passing**, **Failing**, **Unconfirmed** (no result
+since the proposal was committed) or **Planned** (a placeholder test). Orbit re-reads the results file whenever it
+changes, so runs started from a terminal or by an AI show up too.
 
 Orbit edits the JSON file directly (atomic, conflict-safe saves). When the file lives in a local Git repository,
 Orbit compares it across branches, commits, and the working tree, **read-only**. It never commits, checks out, or
-stages anything.
+stages anything. The one exception is the MCP tool `mark_proposal`, which creates or moves a single lightweight tag,
+`orbit/proposal/<branch>`, so the product owner can always find the proposal.
 
 **Tasky** (`apps/tasky`) is a small, real personal task manager in the same repo. It's the reference product: its
-contract is [`examples/tasky.orbit.json`](examples/tasky.orbit.json), and its tests produce real evidence for that
-contract.
+contract is [`examples/tasky.orbit.json`](examples/tasky.orbit.json), and **Validate capabilities** runs its real
+Vitest and Playwright suites (`npm run validate -w @orbit/tasky`) to fill in every test status.
 
 Orbit also has a built-in **MCP server**, so AI agents can do everything a user can in the running app. See
 [AI access (MCP)](#ai-access-mcp).
@@ -31,8 +37,8 @@ apps/orbit/            Orbit desktop app: Tauri 2 (Rust backend in src-tauri/) +
 apps/tasky/            Tasky reference app (Vite + React, localStorage)
 packages/contract/     @orbit/contract: types, JSON Schema, validation, semantic diff, graph/impact, assurance
 examples/              tasky.orbit.json (main fixture), invalid.orbit.json (diagnostics demo), demo/ snapshots
-scripts/               validate-contract, generate-evidence, create-demo-repo, orbit-mcp-stdio
-tests/                 cross-package integration tests (fixture, evidence script, impact demo)
+scripts/               validate-contract, create-demo-repo, orbit-mcp-stdio
+tests/                 cross-package integration tests (fixture, impact demo)
 docs/                  ORBIT_SPEC.md, visual reference, screenshots
 ```
 
@@ -60,7 +66,7 @@ npm run tasky                                   # Tasky at http://localhost:5174
 ```
 
 In Orbit: **Open contract…** → `examples/tasky.orbit.json`. Try the Product and Engineering trees, select an entity,
-edit behaviors, open **Tests & evidence**, toggle **Raw JSON**, and open **Impact**.
+edit behaviors, open **Tests**, click **Validate capabilities**, toggle **Raw JSON**, and pick an **Impact** view.
 
 ## Test and verify
 
@@ -94,11 +100,10 @@ The script never touches this repository. It builds a temp repo from `examples/d
 - `proposal`: adds "Overdue items remain visible in Today" plus a test mapping and a relationship.
 - `implementation`:
   - adds a notes-editing behavior and test, and changes *Local Date Evaluation*;
-  - removes *Complete and Delete Tasks* (shown as a ghost);
-  - adds evidence that cites a real code commit.
+  - removes *Complete and Delete Tasks*.
 - an uncommitted edit, so `HEAD → Working tree` has a diff.
 
-Open `<printed path>/tasky.orbit.json` in Orbit → **Impact** → choose `main → implementation`. You should see:
+Open `<printed path>/tasky.orbit.json` in Orbit → under **Impact** choose **Actual**. You should see:
 
 - **Directly changed:** Complete and Delete Tasks, Create and Edit Tasks, Local Date Evaluation
 - **Potentially affected:**
@@ -106,8 +111,7 @@ Open `<printed path>/tasky.orbit.json` in Orbit → **Impact** → choose `main 
   - Task Filtering and Sorting (*uses* Local Date Evaluation)
   - Inbox and All Tasks, two hops away (*uses* Task Filtering and Sorting → *uses* Local Date Evaluation)
 
-Set **Evidence** to the implementation code commit the script prints. You'll then see **current**, **potentially
-outdated** (stale), and **unknown** freshness side by side. `tests/demo.test.ts` asserts all of this.
+`tests/demo.test.ts` asserts all of this.
 
 ## The contract format
 
@@ -116,7 +120,9 @@ outdated** (stale), and **unknown** freshness side by side. `tests/demo.test.ts`
 
 In short:
 
-- The top level has `schemaVersion: 1` plus `product`, `entities`, `relationships`, `tests`, and `evidence`.
+- The top level has `schemaVersion: 1` plus `product`, `entities`, `relationships`, `tests`, and an optional
+  `validation` (`command` + `results`) that says how to run the test suite.
+- A test with `placeholder: true` is planned, not written yet; it never counts as coverage.
 - Entities are flat, with `parentId`. Each has `kind` `capability` or `system`, and parents must be the same kind.
 - Behaviors live inside their owning entity and have globally unique ids.
 - Relationships are `dependsOn`, `uses`, or `implementedBy`, read source → target.
@@ -137,17 +143,21 @@ import { parseContract } from '@orbit/contract/dist'; // after: npm run build -w
 
 `parseContract(text)` returns diagnostics with JSON pointers and line/column.
 
-### Producing evidence
+### Test results
 
-Orbit **displays** evidence; it never runs tests. `scripts/generate-evidence.mjs` is an example *external* producer:
-it converts Vitest and Playwright JSON reports into evidence records, keyed by `[test.id]` tags in test titles.
+Test results are never stored in the contract. **Validate capabilities** runs `validation.command` from the repository
+root (or the contract's folder outside Git) and reads the JUnit XML file at `validation.results`. Each result is matched
+to a contract test by a `[<test id>]` tag in the test's name when present (Tasky's tests use these), else by the test's
+`location` (`<file> › <describe> › <title>`).
 
-```bash
-npm run evidence -- --contract examples/tasky.orbit.json --run --write
-```
+- **Passing / Failing:** the latest result, from a run at or after the proposal's commit time.
+- **Unconfirmed:** no result, a result from before the proposal, or a skipped test.
+- **Planned:** a placeholder test.
+- A behavior is **Passing** only when all its real tests pass, and **Failing** when any fails.
 
-Failed tests are recorded as failed, and tests with no results produce nothing. The `commit` is set only when the
-code tree is clean at a real `HEAD`; otherwise it's omitted and `details` says why.
+Orbit asks you to approve the exact command before it first runs it, and again whenever it changes (the command comes
+from the contract file, which could come from someone else's branch). The command runs in its own process group, and
+**Cancel** stops it and everything it started.
 
 ## AI access (MCP)
 
@@ -158,7 +168,7 @@ same safeguards as manual editing:
 - edits are in-memory and undoable until saved;
 - edits that would introduce invalid references are rejected;
 - external changes are never overwritten;
-- Git stays read-only.
+- Git stays read-only (except the `orbit/proposal/<branch>` tag written by `mark_proposal`).
 
 You see AI actions live: toasts, selection, and an activity log.
 
@@ -190,17 +200,18 @@ For stdio-only clients, use `node scripts/orbit-mcp-stdio.mjs` (optionally with 
 - **Rust backend** (`apps/orbit/src-tauri`):
   - **Saves:** atomic (temp file + fsync + rename), checked against the SHA-256 of the file as loaded. A changed
     file is a conflict, and nothing is written.
-  - **Git:** shells out to `git` with read-only plumbing only. It sets `GIT_OPTIONAL_LOCKS=0`, never runs
+  - **Validation:** runs the approved test command with `sh -c` (`cmd /C` on Windows) in its own process group, with
+    the PATH of the user's login shell, and streams its output to the UI.
+  - **Git:** shells out to `git` with read-only plumbing, plus `git tag` for the proposal tag only. It sets `GIT_OPTIONAL_LOCKS=0`, never runs
     `git status`, and compares working-tree bytes with `git show HEAD:path`.
 
 ## Compromises and limitations
 
-- **Orbit is an evidence viewer, not a test runner.** It shows evidence that external tools recorded in the contract.
-- **Commit freshness is best-effort.** A commit can't contain its own SHA, so a committed contract can't hold "current"
-  evidence for itself (see spec §4).
-  - Freshness is **current** only when evidence's `commit` exactly matches the revision you choose under **Evidence**.
-  - With no revision chosen (the default), freshness is **unknown**.
-  - The demo shows the recommended flow: commit the code, then record evidence that cites that commit.
+- **Test results are local.** They come from the results file on this machine, so they are as current as the last run
+  here (or in CI, if CI writes that file). A result counts from the proposal's commit time onwards; Orbit does not
+  check which code commit a run used.
+- **One results file.** A product with several test runners combines them into one JUnit file (see
+  `apps/tasky/scripts/validate.mjs`).
 - **Comparisons use the same file path at both revisions.** A renamed or moved contract shows as added/removed;
   open the other path explicitly.
 - **The E2E tests don't run the native shell.** Playwright drives the real UI against an in-memory host. The Rust host

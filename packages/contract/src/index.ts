@@ -10,6 +10,6 @@ export {
   focusedRelations,
   potentialImpact,
 } from './graph.js';
-export { evidenceFreshness, testAssurance, behaviorAssurance, entityAssurance, computeAssurance } from './assurance.js';
+export { resultStatus, testAssurance, behaviorAssurance, entityAssurance, computeAssurance } from './assurance.js';
 export { diffContracts } from './diff.js';
 export { generateId, allIds, referencesTo, removeEntity, removeTest } from './edit.js';

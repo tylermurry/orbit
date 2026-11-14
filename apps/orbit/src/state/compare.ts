@@ -1,8 +1,9 @@
 import { diffContracts, parseContract } from '@orbit/contract';
 import type { OrbitContract } from '@orbit/contract';
-import type { GitContext, OrbitHost } from '../host/types';
+import { proposalTag } from '../host/types';
+import type { GitContext, GitRef, OrbitHost } from '../host/types';
 import { shortSha } from '../lib/format';
-import type { CompareResult, Comparison, RevSel, SnapMeta } from './types';
+import type { CompareResult, Comparison, LifecyclePreset, RevSel, SnapMeta } from './types';
 
 export function revKey(sel: RevSel): string {
   switch (sel.type) {
@@ -14,6 +15,8 @@ export function revKey(sel: RevSel): string {
       return `ref:${sel.name}`;
     case 'sha':
       return `sha:${sel.sha}`;
+    case 'baseline':
+      return `baseline:${sel.branch}`;
   }
 }
 
@@ -21,6 +24,7 @@ export function revFromKey(key: string): RevSel {
   if (key === 'working') return { type: 'working' };
   if (key === 'unsaved') return { type: 'unsaved' };
   if (key.startsWith('ref:')) return { type: 'ref', name: key.slice(4) };
+  if (key.startsWith('baseline:')) return { type: 'baseline', branch: key.slice(9) };
   return { type: 'sha', sha: key.slice(4) };
 }
 
@@ -31,10 +35,82 @@ export function revLabel(sel: RevSel): string {
     case 'unsaved':
       return 'Unsaved edits';
     case 'ref':
-      return sel.name;
+      return sel.name.startsWith('orbit/proposal/') ? 'Proposal' : sel.name;
     case 'sha':
       return `Commit ${shortSha(sel.sha)}`;
+    case 'baseline':
+      return `Baseline (${sel.branch})`;
   }
+}
+
+/** UI name for one side of a comparison, with no git vocabulary. */
+export function sideLabel(sel: RevSel): string {
+  if (sel.type === 'baseline') return 'Baseline';
+  if (sel.type === 'ref' && sel.name.startsWith('orbit/proposal/')) return 'Proposal';
+  if (sel.type === 'working') return 'Latest';
+  if (sel.type === 'unsaved') return 'Latest (unsaved edits)';
+  return 'Another version';
+}
+
+/** UI title of the active comparison: the view name, or 'Custom comparison' for one the AI set up. */
+export function comparisonTitle(cmp: Comparison, git: GitContext | null, refs: GitRef[], dirty: boolean): string {
+  const p = activePreset(cmp, git, refs, dirty);
+  return p ? PRESET_LABELS[p] : 'Custom comparison';
+}
+
+export const PRESET_LABELS: Record<LifecyclePreset, string> = {
+  proposal: 'Proposal',
+  'vs-proposal': 'Actual vs. Proposal',
+  actual: 'Actual',
+};
+
+/** The branch features are cut from: `main`, else `master`, else null. */
+export function baseBranchFor(refs: GitRef[]): string | null {
+  for (const b of ['main', 'master']) if (refs.some((r) => r.kind === 'branch' && r.name === b)) return b;
+  return null;
+}
+
+/** The proposal tag for the current branch, if it exists. */
+export function proposalRef(git: GitContext | null, refs: GitRef[]): GitRef | null {
+  if (!git?.available || !git.headBranch) return null;
+  const tag = proposalTag(git.headBranch);
+  return refs.find((r) => r.kind === 'tag' && r.name === tag) ?? null;
+}
+
+export type PresetResult = { ok: true; comparison: Comparison } | { ok: false; reason: string };
+
+export function presetComparison(preset: LifecyclePreset, git: GitContext | null, refs: GitRef[], dirty: boolean): PresetResult {
+  if (!git?.available) return { ok: false, reason: 'These views need the contract to be inside a Git repository.' };
+  const latest: RevSel = dirty ? { type: 'unsaved' } : { type: 'working' };
+  const branch = baseBranchFor(refs);
+  const baseline: RevSel | null = branch ? { type: 'baseline', branch } : null;
+  const prop = proposalRef(git, refs);
+  const proposal: RevSel | null = prop ? { type: 'ref', name: prop.name } : null;
+  const noBase = "No 'main' or 'master' branch was found to use as the baseline.";
+  const noProposal = git.headBranch
+    ? `No proposal has been recorded for '${git.headBranch}' yet. Ask the AI to propose the change; it marks the proposal with the tag ${proposalTag(git.headBranch)}.`
+    : 'HEAD is detached, so there is no feature branch to find a proposal for.';
+  switch (preset) {
+    case 'actual':
+      return baseline ? { ok: true, comparison: { base: baseline, target: latest } } : { ok: false, reason: noBase };
+    case 'proposal':
+      if (!baseline) return { ok: false, reason: noBase };
+      return proposal ? { ok: true, comparison: { base: baseline, target: proposal } } : { ok: false, reason: noProposal };
+    case 'vs-proposal':
+      return proposal ? { ok: true, comparison: { base: proposal, target: latest } } : { ok: false, reason: noProposal };
+  }
+}
+
+/** Which preset the active comparison corresponds to, if any. "Latest" matches either working tree or unsaved edits. */
+export function activePreset(cmp: Comparison | null, git: GitContext | null, refs: GitRef[], dirty: boolean): LifecyclePreset | null {
+  if (!cmp) return null;
+  const isLatest = (sel: RevSel) => sel.type === 'working' || sel.type === 'unsaved';
+  const sameSide = (want: RevSel, got: RevSel) => (isLatest(want) ? isLatest(got) : revKey(want) === revKey(got));
+  for (const p of ['proposal', 'vs-proposal', 'actual'] as const) {
+    const r = presetComparison(p, git, refs, dirty);
+    if (r.ok && sameSide(r.comparison.base, cmp.base) && sameSide(r.comparison.target, cmp.target)) return p;
+  }
+  return null;
 }
 
 export function sameComparison(a: Comparison | null, b: Comparison | null): boolean {
@@ -76,7 +152,12 @@ async function loadSide(args: CompareArgs, sel: RevSel): Promise<{ meta: SnapMet
     if (!st.exists) return { meta: { ...meta, exists: false }, contract: null };
     text = (await host.readFile(filePath)).text;
   } else {
-    const rev = sel.type === 'ref' ? sel.name : sel.sha;
+    let rev: string;
+    if (sel.type === 'baseline') {
+      const mb = await host.gitMergeBase(git.repoRoot!, 'HEAD', sel.branch);
+      if (!mb) throw new Error(`HEAD and '${sel.branch}' share no history, so there is no baseline to compare against.`);
+      rev = mb;
+    } else rev = sel.type === 'ref' ? sel.name : sel.sha;
     const f = await host.gitReadFileAt(git.repoRoot!, rev, git.relPath!);
     meta.commit = f.commit;
     if (!f.exists) return { meta: { ...meta, exists: false }, contract: null };

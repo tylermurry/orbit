@@ -13,16 +13,14 @@ test('a full tour produces no console errors or React warnings', async ({ page }
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Add relationship' }).click();
   await page.keyboard.press('Escape');
-  await page.getByLabel('Parent: Task Discovery').click();
-  await page.keyboard.press('Escape');
   await page.keyboard.press('Control+2');
   await page.keyboard.press('Control+3');
   await expect(page.getByTestId('change-row').first()).toBeVisible();
   await page.getByTestId('change-row').nth(2).click();
   await page.getByTestId('tab-affected').click();
-  await page.getByRole('button', { name: /^Compar/ }).click();
+  await page.getByRole('button', { name: 'View actual details' }).click();
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /Evidence context/ }).click();
+  await page.getByRole('button', { name: 'View proposal details' }).click();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Raw JSON' }).click();
   await page.getByRole('button', { name: 'Raw JSON' }).click();
@@ -34,7 +32,7 @@ test('a full tour produces no console errors or React warnings', async ({ page }
   await page.getByRole('button', { name: /Diagnostics/ }).click();
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+1');
-  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('button', { name: 'More actions', exact: true }).click();
   await page.keyboard.press('Escape');
   expect(problems).toEqual([]);
 });

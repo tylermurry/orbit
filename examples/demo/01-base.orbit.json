@@ -759,6 +759,5 @@
       "name": "End-to-end: Today re-evaluates when the local date rolls over on focus",
       "location": "apps/tasky/tests/e2e/views.spec.ts › Today re-evaluates when the local date rolls over on focus"
     }
-  ],
-  "evidence": []
+  ]
 }

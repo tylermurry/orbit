@@ -4,11 +4,9 @@
 
 export type EntityKind = 'capability' | 'system';
 export type RelationshipType = 'dependsOn' | 'uses' | 'implementedBy';
-export type EvidenceStatus = 'passed' | 'failed' | 'skipped' | 'error';
 
 export const ENTITY_KINDS: readonly EntityKind[] = ['capability', 'system'];
 export const RELATIONSHIP_TYPES: readonly RelationshipType[] = ['dependsOn', 'uses', 'implementedBy'];
-export const EVIDENCE_STATUSES: readonly EvidenceStatus[] = ['passed', 'failed', 'skipped', 'error'];
 
 export interface Product {
   id: string;
@@ -46,17 +44,15 @@ export interface TestDefinition {
   id: string;
   name: string;
   location: string;
+  /** Planned but not implemented yet; never counts as coverage. Omitted (never false) for real tests. */
+  placeholder?: true;
 }
 
-export interface Evidence {
-  id: string;
-  testId: string;
-  status: EvidenceStatus;
-  /** RFC3339 timestamp */
-  executedAt: string;
-  /** Full 40-hex git SHA; omitted when unknown. */
-  commit?: string;
-  details?: string;
+/** How the product is validated: one command that runs the whole suite and the JUnit XML file it writes. */
+export interface ValidationConfig {
+  command: string;
+  /** Results file path, relative to the repository root (or the contract's folder outside Git). */
+  results: string;
 }
 
 export interface OrbitContract {
@@ -65,7 +61,7 @@ export interface OrbitContract {
   entities: Entity[];
   relationships: Relationship[];
   tests: TestDefinition[];
-  evidence: Evidence[];
+  validation?: ValidationConfig;
 }
 
 // ───────────────────────── Validation ─────────────────────────
@@ -83,7 +79,7 @@ export interface Diagnostic {
   /** 1-based line/column in the source text when known. */
   line?: number;
   column?: number;
-  /** Ids involved (entity/behavior/relationship/test/evidence). */
+  /** Ids involved (entity/behavior/relationship/test). */
   relatedIds?: string[];
 }
 
@@ -100,34 +96,44 @@ export interface ParseResult {
 
 // ───────────────────────── Assurance ─────────────────────────
 
-/** current: evidence.commit === inspected commit; stale: commit recorded but different; unknown: no commit on evidence or no inspected commit. */
-export type Freshness = 'current' | 'stale' | 'unknown';
-
-export interface AssuranceContext {
-  /** The 40-hex commit of the code revision being inspected, or null when unknown (standalone JSON / no explicit code revision). */
-  inspectedCommit: string | null;
+/** One test's latest outcome, read from the results file. Results are never stored in the contract. */
+export interface TestResult {
+  status: 'passed' | 'failed' | 'skipped';
+  /** RFC3339 time of the run that produced it. */
+  at: string;
+  /** Failure message, when the runner reported one. */
+  message?: string;
 }
 
-/** Primary, conservative status for one behavior (ordered by precedence). */
+export interface AssuranceContext {
+  /** Latest result per test id. */
+  results: ReadonlyMap<string, TestResult>;
+  /** Results older than this RFC3339 time (the proposal's commit time) are unconfirmed; null = any result counts. */
+  since: string | null;
+}
+
+/**
+ * passing / failing: a result newer than `since`. unconfirmed: no such result (never run, run before the proposal, or
+ * skipped). planned: a placeholder test. undefined: the behavior references a test id that does not exist.
+ */
+export type TestStatus = 'passing' | 'failing' | 'unconfirmed' | 'planned' | 'undefined';
+
+/** One behavior, by precedence. Only real (defined, non-placeholder) tests count. */
 export type BehaviorStatus =
-  | 'failing' // some mapped test's latest evidence for the inspected commit is failed/error
-  | 'passing' // >=1 mapped test's latest evidence for the inspected commit is passed (and none failing)
-  | 'no-current-evidence' // has valid test mappings but no evidence matching the inspected commit (stale/unknown/none)
-  | 'untested'; // no valid test mappings
+  | 'failing' // some real test is failing
+  | 'passing' // every real test is passing
+  | 'unconfirmed' // has real tests, none failing, at least one not confirmed since the proposal
+  | 'planned' // no real tests, but placeholder tests are planned
+  | 'untested'; // no tests at all
 
 export interface TestAssurance {
   testId: string;
-  /** false when the behavior references a testId not present in contract.tests (that mapping is not "valid"). */
+  /** false when the behavior references a testId not present in contract.tests. */
   defined: boolean;
   test?: TestDefinition;
-  /** Latest evidence (by executedAt) whose commit === inspected commit; undefined if none. */
-  current?: Evidence;
-  /** Latest evidence recorded for this test regardless of commit (for display/provenance). */
-  latestRecorded?: Evidence;
-  /** Freshness of latestRecorded. 'unknown' when there is no evidence at all. */
-  freshness: Freshness;
-  /** All evidence for this test, newest first. */
-  history: Evidence[];
+  status: TestStatus;
+  /** The latest result for this test, even when it is too old to count. */
+  result?: TestResult;
 }
 
 export interface BehaviorAssurance {
@@ -137,28 +143,20 @@ export interface BehaviorAssurance {
   tests: TestAssurance[];
 }
 
+export type AssuranceBucket = 'all' | 'withTests' | BehaviorStatus;
+
 export interface AssuranceSummary {
-  /** 1. total distinct behaviors in entity + same-kind descendants */
+  /** distinct behaviors in entity + same-kind descendants */
   total: number;
-  /** 2. behaviors with >=1 valid (defined) test reference */
+  /** behaviors with >=1 real test */
   withTests: number;
-  /** 3. behaviors with >=1 test whose latest current-commit evidence is passed */
-  passingCurrent: number;
-  /** 4. behaviors with >=1 test whose latest current-commit evidence is failed or error */
-  failingCurrent: number;
-  /** 5. behaviors with no valid mapped tests */
+  passing: number;
+  failing: number;
+  unconfirmed: number;
+  planned: number;
   untested: number;
-  /** 6. behaviors with valid mappings but no current-commit evidence for any test (stale/unknown/none) */
-  noCurrentEvidence: number;
   /** behavior ids per bucket, for drill-down */
-  behaviorIds: {
-    all: string[];
-    withTests: string[];
-    passingCurrent: string[];
-    failingCurrent: string[];
-    untested: string[];
-    noCurrentEvidence: string[];
-  };
+  behaviorIds: Record<AssuranceBucket, string[]>;
 }
 
 // ───────────────────────── Graph / impact ─────────────────────────
@@ -182,8 +180,8 @@ export interface ImpactPath {
 // ───────────────────────── Semantic diff ─────────────────────────
 
 export type ChangeKind = 'added' | 'removed' | 'modified';
-export type ChangeCategory = 'product' | 'entity' | 'behavior' | 'relationship' | 'test' | 'evidence';
-/** 'guarantee' = product meaning changed; 'verification' = test/evidence/test-mapping metadata only. */
+export type ChangeCategory = 'product' | 'entity' | 'behavior' | 'relationship' | 'test';
+/** 'guarantee' = product meaning changed; 'verification' = test definitions / test mappings only. */
 export type ChangeGroup = 'guarantee' | 'verification';
 
 export interface FieldChange {

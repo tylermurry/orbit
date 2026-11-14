@@ -15,7 +15,6 @@ test.describe('screenshots (1280x800, light)', () => {
     await launch(page, { git: true });
     await page.getByRole('treeitem', { name: /Today and Overdue/ }).click();
     await expect(page.getByTestId('entity-detail')).toContainText('Today and Overdue');
-    await page.getByRole('button', { name: 'Use HEAD' }).first().click();
     await page.screenshot({ path: out('product') });
 
     await page.keyboard.press('Control+2');

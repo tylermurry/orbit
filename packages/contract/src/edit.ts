@@ -26,14 +26,12 @@ export function allIds(contract: OrbitContract): {
   behaviors: Set<string>;
   relationships: Set<string>;
   tests: Set<string>;
-  evidence: Set<string>;
 } {
   return {
     entities: new Set(contract.entities.map((e) => e.id)),
     behaviors: new Set(contract.entities.flatMap((e) => e.behaviors.map((b) => b.id))),
     relationships: new Set(contract.relationships.map((r) => r.id)),
     tests: new Set(contract.tests.map((t) => t.id)),
-    evidence: new Set(contract.evidence.map((e) => e.id)),
   };
 }
 
@@ -53,7 +51,6 @@ export function referencesTo(contract: OrbitContract, kind: 'entity' | 'behavior
     for (const e of contract.entities) {
       for (const b of e.behaviors) if (b.testIds.includes(id)) out.push(`Verifies behavior '${b.name}' of '${e.name}'`);
     }
-    for (const ev of contract.evidence) if (ev.testId === id) out.push(`Evidence record '${ev.id}' (${ev.status})`);
   }
   // Nothing in the contract references a behavior id.
   return out;
@@ -76,8 +73,8 @@ export function removeEntity(contract: OrbitContract, id: string, opts: { childr
   };
 }
 
-/** Remove a test definition; optionally unmap it from behaviors and delete its evidence. */
-export function removeTest(contract: OrbitContract, id: string, opts: { unmap: boolean; removeEvidence: boolean }): OrbitContract {
+/** Remove a test definition; optionally unmap it from behaviors. */
+export function removeTest(contract: OrbitContract, id: string, opts: { unmap: boolean }): OrbitContract {
   if (!contract.tests.some((t) => t.id === id)) throw new Error(`Test '${id}' does not exist.`);
   return {
     ...contract,
@@ -88,6 +85,5 @@ export function removeTest(contract: OrbitContract, id: string, opts: { unmap: b
           behaviors: e.behaviors.map((b) => (b.testIds.includes(id) ? { ...b, testIds: b.testIds.filter((t) => t !== id) } : b)),
         }))
       : contract.entities,
-    evidence: opts.removeEvidence ? contract.evidence.filter((ev) => ev.testId !== id) : contract.evidence,
   };
 }

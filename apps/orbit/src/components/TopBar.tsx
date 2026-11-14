@@ -1,12 +1,12 @@
-import { Badge, Button, DropdownMenu, IconButton, SegmentedControl, Text, Tooltip } from '@radix-ui/themes';
-import { CheckIcon, DotsHorizontalIcon, ExclamationTriangleIcon, FilePlusIcon, FileTextIcon, CodeIcon, ListBulletIcon, OpenInNewWindowIcon } from '@radix-ui/react-icons';
+import { DropdownMenu, IconButton, Text, Tooltip } from '@radix-ui/themes';
+import { DotsHorizontalIcon, FileTextIcon } from '@radix-ui/react-icons';
 import { fileName } from '../lib/format';
-import { useApp, useAppState, useCtrl, useDiagnostics, useDispatch } from '../state/context';
+import { useApp, useAppState, useCtrl, useDispatch } from '../state/context';
+import { activePreset, presetComparison } from '../state/compare';
 import { isDirty } from '../state/store';
-import type { ViewId } from '../state/types';
+import type { AppState, LifecyclePreset, ViewId } from '../state/types';
 import { AiButton } from './AiAccess';
-import { CompareButton } from './CompareControl';
-import { EvidenceControl } from './EvidenceControl';
+import { ValidateButton } from './Validation';
 
 export function OrbitMark({ size = 22 }: { size?: number }) {
   return (
@@ -26,11 +26,8 @@ export function TopBar() {
   const s = useAppState();
   const d = useDispatch();
   const ctrl = useCtrl();
-  const diagnostics = useDiagnostics();
   const dirty = isDirty(s);
   const hasFile = !!s.filePath && (!!s.contract || s.loadedInvalid);
-  const errors = diagnostics.filter((x) => x.severity === 'error').length;
-  const warnings = diagnostics.length - errors;
   const recent = useApp((x) => x.recent);
   const productName = s.contract?.product.name ?? (hasFile ? 'Invalid contract' : 'Orbit');
 
@@ -67,78 +64,35 @@ export function TopBar() {
 
       <div className="topbar-center">
         {hasFile && (
-          <SegmentedControl.Root value={s.view} size="2" aria-label="View">
-            <SegmentedControl.Item value="product" onClick={() => requestView('product')}>
-              Product
-            </SegmentedControl.Item>
-            <SegmentedControl.Item value="engineering" onClick={() => requestView('engineering')}>
-              Engineering
-            </SegmentedControl.Item>
-            <SegmentedControl.Item value="impact" onClick={() => requestView('impact')}>
-              Impact
-            </SegmentedControl.Item>
-          </SegmentedControl.Root>
+          <>
+            <Switcher
+              label="Capabilities"
+              value={s.view === 'impact' ? null : s.view}
+              options={[
+                { value: 'product', label: 'Product', onSelect: () => requestView('product') },
+                { value: 'engineering', label: 'Engineering', onSelect: () => requestView('engineering') },
+              ]}
+            />
+            <ImpactSelector s={s} />
+            <div className="topbar-group">
+              {/* Invisible label keeps the button on the same row as the switchers below their captions. */}
+              <span className="topbar-group-label" aria-hidden style={{ visibility: 'hidden' }}>
+                &nbsp;
+              </span>
+              <ValidateButton />
+            </div>
+          </>
         )}
       </div>
 
       <div className="topbar-right">
-        {hasFile && (
-          <>
-            <CompareButton />
-            <EvidenceControl />
-            <Tooltip content={diagnostics.length ? `${errors} errors, ${warnings} warnings` : 'No problems'}>
-              <Button variant="surface" color={errors ? 'red' : warnings ? 'amber' : 'gray'} size="2" aria-label={`Diagnostics: ${errors} errors, ${warnings} warnings`} onClick={() => d({ type: 'ui', patch: { diagnosticsOpen: true } })} className="topbar-btn">
-                {errors ? <ExclamationTriangleIcon aria-hidden /> : <CheckIcon aria-hidden />}
-                {diagnostics.length > 0 && (
-                  <Badge color={errors ? 'red' : 'amber'} variant="solid" radius="full" data-testid="diag-count">
-                    {errors + warnings}
-                  </Badge>
-                )}
-              </Button>
-            </Tooltip>
-            <Button variant={s.rawMode ? 'solid' : 'surface'} color={s.rawMode ? 'indigo' : 'gray'} size="2" aria-pressed={s.rawMode} onClick={() => requestRaw(!s.rawMode)} className="topbar-btn">
-              <CodeIcon aria-hidden />
-              Raw JSON
-            </Button>
-            <Tooltip content="Tests & evidence">
-              <IconButton variant="surface" color="gray" size="2" aria-label="Tests & evidence" disabled={!s.contract} onClick={() => d({ type: 'ui', patch: { libraryOpen: true } })}>
-                <ListBulletIcon />
-              </IconButton>
-            </Tooltip>
-          </>
+        {hasFile && dirty && (
+          <Text size="2" color="gray" data-testid="unsaved-label" className="unsaved-label">
+            Unsaved changes
+          </Text>
         )}
         <AiButton />
-        <Tooltip content={`Open (${MOD}O)`}>
-          <IconButton variant="surface" color="gray" size="2" aria-label="Open contract" onClick={() => void ctrl.openDialog()}>
-            <OpenInNewWindowIcon />
-          </IconButton>
-        </Tooltip>
-        <Tooltip content="New contract">
-          <IconButton variant="surface" color="gray" size="2" aria-label="New contract" onClick={() => ctrl.guard('Creating a new contract', () => d({ type: 'ui', patch: { newDialog: true } }))}>
-            <FilePlusIcon />
-          </IconButton>
-        </Tooltip>
-        {hasFile && (
-          <Button
-            size="2"
-            variant={dirty ? 'solid' : 'soft'}
-            color={dirty ? 'indigo' : 'gray'}
-            onClick={() => void ctrl.save()}
-            aria-label={dirty ? `Save (${MOD}S)` : 'Saved'}
-            data-testid="save-button"
-            data-dirty={dirty}
-            className="save-btn"
-          >
-            {dirty ? (
-              'Save'
-            ) : (
-              <>
-                <CheckIcon aria-hidden /> Saved
-              </>
-            )}
-          </Button>
-        )}
-        {hasFile && (
+        {(
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
               <IconButton variant="surface" color="gray" size="2" aria-label="More actions">
@@ -146,11 +100,21 @@ export function TopBar() {
               </IconButton>
             </DropdownMenu.Trigger>
             <DropdownMenu.Content align="end">
-              <DropdownMenu.Item onSelect={() => void ctrl.saveAs()}>
+              <DropdownMenu.Item onSelect={() => void ctrl.openDialog()}>
+                Open…
+                <div className="rt-DropdownMenuShortcut">{MOD}O</div>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => ctrl.guard('Creating a new contract', () => d({ type: 'ui', patch: { newDialog: true } }))}>New…</DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => void ctrl.save()} disabled={!hasFile || !dirty}>
+                Save
+                <div className="rt-DropdownMenuShortcut">{MOD}S</div>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => void ctrl.saveAs()} disabled={!hasFile}>
                 Save As…
                 <div className="rt-DropdownMenuShortcut">⇧{MOD}S</div>
               </DropdownMenu.Item>
               <DropdownMenu.Item
+                disabled={!hasFile}
                 onSelect={() => {
                   if (dirty) d({ type: 'prompt', prompt: { type: 'reload' } });
                   else void ctrl.reloadFromDisk();
@@ -185,6 +149,96 @@ export function TopBar() {
         )}
       </div>
     </header>
+  );
+}
+
+interface SwitchOption {
+  value: string;
+  label: string;
+  onSelect: () => void;
+  /** Why the option cannot be chosen now; it stays focusable and explains itself. */
+  unavailable?: string;
+}
+
+/** A labelled group of mutually exclusive options; each option is as wide as its label. Arrow keys move between them. */
+function Switcher({ label, value, options }: { label: string; value: string | null; options: SwitchOption[] }) {
+  const id = `switch-${label.toLowerCase()}`;
+  const move = (e: React.KeyboardEvent, i: number) => {
+    const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    const btns = (e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role=radio]') ?? []) as NodeListOf<HTMLButtonElement>;
+    btns[(i + d + options.length) % options.length]?.focus();
+  };
+  const active = options.findIndex((o) => o.value === value);
+  return (
+    <div className="topbar-group">
+      <span className="topbar-group-label" id={id}>
+        {label}
+      </span>
+      <div role="radiogroup" aria-labelledby={id} className="switcher">
+        {options.map((o, i) => {
+          const on = o.value === value;
+          const btn = (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              aria-disabled={o.unavailable ? true : undefined}
+              data-unavailable={o.unavailable ? true : undefined}
+              tabIndex={on || (active === -1 && i === 0) ? 0 : -1}
+              className={`switcher-item${on ? ' on' : ''}`}
+              onClick={o.onSelect}
+              onKeyDown={(e) => move(e, i)}
+            >
+              <span className="switcher-label" data-label={o.label}>
+                {o.label}
+              </span>
+            </button>
+          );
+          return o.unavailable ? (
+            <Tooltip key={o.value} content={o.unavailable}>
+              {btn}
+            </Tooltip>
+          ) : (
+            btn
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const IMPACT_OPTIONS: { value: LifecyclePreset; label: string }[] = [
+  { value: 'proposal', label: 'Proposal' },
+  { value: 'vs-proposal', label: 'Actual vs. Proposal' },
+  { value: 'actual', label: 'Actual' },
+];
+
+/** Impact: each option opens the Impact screen sliced by a different comparison. */
+function ImpactSelector({ s }: { s: AppState }) {
+  const ctrl = useCtrl();
+  if (!s.git?.available) return null;
+  const dirty = isDirty(s);
+  // Nothing is selected here while a Capabilities option is.
+  const value = s.view === 'impact' ? activePreset(s.compare, s.git, s.refs, dirty) : null;
+  return (
+    <Switcher
+      label="Impact"
+      value={value}
+      options={IMPACT_OPTIONS.map((o) => {
+        const r = presetComparison(o.value, s.git, s.refs, dirty);
+        return {
+          value: o.value,
+          label: o.label,
+          unavailable: r.ok ? undefined : r.reason,
+          onSelect: () => {
+            if (ctrl.applyPreset(o.value) === null) requestView('impact');
+          },
+        };
+      })}
+    />
   );
 }
 

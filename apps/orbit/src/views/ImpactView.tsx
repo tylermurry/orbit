@@ -3,12 +3,11 @@ import { Button, Callout, Flex, Heading, Spinner, Text, TextField } from '@radix
 import { ExclamationTriangleIcon, InfoCircledIcon, MagnifyingGlassIcon } from '@radix-ui/react-icons';
 import type { ChangeCategory, Diagnostic, SemanticDiff } from '@orbit/contract';
 import { ChangeDetail, ChangeList, diffLookups } from '../components/Changes';
-import { CompareEditor } from '../components/CompareControl';
 import { ImpactChain } from '../components/ImpactChain';
-import { KindBadge, Legend } from '../components/common';
-import { shortSha } from '../lib/format';
-import { defaultComparison, revLabel } from '../state/compare';
-import { useAppState, useCtrl, useDispatch } from '../state/context';
+import { ImpactDetails } from '../components/ImpactDetails';
+import { ChangePill, KindBadge, Legend } from '../components/common';
+import { comparisonTitle, sideLabel } from '../state/compare';
+import { useAppState, useDispatch } from '../state/context';
 import { isDirty } from '../state/store';
 import type { SnapMeta } from '../state/types';
 
@@ -28,7 +27,6 @@ function Totals({ diff, category, onCategory }: { diff: SemanticDiff; category: 
       { key: 'behavior', label: 'Behaviors', t: cat('behavior') },
       { key: 'relationship', label: 'Relationships', t: cat('relationship') },
       { key: 'test', label: 'Tests', t: cat('test') },
-      { key: 'evidence', label: 'Evidence', t: cat('evidence') },
       { key: 'product', label: 'Product', t: cat('product') },
     ];
   }, [diff, entities]);
@@ -53,8 +51,7 @@ function DiagList({ side, meta }: { side: string; meta: SnapMeta }) {
   return (
     <div className="blocked-side">
       <Text weight="bold" size="2" as="div">
-        {side}: {meta.label}
-        {meta.commit ? ` (${shortSha(meta.commit)})` : ''}
+        {side}: {sideLabel(meta.sel)}
       </Text>
       {list.length === 0 ? (
         <Text size="2" color="gray">
@@ -83,7 +80,6 @@ function DiagList({ side, meta }: { side: string; meta: SnapMeta }) {
 export function ImpactView() {
   const s = useAppState();
   const d = useDispatch();
-  const ctrl = useCtrl();
   const git = s.git;
   const [group, setGroup] = useState<'all' | 'guarantee' | 'verification'>('all');
   const [query, setQuery] = useState('');
@@ -115,7 +111,7 @@ export function ImpactView() {
             <Callout.Icon>
               <InfoCircledIcon />
             </Callout.Icon>
-            <Callout.Text>Nothing is wrong with your contract. Product and Engineering views, editing, Raw JSON, tests &amp; evidence and saving all work without Git.</Callout.Text>
+            <Callout.Text>Nothing is wrong with your contract. Product and Engineering views, editing, Raw JSON, tests and saving all work without Git.</Callout.Text>
           </Callout.Root>
         </div>
       </main>
@@ -130,38 +126,14 @@ export function ImpactView() {
         <div style={{ flex: '1 1 420px', maxWidth: 560 }}>
           <Flex align="center" gap="2" mb="2">
             <Heading size="4">Impact</Heading>
-            <Text size="2" color="gray">
-              {compare ? `${revLabel(compare.base)} → ${revLabel(compare.target)}` : 'Choose revisions to compare'}
+            <Text size="2" color="gray" data-testid="impact-title">
+              {compare ? comparisonTitle(compare, git, s.refs, dirty) : 'Nothing selected'}
             </Text>
+            <ImpactDetails />
           </Flex>
-          {compare ? (
-            <CompareEditor compact />
-          ) : (
-            <Button onClick={() => ctrl.setCompare(defaultComparison(git, dirty))}>Compare HEAD → {dirty ? 'unsaved edits' : 'Working tree'}</Button>
-          )}
         </div>
         <Flex direction="column" gap="2" style={{ flex: '1 1 300px' }}>
           <Legend />
-          {git.detached && (
-            <Text size="1" color="gray">
-              HEAD is detached at {shortSha(git.headCommit)} (not on a branch).
-            </Text>
-          )}
-          {git.shallow && (
-            <Text size="1" color="gray">
-              This is a shallow clone: older revisions may be unavailable.
-            </Text>
-          )}
-          {git.trackedAtHead === false && (
-            <Text size="1" color="amber">
-              Not committed yet — HEAD has no version of this path.
-            </Text>
-          )}
-          {compare && (
-            <Button size="1" variant="soft" color="gray" style={{ alignSelf: 'flex-start' }} onClick={() => ctrl.setCompare(null)}>
-              Clear comparison
-            </Button>
-          )}
         </Flex>
       </Flex>
     </div>
@@ -172,7 +144,7 @@ export function ImpactView() {
     body = (
       <div className="impact-empty">
         <Text size="3" color="gray">
-          No comparison selected. Compare two revisions to see what changed and what it may affect.
+          Choose Proposal, Actual vs. Proposal or Actual under Impact to see what changed and what it may affect.
         </Text>
       </div>
     );
@@ -201,7 +173,7 @@ export function ImpactView() {
             <ExclamationTriangleIcon />
           </Callout.Icon>
           <Callout.Text>
-            A revision contains an invalid contract, so Orbit cannot compare semantically. It will not fall back to a text diff. Fix the file at that revision (or choose a different one).
+            One of the versions being compared is not a valid contract, so Orbit cannot show what changed. Fix that version of the file first.
           </Callout.Text>
         </Callout.Root>
         <Flex direction="column" gap="3" mt="3">
@@ -222,8 +194,7 @@ export function ImpactView() {
               <InfoCircledIcon />
             </Callout.Icon>
             <Callout.Text>
-              The contract file does not exist in {base.label}
-              {git.trackedAtHead === false && base.sel.type === 'ref' && base.sel.name === 'HEAD' ? ' (it is not committed yet)' : ''}, so everything in {target.label} is shown as added.
+              The contract does not exist in {sideLabel(base.sel)}, so everything in {sideLabel(target.sel)} is shown as added.
             </Callout.Text>
           </Callout.Root>
         )}
@@ -232,7 +203,7 @@ export function ImpactView() {
             <Callout.Icon>
               <InfoCircledIcon />
             </Callout.Icon>
-            <Callout.Text>The contract file does not exist in {target.label}, so everything from {base.label} is shown as removed. If it was moved or renamed, Orbit v1 compares the same path only: open the new location explicitly.</Callout.Text>
+            <Callout.Text>The contract does not exist in {sideLabel(target.sel)}, so everything from {sideLabel(base.sel)} is shown as removed. If it was moved or renamed, open the new location explicitly.</Callout.Text>
           </Callout.Root>
         )}
         <div className="bignums">
@@ -250,9 +221,9 @@ export function ImpactView() {
         </div>
         {noChanges ? (
           <div className="empty-inline" data-testid="no-changes">
-            <Text size="3">No semantic changes between {base.label} and {target.label}</Text>
+            <Text size="3">No product changes in this view</Text>
             <Text as="p" size="2" color="gray" mt="1">
-              Formatting, key order and array order are ignored. Choose branches, tags or commits above to compare other revisions.
+              Formatting and ordering differences are ignored.
             </Text>
           </div>
         ) : (
@@ -296,10 +267,7 @@ export function ImpactView() {
                       return (
                         <li key={p.entityId} data-testid="affected-row" data-entity-id={p.entityId}>
                           <Flex align="center" gap="2" mb="1">
-                            <span className="marker marker-affected">
-                              <span aria-hidden>◇</span>
-                              <span aria-hidden>P</span>
-                            </span>
+                            <ChangePill status="affected" />
                             <Text weight="bold" size="2">
                               {nameOf(p.entityId)}
                             </Text>
@@ -320,7 +288,7 @@ export function ImpactView() {
             </div>
             <div className="impact-right" aria-label="Change details">
               {selected && pane === 'changes' ? (
-                <ChangeDetail diff={df} change={selected} onShowIn={(id) => {
+                <ChangeDetail diff={df} change={selected} canShowIn={(id) => !!s.contract?.entities.some((e) => e.id === id)} onShowIn={(id) => {
                   const e = entities.get(id);
                   if (e) d({ type: 'selectEntity', id, kind: e.kind });
                 }} />

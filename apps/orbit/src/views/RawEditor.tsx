@@ -66,16 +66,16 @@ export function RawEditor() {
           Raw JSON
         </Text>
         {unapplied && (
-          <Badge color="amber" variant="soft" data-testid="raw-unapplied">
+          <Badge color="amber" variant="soft" radius="full" data-testid="raw-unapplied">
             <ExclamationTriangleIcon aria-hidden /> Raw edits not applied
           </Badge>
         )}
         {!unapplied && s.loadedInvalid && (
-          <Badge color="red" variant="soft">
+          <Badge color="red" variant="soft" radius="full">
             Showing the file as stored; it has errors
           </Badge>
         )}
-        <Badge color={errors.length ? 'red' : 'green'} variant="soft" data-testid="raw-validity">
+        <Badge color={errors.length ? 'red' : 'green'} variant="soft" radius="full" data-testid="raw-validity">
           {errors.length ? <CrossCircledIcon aria-hidden /> : <CheckCircledIcon aria-hidden />}
           {errors.length ? `${errors.length} error${errors.length === 1 ? '' : 's'}` : 'Valid'}
         </Badge>

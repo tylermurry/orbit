@@ -28,7 +28,7 @@ export interface CallToolResult {
 }
 
 /**
- * read: pure inspection. nav: moves the human's view / comparison / evidence context (no document change).
+ * read: pure inspection. nav: moves the human's view / comparison (no document change).
  * edit: changes the in-memory contract (undoable). file: touches the file on disk or swaps the open document.
  */
 export type ToolKind = 'read' | 'nav' | 'edit' | 'file';

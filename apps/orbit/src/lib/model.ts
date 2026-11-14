@@ -1,4 +1,4 @@
-import { descendantIdsOf } from '@orbit/contract';
+import { descendantIdsOf, wouldCreateCycle } from '@orbit/contract';
 import type { BehaviorStatus, Entity, EntityKind, OrbitContract, Relationship, RelationshipType } from '@orbit/contract';
 
 export const KIND_LABEL: Record<EntityKind, string> = { capability: 'Capability', system: 'System' };
@@ -12,35 +12,29 @@ export const REL_INFO: Record<RelationshipType, { verb: string; inverse: string;
 
 export const STATUS_LABEL: Record<BehaviorStatus, string> = {
   failing: 'Failing',
-  passing: 'Has passing evidence',
-  'no-current-evidence': 'Mapped, no current evidence',
+  passing: 'Passing',
+  unconfirmed: 'Unconfirmed',
+  planned: 'Planned',
   untested: 'No tests',
 };
 
-export const EVIDENCE_LABEL: Record<string, string> = { passed: 'Passed', failed: 'Failed', skipped: 'Skipped', error: 'Error' };
-
 export interface TreeNode {
   entity: Entity;
-  ghost: boolean;
   children: TreeNode[];
 }
 
-/** Build a forest of the given kind. `ghosts` are entities not present in `contract` (rendered read-only). */
-export function buildTree(contract: OrbitContract, kind: EntityKind, ghosts: Entity[] = []): TreeNode[] {
-  const all = [...contract.entities.filter((e) => e.kind === kind).map((e) => ({ e, ghost: false })), ...ghosts.filter((e) => e.kind === kind).map((e) => ({ e, ghost: true }))];
-  const ids = new Set(all.map((x) => x.e.id));
-  const nodes = new Map<string, TreeNode>(all.map((x) => [x.e.id, { entity: x.e, ghost: x.ghost, children: [] }]));
+/** Build a forest of the given kind. */
+export function buildTree(contract: OrbitContract, kind: EntityKind): TreeNode[] {
+  const all = contract.entities.filter((e) => e.kind === kind);
+  const ids = new Set(all.map((e) => e.id));
+  const nodes = new Map<string, TreeNode>(all.map((e) => [e.id, { entity: e, children: [] }]));
   const roots: TreeNode[] = [];
-  for (const { e } of all) {
+  for (const e of all) {
     const node = nodes.get(e.id)!;
     if (e.parentId && ids.has(e.parentId) && e.parentId !== e.id) nodes.get(e.parentId)!.children.push(node);
     else roots.push(node);
   }
-  const sort = (arr: TreeNode[]) => {
-    arr.sort((a, b) => a.entity.name.localeCompare(b.entity.name));
-    arr.forEach((n) => sort(n.children));
-  };
-  sort(roots);
+  // Siblings keep their order from the file, so reordering in the tree is persisted.
   return roots;
 }
 
@@ -62,7 +56,7 @@ export function searchTree(roots: TreeNode[], query: string): SearchResult | nul
   const walk = (n: TreeNode, trail: string[]) => {
     const e = n.entity;
     const self = e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q);
-    const bm = n.ghost ? [] : e.behaviors.filter((b) => b.name.toLowerCase().includes(q) || b.expected.toLowerCase().includes(q));
+    const bm = e.behaviors.filter((b) => b.name.toLowerCase().includes(q) || b.expected.toLowerCase().includes(q));
     if (self) matches.add(e.id);
     if (bm.length) behaviorMatches.set(e.id, bm);
     if (self || bm.length) {
@@ -89,4 +83,44 @@ export function entityName(contracts: (OrbitContract | null | undefined)[], id: 
     if (e) return e.name;
   }
   return id;
+}
+
+export type DropPosition = 'before' | 'after' | 'inside';
+
+/**
+ * Move an entity relative to another of the same kind. 'before'/'after' make it a sibling of the target
+ * (adopting the target's parent); 'inside' makes it the last child of the target.
+ * Returns the contract unchanged when the move is invalid or a no-op.
+ */
+export function moveEntity(contract: OrbitContract, id: string, targetId: string, pos: DropPosition): OrbitContract {
+  if (id === targetId) return contract;
+  const moving = contract.entities.find((e) => e.id === id);
+  const target = contract.entities.find((e) => e.id === targetId);
+  if (!moving || !target || moving.kind !== target.kind) return contract;
+  const newParent = pos === 'inside' ? target.id : target.parentId;
+  if (newParent !== null && wouldCreateCycle(contract, id, newParent)) return contract;
+  const rest = contract.entities.filter((e) => e.id !== id);
+  const moved = { ...moving, parentId: newParent };
+  let at: number;
+  if (pos === 'inside') {
+    // after the target's last descendant in file order is not required; place after the last existing child, else after target
+    const lastChild = rest.reduce((acc, e, i) => (e.parentId === target.id ? i : acc), -1);
+    at = (lastChild >= 0 ? lastChild : rest.findIndex((e) => e.id === target.id)) + 1;
+  } else {
+    const ti = rest.findIndex((e) => e.id === target.id);
+    at = pos === 'before' ? ti : ti + 1;
+  }
+  const entities = [...rest.slice(0, at), moved, ...rest.slice(at)];
+  return { ...contract, entities };
+}
+
+/** Swap an entity with its previous/next sibling (same parent and kind). */
+export function nudgeEntity(contract: OrbitContract, id: string, dir: -1 | 1): OrbitContract {
+  const e = contract.entities.find((x) => x.id === id);
+  if (!e) return contract;
+  const sibs = contract.entities.filter((x) => x.kind === e.kind && x.parentId === e.parentId);
+  const i = sibs.findIndex((x) => x.id === id);
+  const other = sibs[i + dir];
+  if (!other) return contract;
+  return moveEntity(contract, id, other.id, dir < 0 ? 'before' : 'after');
 }
