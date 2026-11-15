@@ -5,7 +5,7 @@ import { matchResults } from '../lib/junit';
 import { applyViewFilter, buildTree } from '../lib/model';
 import { loadPref } from '../lib/prefs';
 import type { JUnitCase, MatchedResults } from '../lib/junit';
-import { proposalRef } from './compare';
+import type { ProposalFile } from './proposal';
 import type { AppState, CompareResult, Comparison, Prompt, ResultsFile, ReviewState, RunState, ViewFilter, ViewId } from './types';
 
 const canonCache = new WeakMap<OrbitContract, string>();
@@ -35,6 +35,7 @@ export function initialState(): AppState {
     externalChange: null,
     git: null,
     refs: [],
+    proposalFile: null,
     view: 'product',
     rawMode: false,
     selected: { capability: null, system: null },
@@ -68,6 +69,14 @@ export function initialState(): AppState {
 
 // ───────────── derived values ─────────────
 
+export function syncStatus(s: AppState) {
+  const branch = s.git?.headBranch;
+  const tag = branch ? `orbit/sync/${branch}` : null;
+  const commit = s.refs.find((ref) => ref.kind === 'tag' && ref.name === tag)?.commit ?? null;
+  const current = !!commit && commit === s.git?.headCommit && s.git?.implementationDirty === false && !isDirty(s);
+  return { tag, commit, current };
+}
+
 export function structuredDirty(s: AppState): boolean {
   if (s.loadedInvalid || !s.contract) return false;
   if (!s.savedContract) return true;
@@ -100,19 +109,13 @@ export function matchedResults(s: AppState): MatchedResults {
   return out;
 }
 
-/** Results only count when newer than the proposal's commit time (null when there is no proposal). */
-export function proposalTime(s: AppState): string | null {
-  return proposalRef(s.git, s.refs)?.date || null;
-}
-
-let ctxMemo: { results: MatchedResults['results']; since: string | null; ctx: AssuranceContext } | null = null;
-/** Stable (memoized) assurance context, so assurance is recomputed only when results or the proposal change. */
+let ctxMemo: AssuranceContext | null = null;
+/** Stable assurance context for the actual product. */
 export function assuranceContext(s: AppState): AssuranceContext {
   const results = matchedResults(s).results;
-  const since = proposalTime(s);
-  if (ctxMemo && ctxMemo.results === results && ctxMemo.since === since) return ctxMemo.ctx;
-  ctxMemo = { results, since, ctx: { results, since } };
-  return ctxMemo.ctx;
+  if (ctxMemo?.results === results) return ctxMemo;
+  ctxMemo = { results, since: null, actual: true };
+  return ctxMemo;
 }
 
 /** The view filter, kept only while the given entity stays visible under it (selecting a hidden entity drops it). */
@@ -128,7 +131,7 @@ export function canUndo(s: AppState): boolean {
 // ───────────── actions ─────────────
 
 export type Action =
-  | { type: 'loaded'; path: string; text: string; sha: string | null; parse: ParseResult; git: GitContext | null; refs: GitRef[]; keepContext: boolean; expanded?: Record<string, boolean> }
+  | { type: 'loaded'; path: string; text: string; sha: string | null; parse: ParseResult; git: GitContext | null; refs: GitRef[]; proposalFile?: ProposalFile | null; keepContext: boolean; expanded?: Record<string, boolean> }
   | { type: 'edit'; fn: (c: OrbitContract) => OrbitContract }
   | { type: 'undo' }
   | { type: 'redo' }
@@ -141,7 +144,8 @@ export type Action =
   | { type: 'applyRaw'; parse: ParseResult }
   | { type: 'saved'; text: string; sha: string; parse: ParseResult; path?: string }
   | { type: 'externalChange'; change: AppState['externalChange'] }
-  | { type: 'setGit'; git: GitContext | null; refs: GitRef[] }
+  | { type: 'setGit'; git: GitContext | null; refs: GitRef[]; proposalFile?: ProposalFile | null }
+  | { type: 'setProposalFile'; proposalFile: ProposalFile | null }
   | { type: 'setCompare'; compare: Comparison | null }
   | { type: 'setCompareResult'; result: CompareResult | null }
   | { type: 'selectChange'; key: string | null }
@@ -189,6 +193,7 @@ export function reducer(s: AppState, a: Action): AppState {
         externalChange: null,
         git: a.git,
         refs: a.refs,
+        proposalFile: a.proposalFile ?? null,
         rawMode: !contract ? true : a.keepContext ? s.rawMode && !ok : false,
         diagnosticsOpen: ok || !contract ? (a.keepContext ? s.diagnosticsOpen && ok : false) : true,
         bannerNote: null,
@@ -261,7 +266,9 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'externalChange':
       return { ...s, externalChange: a.change };
     case 'setGit':
-      return { ...s, git: a.git, refs: a.refs };
+      return { ...s, git: a.git, refs: a.refs, proposalFile: a.proposalFile === undefined ? s.proposalFile : a.proposalFile };
+    case 'setProposalFile':
+      return s.proposalFile === a.proposalFile ? s : { ...s, proposalFile: a.proposalFile };
     case 'setCompare':
       return { ...s, compare: a.compare, compareResult: a.compare ? (s.compareResult ?? { status: 'loading' }) : null, impactSelection: null };
     case 'setCompareResult':

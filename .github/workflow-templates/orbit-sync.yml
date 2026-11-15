@@ -1,0 +1,36 @@
+name: Orbit Sync
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  orbit-sync:
+    name: Orbit Sync
+    runs-on: ubuntu-latest
+    env:
+      PR_HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.clone_url }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify the remote sync tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="refs/tags/orbit/sync/$PR_HEAD_BRANCH"
+          git check-ref-format "$ref"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::$auth"
+          if ! result=$(git -c "http.extraHeader=Authorization: Basic $auth" ls-remote --exit-code --refs "$PR_HEAD_REPO" "$ref"); then
+            echo "::error::Could not read $ref. Run /orbit-sync and push the branch and tag to the PR head repository."
+            exit 1
+          fi
+          expected=$(printf '%s\t%s' "$PR_HEAD_SHA" "$ref")
+          if [[ "$result" != "$expected" ]]; then
+            echo "::error::Orbit sync tag is behind or points to a different commit. Run /orbit-sync and push the branch and tag."
+            exit 1
+          fi

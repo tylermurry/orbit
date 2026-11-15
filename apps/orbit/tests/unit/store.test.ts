@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseContract } from '@orbit/contract';
-import { assuranceContext, canUndo, currentText, initialState, isDirty, matchedResults, proposalTime, reducer, structuredDirty } from '../../src/state/store';
+import { assuranceContext, canUndo, currentText, initialState, isDirty, matchedResults, reducer, structuredDirty } from '../../src/state/store';
 import { FILE, INVALID, SHA1, TASKY, setup } from './util';
 import type { AppState } from '../../src/state/types';
 
@@ -73,7 +73,7 @@ describe('document store', () => {
     expect(store.getState().loadedInvalid).toBe(true);
   });
 
-  it('matches the results file to contract tests and dates results by the proposal', () => {
+  it('matches the results file without depending on the legacy proposal tag', () => {
     const contract = parseContract(TASKY).contract!;
     const t = contract.tests[0]!;
     let s: AppState = { ...initialState(), contract };
@@ -81,13 +81,12 @@ describe('document store', () => {
     s = reducer(s, { type: 'setResultsFile', file: { path: '/r.xml', state: 'ok', at: '2026-11-14T10:00:00.000Z', cases: [{ file: 'x', name: `anything [${t.id}]`, status: 'passed' }] } });
     expect(matchedResults(s).results.get(t.id)).toEqual({ status: 'passed', at: '2026-11-14T10:00:00.000Z' });
     expect(assuranceContext(s)).toBe(assuranceContext(s)); // memoized: assurance is only recomputed on change
-    expect(proposalTime(s)).toBeNull();
     s = reducer(s, {
       type: 'setGit',
       git: { available: true, headCommit: SHA1, headBranch: 'feat' },
       refs: [{ name: 'orbit/proposal/feat', kind: 'tag', commit: SHA1, subject: 'p', date: '2026-11-15T00:00:00Z' }],
     });
-    expect(assuranceContext(s).since).toBe('2026-11-15T00:00:00Z');
+    expect(assuranceContext(s).since).toBeNull();
     s = reducer(s, { type: 'setResultsFile', file: { path: '/r.xml', state: 'missing', at: null, cases: [] } });
     expect(matchedResults(s).results.size).toBe(0);
   });

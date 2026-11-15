@@ -12,14 +12,12 @@ that verify each behavior. Orbit gives you three perspectives on that file:
 | **Impact** | everyone | what changed (Proposal, Actual vs. Proposal, Actual), the *potential* downstream impact, and whether each changed behavior is tested and passing |
 
 **Validate** runs the product's whole test suite in the terminal's Validate tab with one command you confirm (default `npm run build`), then reads the JUnit XML
-results it writes. That is what every test's status comes from: **Passing**, **Failing**, **Unconfirmed** (no result
-since the proposal was committed) or **Planned** (a placeholder test). Orbit re-reads the results file whenever it
-changes, so runs started from a terminal or by an AI show up too.
+results it writes. The latest matching result determines **Passing** or **Failing**. Missing or skipped results are
+**Unconfirmed**. Orbit re-reads the results file when it changes.
 
-Orbit edits the JSON file directly (atomic, conflict-safe saves). When the file lives in a local Git repository,
-Orbit compares it across branches, commits, and the working tree, **read-only**. It never commits, checks out, or
-stages anything. The one exception is the MCP tool `mark_proposal`, which creates or moves a single lightweight tag,
-`orbit/proposal/<branch>`, so the product owner can always find the proposal.
+Orbit edits the product contract directly with conflict-safe saves and compares local Git revisions without writing Git.
+The project’s `orbit.proposal.json` holds the pinned baseline, draft, and approved proposal. Orbit marks additions
+as **Planned** in the Proposal view. Actual comes from the saved product contract.
 
 **Tasky** (`apps/tasky`) is a small, real personal task manager in the same repo. It's the reference product: its
 contract is [`examples/tasky.orbit.json`](examples/tasky.orbit.json), and **Validate** runs its real
@@ -49,7 +47,7 @@ docs/                  ORBIT_SPEC.md, visual reference, screenshots
   (Xcode Command Line Tools on macOS; WebView2 + MSVC build tools on Windows; webkit2gtk etc. on Linux)
 - **Git** (optional: needed only for comparisons and the impact demo)
 
-No accounts, services, or network access are needed at runtime.
+Orbit’s project editing works offline. Skill update checks use the official release endpoint, when configured.
 
 ```bash
 npm install
@@ -122,7 +120,7 @@ In short:
 
 - The top level has `schemaVersion: 1` plus `product`, `entities`, `relationships`, `tests`, and an optional
   `validation` (`command` + `results`) that says how to run the test suite.
-- A test with `placeholder: true` is planned, not written yet; it never counts as coverage.
+- Older contracts may contain `placeholder: true`. Orbit ignores these entries for Actual coverage. New planned tests belong in the proposal file.
 - Entities are flat, with `parentId`. Each has `kind` `capability` or `system`, and parents must be the same kind.
 - Behaviors live inside their owning entity and have globally unique ids.
 - Relationships are `dependsOn`, `uses`, or `implementedBy`, read source → target.
@@ -150,14 +148,43 @@ root (or the contract's folder outside Git) and reads every JUnit XML file in `v
 to a contract test by a `[<test id>]` tag in the test's name when present (Tasky's tests use these), else by the test's
 `location` (`<file> › <describe> › <title>`).
 
-- **Passing / Failing:** the latest result, from a run at or after the proposal's commit time.
-- **Unconfirmed:** no result, a result from before the proposal, or a skipped test.
-- **Planned:** a placeholder test.
+- **Passing / Failing:** the latest matching result.
+- **Unconfirmed:** no matching result or a skipped test.
+- **Planned:** an added test in the Proposal comparison.
 - A behavior is **Passing** only when all its real tests pass, and **Failing** when any fails.
 
 Orbit asks you to approve the exact command before it first runs it, and again whenever it changes (the command comes
 from the contract file, which could come from someone else's branch). The command runs in its own process group, and
 **Cancel** stops it and everything it started.
+
+## Plan and sync a change
+
+1. Open your project in Orbit and enable its MCP connection in Claude Code.
+2. Use **Install Skills** when creating a project or **… → Install/Update Skills** for an existing one. Orbit installs
+   the two commands in the project's `.claude/skills/` folder. You can commit them to share the installed versions.
+3. Run `/orbit-plan` with the work description, spec, or issue. Review `orbit.proposal.json` in the **Proposal** view
+   and approve the revision you want to implement. The baseline stays fixed until you explicitly replace the proposal.
+4. Implement and commit your tickets. Run `/orbit-sync` to reconcile the saved Actual contract and mark the reviewed
+   commit with `orbit/sync/<branch>`. **Actual vs. Proposal** uses the approved revision. **Actual** uses the pinned baseline.
+
+To require sync for PRs, copy [the workflow template](.github/workflow-templates/orbit-sync.yml) into the consuming
+repository's `.github/workflows/` directory and require its **Orbit Sync** check on the protected branch. Push the branch
+and the tag to the PR head repository. If only the tag changed, rerun the existing PR check. Enable the up-to-date
+branch requirement if the sync must include the latest changes to the target branch. This template compares the PR head
+and is intended for the ordinary PR merge flow.
+
+### Publish skill updates
+
+The desktop build bundles both skills. To enable remote update checks in distributed builds, publish those skill files
+at an immutable HTTPS URL and generate their manifest with:
+
+```sh
+node scripts/skills-manifest.mjs 2 https://example.com/skills/v2/ > manifest.json
+```
+
+Publish the manifest at the project's official HTTPS URL and set `ORBIT_SKILLS_MANIFEST_URL` when building
+Orbit. The desktop app uses `curl` to check and download releases. A running app can also read that environment variable
+for local testing. Increase the release number for each release and update the MCP version if the tools change incompatibly.
 
 ## AI access (MCP)
 
@@ -168,7 +195,7 @@ same safeguards as manual editing:
 - edits are in-memory and undoable until saved;
 - edits that would introduce invalid references are rejected;
 - external changes are never overwritten;
-- Git stays read-only (except the `orbit/proposal/<branch>` tag written by `mark_proposal`).
+- Git stays read-only in Orbit. The sync skill records its sync point through Git.
 
 You see AI actions live: toasts, selection, and an activity log.
 
@@ -202,13 +229,13 @@ For stdio-only clients, use `node scripts/orbit-mcp-stdio.mjs` (optionally with 
     file is a conflict, and nothing is written.
   - **Validation:** runs the approved test command with `sh -c` (`cmd /C` on Windows) in its own process group, with
     the PATH of the user's login shell, and streams its output to the UI.
-  - **Git:** shells out to `git` with read-only plumbing, plus `git tag` for the proposal tag only. It sets `GIT_OPTIONAL_LOCKS=0`, never runs
+  - **Git:** shells out to `git` with read-only commands. It sets `GIT_OPTIONAL_LOCKS=0`, never runs
     `git status`, and compares working-tree bytes with `git show HEAD:path`.
 
 ## Compromises and limitations
 
 - **Test results are local.** They come from the results file on this machine, so they are as current as the last run
-  here (or in CI, if CI writes that file). A result counts from the proposal's commit time onwards; Orbit does not
+  here (or in CI, if CI writes that file). Orbit does not
   check which code commit a run used.
 - **Results folder.** `validation.results` defaults to `reports/` at the repository root; every `*.xml` file in it
   (recursively) is read, so several test runners can each write their own JUnit file. A single file path also works.

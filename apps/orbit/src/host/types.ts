@@ -1,7 +1,6 @@
 // The boundary between the Orbit UI and its host (Tauri Rust backend in production,
 // an in-memory fake in browser-based E2E tests). All file and Git access goes through here.
-// Git access is READ-ONLY, with one narrow exception: gitTagProposal creates/moves the lightweight
-// tag `orbit/proposal/<branch>` so the product owner can always find the proposal commit.
+// Git access from the app is read-only. The sync skill records its tag via Git.
 
 export interface FileSnapshot {
   /** Absolute path as given/normalized by the host. */
@@ -45,6 +44,7 @@ export interface GitContext {
   /** Working-tree file content differs from HEAD's blob (or untracked). */
   workingTreeDiffers?: boolean;
   shallow?: boolean;
+  implementationDirty?: boolean;
 }
 
 export interface GitRef {
@@ -96,6 +96,14 @@ export interface TerminalOptions {
   command?: string;
 }
 
+export interface SkillStatus {
+  action: 'install' | 'update' | 'current' | 'unavailable';
+  version: number;
+  hashes: Record<string, string | null>;
+  customized: string[];
+  notice: string | null;
+}
+
 export interface OrbitHost {
   readonly kind: 'tauri' | 'memory';
 
@@ -118,6 +126,9 @@ export interface OrbitHost {
   writeFileAtomic(path: string, text: string, expectedSha256: string | null | undefined): Promise<WriteResult>;
   /** Initial file to open (CLI argument or ORBIT_FILE env var), if any. */
   initialFile(): Promise<string | null>;
+
+  skillsStatus?(contract: string): Promise<SkillStatus>;
+  installSkills?(contract: string, checked: SkillStatus, replaceCustom: boolean): Promise<SkillStatus>;
 
   // ── external tools ──
   /** Open an existing file in the user's default editor (currently WebStorm). Rejects with an actionable message on failure. */
@@ -146,14 +157,4 @@ export interface OrbitHost {
   gitReadFileAt(repoRoot: string, rev: string, relPath: string): Promise<GitFileAtRevision>;
   /** Best common ancestor of two revisions (`git merge-base`); null when they share no history. Throws if a rev can't be resolved. */
   gitMergeBase(repoRoot: string, a: string, b: string): Promise<string | null>;
-  /**
-   * The only git write: point the lightweight tag `orbit/proposal/<branch>` at HEAD. Refuses when the tag exists
-   * unless `replace` is true. Returns the full tag name and commit.
-   */
-  gitTagProposal(repoRoot: string, branch: string, replace: boolean): Promise<{ tag: string; commit: string; replaced: boolean }>;
-}
-
-/** Tag that marks the proposal commit for a feature branch. */
-export function proposalTag(branch: string): string {
-  return `orbit/proposal/${branch}`;
 }

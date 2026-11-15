@@ -58,10 +58,9 @@ Temp files are removed on every failure path. No other file is ever touched.
 
 ## Read-only Git guarantee
 
-Git is invoked as `git -c core.fsmonitor=false --no-pager --literal-pathspecs -C <dir> ...` with `GIT_OPTIONAL_LOCKS=0` and
-`GIT_TERMINAL_PROMPT=0`. Only `rev-parse`, `symbolic-ref` (read form, unborn branch only), `for-each-ref`, `log --no-walk`, `ls-tree`, `show`
-and `merge-base` are used - never `status`, `add`, `checkout`, `fetch`. The single write is `git_tag_proposal`: `git tag [-f] orbit/proposal/<branch> <HEAD>`,
-called only by the MCP tool `mark_proposal`; `tests/git.rs` checks it adds that ref and changes nothing else. `workingTreeDiffers` compares file bytes with `git show HEAD:<path>`; the index is never consulted.
+Git runs with `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, and fsmonitor disabled. Contract lookup uses
+literal pathspecs. The read-only implementation status check excludes the project-root proposal file.
+`workingTreeDiffers` compares the contract bytes with `git show HEAD:<path>`.
 `tests/git.rs` (AC-13) snapshots every file under `.git` and the worktree (bytes and mtimes) before/after exercising every function
 on dirty, detached, packed-refs and unborn repos, and a control test proves the harness detects `git status` rewriting the index.
 

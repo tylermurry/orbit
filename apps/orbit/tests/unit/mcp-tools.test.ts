@@ -106,7 +106,7 @@ describe('reading', () => {
     expect(d.refsCount).toBeGreaterThan(0);
     expect(d.comparison).toBeNull();
     expect(d.testResults).toMatchObject({ configured: true, command: 'npm run validate -w @orbit/tasky', state: 'missing', lastRunAt: null, running: false });
-    expect(d.counts).toMatchObject({ capabilities: 9, systems: 6, tests: 44, placeholderTests: 0 });
+    expect(d.counts).toMatchObject({ capabilities: 10, systems: 6, tests: 44, placeholderTests: 0 });
     expect(d.externalChange).toBeNull();
   });
 
@@ -132,7 +132,7 @@ describe('reading', () => {
   it('list_entities returns tree order with depth, counts and filters', async () => {
     const { ok, fail } = await boot();
     const d = await ok('list_entities');
-    expect(d.total).toBe(15);
+    expect(d.total).toBe(16);
     expect(d.entities[0]).toMatchObject({ kind: 'capability', depth: 0, parentId: null });
     const idx = (id: string) => d.entities.findIndex((e: any) => e.id === id);
     expect(idx('cap.task-management')).toBeLessThan(idx('cap.task-management.create-edit'));
@@ -143,7 +143,7 @@ describe('reading', () => {
     expect(row.assurance).toMatchObject({ total: 4, withTests: 3, untested: 1 });
     expect((await ok('list_entities', { kind: 'system' })).entities.every((e: any) => e.kind === 'system')).toBe(true);
     const sub = await ok('list_entities', { parentId: 'cap.task-discovery' });
-    expect(sub.entities.map((e: any) => e.id).sort()).toEqual(['cap.task-discovery.inbox-all', 'cap.task-discovery.today-overdue']);
+    expect(sub.entities.map((e: any) => e.id).sort()).toEqual(['cap.task-discovery.inbox-all', 'cap.task-discovery.today-overdue', 'cap.test-capabitlity']);
     expect((await ok('list_entities', { query: 'overdue' })).entities.map((e: any) => e.id)).toContain('cap.task-discovery.today-overdue');
     expect((await ok('list_entities', { limit: 2 })).entities).toHaveLength(2);
     expect((await fail('list_entities', { parentId: 'cap.task-managment' })).suggestions).toContain('cap.task-management');
@@ -773,7 +773,7 @@ describe('navigation and comparison', () => {
     expect((await fail('get_impact', { entityIds: ['sys.local-dat'] })).suggestions).toContain('sys.local-date');
   });
 
-  it('test results drive behavior status; results from before the proposal are unconfirmed', async () => {
+  it('test results drive behavior status independently of legacy proposal tags', async () => {
     const { ok, store } = await boot({ git: true });
     const status = async () => (await ok('get_entity', { id: 'cap.task-discovery.today-overdue' })).behaviors.find((x: any) => x.id === BEHAVIOR);
     expect((await status()).status).toBe('unconfirmed');
@@ -781,25 +781,25 @@ describe('navigation and comparison', () => {
     const b = await status();
     expect(b.status).toBe('passing');
     expect(b.tests[0]).toMatchObject({ status: 'passing', lastResult: { status: 'passed', at: '2026-11-14T12:00:00.000Z' } });
-    // a proposal committed after that run makes the result unconfirmed until the tests run again
+    // legacy proposal refs do not affect the actual result
     const s = store.getState();
     store.dispatch({ type: 'setGit', git: s.git, refs: [...s.refs, { name: 'orbit/proposal/main', kind: 'tag', commit: SHA1, subject: 'proposal', date: '2026-11-14T13:00:00Z' }] });
-    expect((await status()).status).toBe('unconfirmed');
-    expect((await ok('get_status')).testResults.proposalTime).toBe('2026-11-14T13:00:00Z');
+    expect((await status()).status).toBe('passing');
     results(store, { 'test.tasky.views.today-overdue': 'failed' }, '2026-11-14T14:00:00.000Z');
     expect((await status()).status).toBe('failing');
   });
 });
 
-describe('placeholder tests', () => {
-  it('create_test with placeholder, list_tests reports it, update_test clears it', async () => {
+describe('legacy test placeholders', () => {
+  it('hides legacy placeholders from Actual until a real test is recorded', async () => {
     const { ok } = await boot();
-    const t = await ok('create_test', { name: 'Overdue tasks stay in Today', location: 'tests/e2e/today.spec.ts › overdue stays', placeholder: true });
-    expect(t.test).toMatchObject({ placeholder: true });
-    const listed = await ok('list_tests', { query: 'overdue stays' });
-    expect(listed.tests[0]).toMatchObject({ id: t.test.id, placeholder: true });
-    const u = await ok('update_test', { id: t.test.id, placeholder: false });
-    expect(u.test.placeholder).toBeUndefined();
-    expect((await ok('list_tests', { query: 'overdue stays' })).tests[0].placeholder).toBe(false);
+    const contract = JSON.parse((await ok('get_raw_json')).text);
+    const test = { id: 'test.legacy', name: 'Legacy test', location: 'tests/a.ts › legacy behavior' };
+    contract.tests.push({ ...test, placeholder: true });
+    await ok('set_raw_json', { text: JSON.stringify(contract), apply: true });
+    expect((await ok('list_tests', { query: test.name })).tests).toHaveLength(0);
+    const result = await ok('update_test', { id: test.id, placeholder: false });
+    expect(result.test).toEqual(test);
+    expect((await ok('list_tests', { query: test.name })).tests[0]).toMatchObject({ id: test.id, status: 'unconfirmed', placeholder: false });
   });
 });

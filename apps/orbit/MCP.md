@@ -61,8 +61,7 @@ replies, and returns a JSON-RPC error such as "Is Orbit running with AI access e
   `overwrite: true`.
 - **Tests run only with the person's approval.** `run_tests` runs the contract's validation command only after the
   person approved that exact command in Orbit (the Validate tab asks once per command, and again if it changes).
-  Git access is read-only except `mark_proposal`, which only creates or moves the lightweight tag
-  `orbit/proposal/<branch>`.
+  Git access in the app is read-only.
 - **Serialized.** Tool calls run one at a time, so concurrent AI requests never interleave edits.
 - Turn the switch off at any time; the status dot in the top bar shows Off / Ready / Active / Error.
 
@@ -79,7 +78,7 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 | `get_entity` | read | One entity in full: ancestors, children, behaviors with each test's status and latest result, subtree assurance, relationships (with the other entity's name/kind). |
 | `search` | read | Substring search over entities (name/id), behaviors (name/expected) and tests. |
 | `get_assurance` | read | Verification assurance for an entity subtree or the whole product against the inspected commit. |
-| `list_tests` | read | Test definitions with the behaviors they verify and their status (passing / failing / unconfirmed / planned). |
+| `list_tests` | read | Test definitions with the behaviors they verify and their status (passing / failing / unconfirmed). |
 | `get_diagnostics` | read | Validation errors/warnings (codes, paths, line/column) for what the user sees. |
 | `open_file` | write | Open a contract by absolute path (guards unsaved changes). |
 | `create_contract` | write | Create and open a new empty contract at a path that does not exist yet. |
@@ -97,8 +96,8 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 | `delete_behavior` | write | Delete a behavior. |
 | `map_tests` | write | Map existing tests to a behavior. |
 | `unmap_tests` | write | Remove test mappings from a behavior. |
-| `create_test` | write | Define a test (`name`, `location`); `placeholder: true` for a planned test that does not exist yet. |
-| `update_test` | write | Change a test's name/location, or mark a placeholder implemented (`placeholder: false`). |
+| `create_test` | write | Define a test (`name`, `location`). Add it to the proposal to mark it as planned. |
+| `update_test` | write | Change a test's name/location, or clear a legacy placeholder once implemented (`placeholder: false`). |
 | `delete_test` | write | Delete a test and unmap it (like the UI). |
 | `set_validation` | write | Set the command that runs the whole test suite and the JUnit XML results file it writes. |
 | `run_tests` | write | Run the approved test command, wait, and return each test's status. |
@@ -118,8 +117,11 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 | `get_change` | read | Field-level before/after for one change key of the active comparison. |
 | `get_impact` | read | Potential impact for the active comparison or for arbitrary `entityIds` ("what would this affect?"). |
 | `clear_comparison` | navigate | Remove the comparison. |
-| `mark_proposal` | write | Tag the committed contract at HEAD as this branch's proposal (`orbit/proposal/<branch>`; `replace` to move it). |
-| `view_changes` | navigate | Product-owner views: `proposal` (baseline -> proposal), `vs-proposal` (proposal -> latest), `actual` (baseline -> latest). |
+| `get_proposal` | read | Read the project’s draft and approved proposal snapshots. |
+| `create_proposal` | write | Apply structured operations to the contract from a pinned Git baseline and create `orbit.proposal.json`. |
+| `revise_proposal` | write | Apply operations to an expected draft revision. Preserve the approved snapshot. |
+| `approve_proposal` | write | Pin the exact displayed draft revision after the owner approves it. |
+| `view_changes` | navigate | Open Proposal, Actual vs. Proposal, or Actual. |
 
 ### Conventions
 
@@ -130,9 +132,8 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 - Failures are normal tool results with `isError: true`, an actionable message and `suggestions`. Protocol problems
   (unknown tool) are JSON-RPC `-32602`.
 - Results are JSON in both `content[0].text` and `structuredContent`.
-- Test status comes from the latest results file (`validation.results`, JUnit XML). A test is *passing* or *failing*
-  only when its latest result is at or after the proposal's commit time; otherwise (no result, an older result, or
-  skipped) it is *unconfirmed*. Placeholder tests are *planned*. A behavior is passing only when all its real tests pass.
+- Test status comes from the latest JUnit results. A missing or skipped result is unconfirmed. Legacy placeholders
+  are ignored for Actual coverage. The Proposal comparison labels additions as Planned.
 - Results are matched to tests by a `[<test id>]` tag in the runner's test name when present, else by `location`
   (`<file> › <describe> › <test title>`, as the runner reports it).
 - Potential impact is inferred from relationships (changed targets affect their sources); it is never observed breakage.
@@ -160,14 +161,11 @@ whenever it changes) -> `get_assurance` (counts) / `list_tests { status: "failin
 
 **Propose a feature, then track it against the proposal**
 
-1. On a feature branch, edit the contract to describe the proposed change, including a placeholder test
-   (`create_test { placeholder: true }`) mapped to each new or changed behavior so the intended test surface is
-   visible. `save_file`, and commit it with git.
-2. `mark_proposal { show: true }` - tags HEAD as `orbit/proposal/<branch>` and opens "View proposal".
-3. While implementing, keep the contract in sync; when a planned test is written, `update_test { placeholder: false }`.
-   Run the tests after each change: results from before the proposal count as *unconfirmed*. `view_changes { view: "vs-proposal" }` shows how the actual work
-   differs from the proposal; `view_changes { view: "actual" }` shows everything since the branch left `main`.
-   `compare` also accepts `baseline` and `proposal` as revisions.
+1. On a feature branch, run `/orbit-plan` with the supplied scope. The skill calls `create_proposal` or
+   `revise_proposal`, then `view_changes { view: "proposal", show: true }`.
+2. After the owner approves the displayed revision, call `approve_proposal { revision: <displayed revision>, fileHash: <proposalFileHash> }`.
+3. After implementation, run `/orbit-sync`. Use `view_changes { view: "vs-proposal" }` to compare the approved revision with Actual.
+   For custom comparisons, `compare` accepts `baseline`, `proposal`, and `approved`.
 
 **Review a proposal before merging**
 

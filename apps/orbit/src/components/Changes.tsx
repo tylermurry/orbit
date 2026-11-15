@@ -54,7 +54,7 @@ export function changeLabel(c: Change, nameOf: (id: string) => string, diff: Sem
   return c.label || c.id;
 }
 
-export function ChangeList({ diff, selectedKey, onSelect, group, query, category }: { diff: SemanticDiff; selectedKey: string | null; onSelect: (key: string) => void; group: 'all' | 'guarantee' | 'verification'; query: string; category: string | null }) {
+export function ChangeList({ diff, selectedKey, onSelect, group, query, category, labels }: { diff: SemanticDiff; labels?: Record<string, string>; selectedKey: string | null; onSelect: (key: string) => void; group: 'all' | 'guarantee' | 'verification'; query: string; category: string | null }) {
   const actx = useAssuranceCtx();
   const { entities, nameOf } = useMemo(() => diffLookups(diff), [diff]);
   const q = query.trim().toLowerCase();
@@ -98,7 +98,7 @@ export function ChangeList({ diff, selectedKey, onSelect, group, query, category
                 return (
                   <li key={c.key}>
                     <button type="button" className={`change-row${selectedKey === c.key ? ' selected' : ''}${c.group === 'verification' ? ' secondary' : ''}`} onClick={() => onSelect(c.key)} aria-pressed={selectedKey === c.key} data-testid="change-row" data-change-key={c.key}>
-                      <ChangePill status={k.cls as EntityChangeStatus} />
+                      <ChangePill status={k.cls as EntityChangeStatus} label={labels?.[c.key]} />
                       <span className="change-label">
                         <span className="truncate" style={{ display: 'block' }}>
                           {changeLabel(c, nameOf, diff)}
@@ -143,7 +143,7 @@ function show(v: unknown): string {
 }
 
 /** onShowIn jumps to the entity in Product/Engineering; canShowIn says whether it exists in the working copy. */
-export function ChangeDetail({ diff, change, onShowIn, canShowIn }: { diff: SemanticDiff; change: Change; onShowIn?: (entityId: string) => void; canShowIn?: (entityId: string) => boolean }) {
+export function ChangeDetail({ diff, change, onShowIn, canShowIn, label, proposed, compact }: { diff: SemanticDiff; label?: string; proposed?: boolean; change: Change; onShowIn?: (entityId: string) => void; canShowIn?: (entityId: string) => boolean; /** Nested under an entity: hide id, consumers and Show-in buttons. */ compact?: boolean }) {
   const { entities, nameOf } = useMemo(() => diffLookups(diff), [diff]);
   const k = KIND_SYMBOL[change.kind];
   // Consumers of *this* change: reverse reachability over the union of base and target relationships.
@@ -172,13 +172,13 @@ export function ChangeDetail({ diff, change, onShowIn, canShowIn }: { diff: Sema
   const moved = change.fields.find((f) => f.field === 'parentId');
   const actx = useAssuranceCtx();
   // For a behavior that exists after the change: is it covered by tests, and are they passing?
-  const verified = change.category === 'behavior' && change.kind !== 'removed' && diff.target ? behaviorAssurance(diff.target, change.id, actx) : undefined;
+  const verified = !proposed && change.category === 'behavior' && change.kind !== 'removed' && diff.target ? behaviorAssurance(diff.target, change.id, actx) : undefined;
   const ownerMove = change.ownerBefore !== undefined && change.ownerAfter !== undefined && change.ownerBefore !== change.ownerAfter;
 
   return (
     <div className="change-detail" data-testid="change-detail">
       <Flex align="center" gap="2" mb="1" wrap="wrap">
-        <ChangePill status={k.cls as EntityChangeStatus} long />
+        <ChangePill status={k.cls as EntityChangeStatus} long label={label} />
         <Text size="1" color="gray" style={{ textTransform: 'capitalize' }}>
           {singular(change, entities)}
         </Text>
@@ -187,9 +187,11 @@ export function ChangeDetail({ diff, change, onShowIn, canShowIn }: { diff: Sema
         </Badge>
       </Flex>
       <h3 className="change-title">{changeLabel(change, nameOf, diff)}</h3>
-      <Code size="1" variant="ghost" color="gray">
-        {change.id}
-      </Code>
+      {!compact && (
+        <Code size="1" variant="ghost" color="gray">
+          {change.id}
+        </Code>
+      )}
 
       {change.category === 'relationship' && (
         <div className="rel-before-after">
@@ -298,7 +300,7 @@ export function ChangeDetail({ diff, change, onShowIn, canShowIn }: { diff: Sema
         </Text>
       )}
 
-      {change.entityIds.length > 0 && (
+      {!compact && change.entityIds.length > 0 && (
         <div className="consumers" data-testid="consumers">
           <h4>Potential upstream consumers</h4>
           <Text as="p" size="1" color="gray" mb="2">
@@ -344,7 +346,7 @@ export function ChangeDetail({ diff, change, onShowIn, canShowIn }: { diff: Sema
         </div>
       )}
 
-      {onShowIn && targetEntityId && targetEntity && (canShowIn?.(targetEntityId) ?? true) && (
+      {!compact && onShowIn && targetEntityId && targetEntity && (canShowIn?.(targetEntityId) ?? true) && (
         <Flex gap="2" mt="4">
           <Button variant={targetEntity.kind === 'capability' ? 'solid' : 'soft'} disabled={targetEntity.kind !== 'capability'} onClick={() => onShowIn(targetEntityId)}>
             Show in Product

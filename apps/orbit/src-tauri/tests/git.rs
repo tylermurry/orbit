@@ -318,33 +318,11 @@ fn merge_base_of_feature_and_main() {
 }
 
 #[test]
-fn proposal_tag_create_refuse_and_replace() {
-    let (r, f, first) = populated();
-    git(&r.root, &["checkout", "-q", "feature"]);
-    let feature = git(&r.root, &["rev-parse", "HEAD"]);
-    let before_tree = snapshot(&r.root);
-    let t = git_tag_proposal(s(&r.root), "feature", false).unwrap();
-    assert_eq!(t.tag, "orbit/proposal/feature");
-    assert_eq!(t.commit, feature);
-    assert!(!t.replaced);
-    let mut after = snapshot(&r.root);
-    after.retain(|k, _| !k.starts_with(".git/refs/tags/orbit"));
-    assert_eq!(after, before_tree, "tagging adds only the tag ref: worktree, index and HEAD untouched");
-    let refs = git_list_refs(s(&r.root)).unwrap();
-    assert!(refs.iter().any(|x| x.name == "orbit/proposal/feature" && x.kind == RefKind::Tag && x.commit == feature));
-
-    // refuses to move an existing tag unless asked
-    fs::write(&f, "{\"v\":3}\n").unwrap();
-    git(&r.root, &["commit", "-q", "-am", "third"]);
-    let third = git(&r.root, &["rev-parse", "HEAD"]);
-    let err = git_tag_proposal(s(&r.root), "feature", false).unwrap_err();
-    assert!(err.contains("already exists"), "{err}");
-    let t = git_tag_proposal(s(&r.root), "feature", true).unwrap();
-    assert!(t.replaced);
-    assert_eq!(t.commit, third);
-    assert_ne!(t.commit, first);
-
-    // rejects option-like or odd branch names
-    assert!(git_tag_proposal(s(&r.root), "-f", false).is_err());
-    assert!(git_tag_proposal(s(&r.root), "a..b", false).is_err());
+fn implementation_status_ignores_only_the_proposal_file() {
+    let (r, f, _) = populated();
+    assert_eq!(git_context(s(&f)).implementation_dirty, Some(false));
+    fs::write(r.root.join("orbit.proposal.json"), "{}").unwrap();
+    assert_eq!(git_context(s(&f)).implementation_dirty, Some(false));
+    fs::write(r.root.join("new-code.rs"), "fn main() {}").unwrap();
+    assert_eq!(git_context(s(&f)).implementation_dirty, Some(true));
 }

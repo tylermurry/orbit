@@ -2,9 +2,9 @@ import { ancestorsOf, behaviorIndex, potentialImpact, testAssurance } from '@orb
 import type { Change, ImpactPath, OrbitContract, SemanticDiff, TestAssurance } from '@orbit/contract';
 import { shortSha } from '../../lib/format';
 import { REL_INFO } from '../../lib/model';
-import { proposalTag } from '../../host/types';
-import { PRESET_LABELS, baseBranchFor, proposalRef, revKey, revLabel } from '../../state/compare';
-import { currentText, isDirty } from '../../state/store';
+import { appliesTo } from '../../state/proposal';
+import { PRESET_LABELS, baseBranchFor, revKey, revLabel } from '../../state/compare';
+import { currentText } from '../../state/store';
 import type { CompareResult, LifecyclePreset, RevSel } from '../../state/types';
 import { actxOf, closest, entityCandidates, historyState, notFound, requireContract, slimDiagnostic, st } from './helpers';
 import { resultsInfo } from './read';
@@ -33,17 +33,15 @@ function parseRev(ctx: ToolContext, raw: string): RevSel {
   if (v === 'working') return { type: 'working' };
   if (v === 'unsaved') return { type: 'unsaved' };
   if (v === 'baseline') {
+    if (appliesTo(s.proposalFile?.proposal, s.git)) return { type: 'pinned', sha: s.proposalFile.proposal.baseline };
     const branch = baseBranchFor(s.refs);
-    if (!branch) throw new ToolError("There is no 'main' or 'master' branch to use as the baseline.", { suggestions: ['Pass a branch name as base instead, e.g. compare({ base: "develop", ... }).'] });
+    if (!branch) throw new ToolError("There is no 'main' or 'master' branch to use as the baseline.");
     return { type: 'baseline', branch };
   }
-  if (v === 'proposal') {
-    const p = proposalRef(s.git, s.refs);
-    if (p) return { type: 'ref', name: p.name };
-    // fall through: a branch literally called 'proposal' still works
-    if (!s.refs.some((r) => r.name === 'proposal')) {
-      throw new ToolError(`No proposal is recorded for ${s.git?.headBranch ? `branch '${s.git.headBranch}'` : 'a detached HEAD'}.`, { suggestions: ['Commit the proposed contract, then call mark_proposal.'] });
-    }
+  if (v === 'proposal' && appliesTo(s.proposalFile?.proposal, s.git)) return { type: 'proposal', revision: 'draft' };
+  if (v === 'approved') {
+    if (appliesTo(s.proposalFile?.proposal, s.git) && s.proposalFile.proposal.approved) return { type: 'proposal', revision: 'approved' };
+    throw new ToolError('Approve a proposal revision first.');
   }
   const ref = s.refs.find((r) => r.name === v) ?? (v.toUpperCase() === 'HEAD' ? s.refs.find((r) => r.kind === 'head') : undefined);
   if (ref) return { type: 'ref', name: ref.kind === 'head' ? 'HEAD' : ref.name };
@@ -93,6 +91,7 @@ function describeCompare(ctx: ToolContext, r: Extract<CompareResult, { status: '
   const kindOf = (id: string) => [...(d.target?.entities ?? []), ...(d.base?.entities ?? [])].find((e) => e.id === id)?.kind ?? 'unknown';
   return {
     comparison: { base: s.compare ? revKey(s.compare.base) : null, target: s.compare ? revKey(s.compare.target) : null, label: s.compare ? `${revLabel(s.compare.base)} → ${revLabel(s.compare.target)}` : null, baseCommit: r.base.commit ? shortSha(r.base.commit) : undefined, targetCommit: r.target.commit ? shortSha(r.target.commit) : undefined },
+    ...(r.target.proposal ? { proposalRevision: r.target.proposal.revision, proposalFileHash: r.target.proposal.fileHash } : {}),
     contractStatus: d.contractStatus,
     totalChanges: d.changes.length,
     guaranteeChanges: d.changes.filter((c) => c.group === 'guarantee').length,
@@ -101,7 +100,7 @@ function describeCompare(ctx: ToolContext, r: Extract<CompareResult, { status: '
     directlyChanged: d.directlyChangedEntityIds.map((id) => ({ id, name: nm(id), kind: kindOf(id), status: d.entityStates[id]?.status, reasons: d.entityStates[id]?.reasons ?? [] })),
     potentiallyAffected: impactRows(d.potentiallyAffected, nm, kindOf),
     potentialNote: 'Potential impact is INFERRED from relationships (dependsOn/uses/implementedBy flow from changed targets to their sources); it is not observed breakage.',
-    changes: d.changes.map(changeRow),
+    changes: d.changes.map((change) => ({ ...changeRow(change), proposalStatus: r.proposalLabels?.[change.key] })),
   };
 }
 
@@ -246,7 +245,7 @@ export function navTools(): ToolDef[] {
       name: 'run_tests',
       title: 'Run the test suite',
       description:
-        "Run the contract's validation command (the whole test suite, see set_validation) and wait for it, then return each test's status from the results file. Only runs a command the person has approved in Orbit (the Validate tab asks once per command); otherwise fails and asks them to. Alternatively run the same command yourself in a terminal: Orbit picks up the results file automatically whenever it changes. Statuses: passing / failing (a result at or after the proposal time), unconfirmed (no current result), planned (placeholder).",
+        "Run the contract's validation command (the whole test suite, see set_validation) and wait for it, then return each test's status from the results file. Only runs a command the person has approved in Orbit (the Validate tab asks once per command); otherwise fails and asks them to. Alternatively run the same command yourself in a terminal: Orbit picks up the results file automatically whenever it changes. Statuses: passing, failing, or unconfirmed when there is no matching result.",
       inputSchema: S.obj({ timeoutSeconds: S.int('Give up waiting after this many seconds (default 600). The run keeps going in Orbit.', { minimum: 5, maximum: 3600 }) }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false as const },
     },
@@ -317,7 +316,7 @@ export function navTools(): ToolDef[] {
       name: 'compare',
       title: 'Compare two revisions semantically',
       description:
-        "Set the app's comparison (trees highlight added/modified/removed/potentially-affected entities) and return the semantic diff. base/target each: 'working' (saved file on disk), 'unsaved' (in-app edits), 'baseline' (where this branch left main/master), 'proposal' (this branch's proposal tag), 'HEAD', a branch or tag name, a commit sha, or a git revision expression such as 'main~1' or 'HEAD^'. Needs the file to be in a git repository. Returns totals per category, directly changed entities, potentially affected entities (with the relationship path), and the change list (use get_change for field-level before/after). Direct changes and inferred potential impact are always reported separately. show: true also switches the UI to the Impact view.",
+        "Set the app's comparison (trees highlight added/modified/removed/potentially-affected entities) and return the semantic diff. base/target each: 'working' (saved file on disk), 'unsaved' (in-app edits), 'baseline' (pinned proposal baseline, or branch merge-base), 'proposal' (draft), 'approved' (approved proposal), 'HEAD', a branch or tag name, a commit sha, or a git revision expression such as 'main~1' or 'HEAD^'. Needs the file to be in a git repository. Returns totals per category, directly changed entities, potentially affected entities (with the relationship path), and the change list (use get_change for field-level before/after). Direct changes and inferred potential impact are always reported separately. show: true also switches the UI to the Impact view.",
       inputSchema: S.obj({ base: S.nonEmpty("Older side, e.g. 'HEAD' or 'main'."), target: S.nonEmpty("Newer side, e.g. 'unsaved' or 'working'."), show: S.bool('Also open the Impact view.') }, ['base', 'target']),
       annotations: ann(false),
     },
@@ -346,50 +345,12 @@ export function navTools(): ToolDef[] {
   });
 
   tools.push({
-    kind: 'file',
-    tool: {
-      name: 'mark_proposal',
-      title: 'Mark the committed contract as the proposal',
-      description:
-        "Record the current commit as this feature branch's PROPOSAL by pointing the git tag orbit/proposal/<branch> at HEAD. This is the only git write Orbit makes; it never commits, stages or checks out. Workflow: propose the change by editing the contract, save_file, commit the contract yourself (git commit), then call mark_proposal. Refuses when the contract has unsaved or uncommitted changes, on a detached HEAD, on the base branch itself, or when a proposal tag already exists (pass replace: true to move it). show: true opens the 'View proposal' comparison afterwards.",
-      inputSchema: S.obj({ replace: S.bool('Move an existing proposal tag to HEAD.'), show: S.bool("Open the 'View proposal' comparison.") }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false as const },
-    },
-    async run(a, ctx) {
-      requireContract(ctx);
-      needGit(ctx);
-      await ctx.ctrl.refreshGit(); // the AI usually just committed
-      const s = st(ctx);
-      const g = needGit(ctx);
-      if (isDirty(s)) throw new ToolError('The contract has unsaved changes in Orbit. The proposal must be committed first.', { suggestions: ['save_file, commit the contract with git, then call mark_proposal again.'] });
-      if (!g.headCommit) throw new ToolError('The repository has no commits yet.', { suggestions: ['Commit the proposed contract first.'] });
-      if (!g.headBranch) throw new ToolError('HEAD is detached, so there is no feature branch to record a proposal for.', { suggestions: ['Check out (or create) the feature branch first.'] });
-      const base = baseBranchFor(s.refs);
-      if (base && g.headBranch === base) throw new ToolError(`You are on the base branch '${base}'. Proposals belong to a feature branch.`, { suggestions: ['Create a feature branch (git switch -c <name>), commit the proposal there, then call mark_proposal.'] });
-      if (!g.trackedAtHead || g.workingTreeDiffers) throw new ToolError(`The contract file differs from what is committed at HEAD (${shortSha(g.headCommit)}), so HEAD is not the proposal.`, { suggestions: [`Commit ${g.relPath} first, then call mark_proposal again.`] });
-      let res: { tag: string; commit: string; replaced: boolean };
-      try {
-        res = await ctx.host.gitTagProposal(g.repoRoot!, g.headBranch, a.replace === true);
-      } catch (e) {
-        throw new ToolError((e as Error).message, { suggestions: [`If the proposal was revised on purpose, call mark_proposal({ replace: true }).`] });
-      }
-      await ctx.ctrl.refreshGit();
-      if (a.show === true) {
-        ctx.ctrl.applyPreset('proposal', { quiet: true });
-        ctx.store.dispatch({ type: 'setRawMode', on: false });
-        ctx.store.dispatch({ type: 'setView', view: 'impact' });
-      }
-      return { data: { tag: res.tag, commit: res.commit, replaced: res.replaced, branch: g.headBranch, baseBranch: base }, toast: `${res.replaced ? 'Moved' : 'Marked'} proposal ${proposalTag(g.headBranch)} at ${shortSha(res.commit)}` };
-    },
-  });
-
-  tools.push({
     kind: 'nav',
     tool: {
       name: 'view_changes',
       title: 'Show a product-owner change view',
       description:
-        "One of the three views of a feature branch, as the person sees them: 'proposal' = baseline -> proposal (what was proposed), 'vs-proposal' = proposal -> latest (how the actual work differs from the proposal), 'actual' = baseline -> latest (everything that changed on the branch). Baseline is where the branch left main/master (git merge-base); latest is the working tree, or unsaved edits; the proposal is the tag set by mark_proposal. Returns the same result as compare. show: true opens the Impact view.",
+        "Open a lifecycle view: proposal compares the pinned baseline to the draft, vs-proposal compares the approved snapshot to the saved Actual, and actual compares the baseline to saved Actual. show: true opens Impact.",
       inputSchema: S.obj({ view: S.oneOf(['proposal', 'vs-proposal', 'actual'], 'Which view.'), show: S.bool('Also open the Impact view.') }, ['view']),
       annotations: ann(false),
     },
@@ -398,7 +359,7 @@ export function navTools(): ToolDef[] {
       needGit(ctx);
       const preset = a.view as LifecyclePreset;
       const why = ctx.ctrl.applyPreset(preset, { quiet: true });
-      if (why) throw new ToolError(why, { suggestions: preset === 'actual' ? ["compare({ base: '<branch>', target: 'working' })"] : ['Commit the proposed contract, then call mark_proposal.'] });
+      if (why) throw new ToolError(why, { suggestions: preset === 'actual' ? ["compare({ base: '<branch>', target: 'working' })"] : ['Use /orbit-plan to create or approve a proposal.'] });
       ctx.store.dispatch({ type: 'setCompareResult', result: { status: 'loading' } });
       await ctx.ctrl.recomputeCompare();
       const r = await awaitCompare(ctx);

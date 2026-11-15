@@ -3,6 +3,7 @@ import { Flex } from '@radix-ui/themes';
 import { Banners } from './components/Shell';
 import { TerminalPanel, setTerminalOpen } from './components/TerminalPanel';
 import { NewContractDialog, ProductDialog, ShortcutsDialog } from './components/Dialogs';
+import { ProjectSkills } from './components/ProjectSkills';
 import { Prompts } from './components/Prompts';
 import { TopBar, registerNavHandlers, requestView } from './components/TopBar';
 import { Toasts } from './components/common';
@@ -121,17 +122,19 @@ export function App() {
   }, [hasDoc, s.rawMode, s.contract, s.view]);
 
   return (
-    <Flex direction="column" className="app">
-      <TopBar />
-      <Banners />
-      <div className="app-body">{body}</div>
-      <TerminalPanel />
-      <Toasts />
-      <ProductDialog />
-      <NewContractDialog />
-      <ShortcutsDialog />
-      <ReviewSheet />
-      <Prompts />
-    </Flex>
+    <ProjectSkills>
+      <Flex direction="column" className="app">
+        <TopBar />
+        <Banners />
+        <div className="app-body">{body}</div>
+        <TerminalPanel />
+        <Toasts />
+        <ProductDialog />
+        <NewContractDialog />
+        <ShortcutsDialog />
+        <ReviewSheet />
+        <Prompts />
+      </Flex>
+    </ProjectSkills>
   );
 }

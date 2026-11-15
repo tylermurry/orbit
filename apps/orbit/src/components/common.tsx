@@ -100,13 +100,13 @@ export const CHANGE_INFO: Record<EntityChangeStatus, { symbol: string; letter: s
 };
 
 /** The one badge used everywhere for a change status; same shape and size as every other Badge in the app. */
-export function ChangePill({ status, long }: { status: EntityChangeStatus; long?: boolean }) {
+export function ChangePill({ status, long, label }: { status: EntityChangeStatus; long?: boolean; label?: string }) {
   if (status === 'unchanged') return null;
   const i = CHANGE_INFO[status];
   return (
-    <Badge color={i.color === 'gray' ? 'gray' : i.color} variant="soft" radius="full" role="img" aria-label={i.label} data-change={status}>
+    <Badge color={i.color === 'gray' ? 'gray' : i.color} variant="soft" radius="full" role="img" aria-label={label ?? i.label} data-change={status}>
       <span aria-hidden>{i.symbol}</span>
-      <span aria-hidden>{long ? i.label : i.letter}</span>
+      <span aria-hidden>{label ?? (long ? i.label : i.letter)}</span>
     </Badge>
   );
 }
@@ -122,13 +122,13 @@ export function ChangeMarker({ status, long }: { status: EntityChangeStatus; lon
   );
 }
 
-export function Legend() {
+export function Legend({ planned }: { planned?: boolean }) {
   const items: EntityChangeStatus[] = ['added', 'modified', 'removed', 'affected'];
   return (
     <Flex gap="3" wrap="wrap" align="center" aria-label="Legend" role="group">
       {items.map((s) => (
         <Flex key={s} gap="1" align="center">
-          <ChangePill status={s} long />
+          <ChangePill status={s} long label={s === 'added' && planned ? 'Planned' : undefined} />
         </Flex>
       ))}
     </Flex>

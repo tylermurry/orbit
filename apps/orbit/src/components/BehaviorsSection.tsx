@@ -6,7 +6,7 @@ import type { AssuranceSummary, Behavior, Entity, OrbitContract } from '@orbit/c
 import { useApp, useAssuranceCtx, useCtrl, useDispatch, useEdit, useHost } from '../state/context';
 import { BUCKET_LABEL } from './AssuranceSection';
 import type { Bucket } from './AssuranceSection';
-import { Confirm, EntityLink, InlineText, PlannedBadge, TestStatusBadge, testStatusReason } from './common';
+import { Confirm, EntityLink, InlineText, TestStatusBadge, testStatusReason } from './common';
 
 /** Absolute path of the file a test location points at, e.g. "tests/a.spec.ts › does x" or "a.ts#fn" or "a.ts:42". */
 export function testFilePath(location: string, baseDir: string | null): string | null {
@@ -291,12 +291,12 @@ export function TestMappingDialog({
   const ids = useMemo(() => allIds(contract), [contract]);
   const [filter, setFilter] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
-  const [nt, setNt] = useState({ name: '', location: '', placeholder: false });
+  const [nt, setNt] = useState({ name: '', location: '' });
   useEffect(() => {
     if (open) {
       setFilter('');
       setPicked([]);
-      setNt({ name: '', location: '', placeholder: false });
+      setNt({ name: '', location: '' });
     }
   }, [open]);
   const candidates = contract.tests.filter((t) => !behavior.testIds.includes(t.id)).filter((t) => !filter.trim() || `${t.name} ${t.location} ${t.id}`.toLowerCase().includes(filter.toLowerCase()));
@@ -311,7 +311,6 @@ export function TestMappingDialog({
           id: generateId('test', ids.tests, nt.name),
           name: nt.name.trim(),
           location: nt.location.trim(),
-          ...(nt.placeholder ? { placeholder: true as const } : {}),
         }
       : null;
     const add = [...picked, ...(created ? [created.id] : [])];
@@ -364,7 +363,7 @@ export function TestMappingDialog({
                   <Checkbox checked={picked.includes(t.id)} onCheckedChange={(v) => setPicked(v ? [...picked, t.id] : picked.filter((x) => x !== t.id))} aria-label={`Map test ${t.name}`} />
                   <span style={{ minWidth: 0 }}>
                     <Text size="2" as="div">
-                      {t.name} {t.placeholder && <PlannedBadge />}
+                      {t.name}
                     </Text>
                     <Text size="1" color="gray" as="div" className="truncate">
                       {t.location}
@@ -383,12 +382,6 @@ export function TestMappingDialog({
               value={nt.location}
               onChange={(e) => setNt({ ...nt, location: e.target.value })}
             />
-            <Text as="label" size="2">
-              <Flex gap="2" align="center">
-                <Checkbox checked={nt.placeholder} onCheckedChange={(v) => setNt({ ...nt, placeholder: v === true })} aria-label="New test is a placeholder" />
-                Placeholder: planned, not written yet
-              </Flex>
-            </Text>
           </Flex>
           <Flex justify="end" gap="2" mt="4">
             <Button type="button" variant="soft" color="gray" onClick={() => onOpenChange(false)}>

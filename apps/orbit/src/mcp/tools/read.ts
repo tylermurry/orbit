@@ -2,8 +2,9 @@ import { ancestorsOf, behaviorAssurance, behaviorIndex, entityAssurance, focused
 import type { AssuranceSummary, BehaviorAssurance, EntityKind, OrbitContract, TestAssurance } from '@orbit/contract';
 import { buildTree, REL_INFO } from '../../lib/model';
 import type { TreeNode } from '../../lib/model';
-import { activePreset, baseBranchFor, proposalRef, revKey, revLabel } from '../../state/compare';
-import { currentText, isDirty, matchedResults, proposalTime } from '../../state/store';
+import { activePreset, baseBranchFor, revKey, revLabel } from '../../state/compare';
+import { appliesTo } from '../../state/proposal';
+import { currentText, isDirty, matchedResults, syncStatus } from '../../state/store';
 import { resultsPathOf } from '../../state/controller';
 import type { AppState } from '../../state/types';
 import { actxOf, assuranceFor, clip, currentDiagnostics, diagCounts, entityCandidates, entityRef, historyState, notFound, requireContract, slimDiagnostic, st } from './helpers';
@@ -37,11 +38,10 @@ export function resultsInfo(s: AppState) {
     ...(s.contract?.validation ? { command: s.contract.validation.command, resultsFile: resultsPathOf(s) } : {}),
     state: f?.state ?? 'none',
     lastRunAt: f?.at ?? null,
-    proposalTime: proposalTime(s),
     matchedTests: m.results.size,
     unmatchedCases: m.unmatchedCases,
     running: !!s.run,
-    rule: 'A test is passing/failing only when its latest result is at or after the proposal time; otherwise (or with no result, or skipped) it is unconfirmed. Placeholder tests are planned.',
+    rule: 'The latest matching test result determines passing or failing. Missing or skipped results are unconfirmed.',
   };
 }
 
@@ -93,11 +93,11 @@ export function readTools(): ToolDef[] {
             history: historyState(s),
             git: git
               ? git.available
-                ? { available: true, repoRoot: git.repoRoot, relPath: git.relPath, branch: git.headBranch ?? null, detached: !!git.detached, headCommit: git.headCommit ?? null, trackedAtHead: git.trackedAtHead, workingTreeDiffers: git.workingTreeDiffers, baseBranch: baseBranchFor(s.refs), proposal: proposalRef(git, s.refs) ? { tag: proposalRef(git, s.refs)!.name, commit: proposalRef(git, s.refs)!.commit } : null }
+                ? { available: true, repoRoot: git.repoRoot, relPath: git.relPath, branch: git.headBranch ?? null, detached: !!git.detached, headCommit: git.headCommit ?? null, trackedAtHead: git.trackedAtHead, workingTreeDiffers: git.workingTreeDiffers, baseBranch: baseBranchFor(s.refs), proposal: appliesTo(s.proposalFile?.proposal, git) ? { baseline: s.proposalFile.proposal.baseline, revision: s.proposalFile.proposal.draft.revision, approvedRevision: s.proposalFile.proposal.approved?.revision ?? null } : null, sync: syncStatus(s) }
                 : { available: false, reason: git.unavailableReason, message: git.message }
               : null,
             refsCount: s.refs.length,
-            comparison: s.compare ? { base: revKey(s.compare.base), target: revKey(s.compare.target), label: `${revLabel(s.compare.base)} → ${revLabel(s.compare.target)}`, view: activePreset(s.compare, s.git, s.refs, isDirty(s)), status: s.compareResult?.status ?? 'loading' } : null,
+            comparison: s.compare ? { base: revKey(s.compare.base), target: revKey(s.compare.target), label: `${revLabel(s.compare.base)} → ${revLabel(s.compare.target)}`, view: activePreset(s.compare, s.git, s.refs, s.proposalFile), status: s.compareResult?.status ?? 'loading' } : null,
             testResults: resultsInfo(s),
             externalChange: s.externalChange ? { kind: s.externalChange.kind, path: s.externalChange.stat.path } : null,
             counts: c
@@ -249,7 +249,7 @@ export function readTools(): ToolDef[] {
     def(
       'get_assurance',
       'Get verification assurance',
-      "Assurance (how well behaviors are verified) for one entity's subtree or the whole product. Test status comes from the latest test results (run_tests or the person's Validate capabilities): a behavior is 'passing' when all its real tests passed at or after the proposal time, 'failing' when any failed, 'unconfirmed' when some test has no current result, 'planned' when it only has placeholder tests, 'untested' with no tests. Returns counts plus the per-behavior status list.",
+      "Assurance (how well behaviors are verified) for one entity's subtree or the whole product. Test status comes from the latest test results (run_tests or the person's Validate capabilities): a behavior is 'passing' when all its real tests passed, 'failing' when any failed, 'unconfirmed' when some test has no current result, 'planned' when it only has placeholder tests, 'untested' with no tests. Returns counts plus the per-behavior status list.",
       S.obj({ entityId: S.nonEmpty('Entity id; omit for the whole product.') }),
       (a, ctx) => {
         const c = requireContract(ctx);
@@ -283,7 +283,7 @@ export function readTools(): ToolDef[] {
     def(
       'list_tests',
       'List test definitions',
-      'List defined tests with the behaviors they verify and their status (passing / failing / unconfirmed / planned) from the latest test results. unmapped: true shows only tests no behavior references; status filters by status.',
+      'List implemented test definitions with their behaviors and status from the latest test results. unmapped: true shows only tests no behavior references; status filters by status.',
       S.obj({ query: S.nonEmpty('Substring filter on id/name/location.'), unmapped: S.bool('Only tests mapped to no behavior.'), status: S.oneOf(['passing', 'failing', 'unconfirmed', 'planned'], 'Only tests with this status.'), limit: S.int('Max rows (default 200).', { minimum: 1, maximum: 1000 }) }),
       (a, ctx) => {
         const c = requireContract(ctx);

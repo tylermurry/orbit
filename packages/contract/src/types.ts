@@ -106,6 +106,8 @@ export interface TestResult {
 }
 
 export interface AssuranceContext {
+  /** Legacy placeholders are ignored when inspecting the actual product. */
+  actual?: boolean;
   /** Latest result per test id. */
   results: ReadonlyMap<string, TestResult>;
   /** Results older than this RFC3339 time (the proposal's commit time) are unconfirmed; null = any result counts. */

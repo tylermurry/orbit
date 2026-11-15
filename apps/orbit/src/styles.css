@@ -390,3 +390,11 @@ mark.hl { background: var(--yellow-a5); color: inherit; border-radius: 2px; padd
 .link-item:focus-visible { outline: 2px solid var(--accent-9); }
 .link-item-name { font-size: 15px; font-weight: 500; }
 .link-item-meta { font-size: 13px; color: var(--gray-11); }
+.impact-toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.impact-tabs { flex: none; }
+.impact-toolbar-only { flex: none; padding-bottom: 0; }
+.change-list.flat { list-style: none; margin: 0; padding: 0; }
+.entity-crumbs { color: var(--gray-10); }
+.entity-reasons { margin: 8px 0 0; padding-left: 18px; color: var(--gray-11); }
+.nested-change { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--gray-a4); }
+.nested-change .change-title { font-size: 15px; }

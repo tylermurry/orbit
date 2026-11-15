@@ -24,8 +24,7 @@ interface Spec {
  * Apply one or more operations to the working contract as ONE undoable edit.
  * Rejects (changing nothing) when the result would introduce semantic/schema errors that the contract did not already have.
  */
-export function runEdit(ctx: ToolContext, specs: Spec[], opts: { dryRun?: boolean; batch?: boolean } = {}): ToolOutput {
-  const before = requireEditable(ctx);
+function applyEditSpecs(ctx: ToolContext, before: OrbitContract, specs: Spec[], opts: { batch?: boolean }) {
   const env = opEnv(ctx);
   let c: OrbitContract = before;
   const done: { op: string; summary: string; result: Record<string, unknown> }[] = [];
@@ -61,6 +60,11 @@ export function runEdit(ctx: ToolContext, specs: Spec[], opts: { dryRun?: boolea
     }
   }
 
+  return { contract: c, done, warnings, reveal, changed };
+}
+
+export function runEdit(ctx: ToolContext, specs: Spec[], opts: { dryRun?: boolean; batch?: boolean } = {}): ToolOutput {
+  const { contract: c, done, warnings, reveal, changed } = applyEditSpecs(ctx, requireEditable(ctx), specs, opts);
   const summary = done.length === 1 ? done[0].summary : `Applied ${done.length} edits: ${done.map((d) => d.summary).join('; ')}`;
   const single = done.length === 1 && !opts.batch;
   const payload: Record<string, unknown> = single ? { ...done[0].result } : { results: done };
@@ -87,6 +91,30 @@ export function runEdit(ctx: ToolContext, specs: Spec[], opts: { dryRun?: boolea
 
 const dryRunProp = S.bool('When true, validate and describe the result without changing anything.');
 
+const opNames = OPS.map((o) => o.name);
+export const operationsSchema = {
+  type: 'array',
+  minItems: 1,
+  maxItems: 200,
+  description: 'Operations applied in order.',
+  items: S.obj({ tool: S.oneOf(opNames, 'Write tool name.'), args: { type: 'object', description: "That tool's arguments (without dryRun)." } }, ['tool', 'args']),
+};
+
+function operationSpecs(operations: unknown): Spec[] {
+  const ops = operations as { tool: string; args: Record<string, unknown> }[];
+  return ops.map((o, i) => {
+    const def = OPS_BY_NAME.get(o.tool)!;
+    const { dryRun: _ignored, ...rest } = o.args;
+    const problems = validateArgs(def.schema, rest, `operations[${i}].args`);
+    if (problems.length) throw new ToolError(`Operation ${i + 1} (${o.tool}) has invalid arguments, so NOTHING was applied:\n${problems.map((p) => `- ${p}`).join('\n')}`, { data: { failedOperationIndex: i } });
+    return { op: o.tool, args: rest };
+  });
+}
+
+export function editProposalContract(ctx: ToolContext, before: OrbitContract, operations: unknown): OrbitContract {
+  return applyEditSpecs(ctx, before, operationSpecs(operations), { batch: true }).contract;
+}
+
 export function editTools(): ToolDef[] {
   const tools: ToolDef[] = OPS.map((def) => ({
     kind: 'edit' as const,
@@ -103,7 +131,6 @@ export function editTools(): ToolDef[] {
     },
   }));
 
-  const opNames = OPS.map((o) => o.name);
   tools.push({
     kind: 'edit',
     tool: {
@@ -115,13 +142,7 @@ export function editTools(): ToolDef[] {
         ") and args are exactly that tool's arguments. Operations see the results of earlier ones, so create a test then map it, or create an entity then add behaviors to it - but to reference something created earlier in the batch, pass an explicit id (auto-generated ids are only known after the call). Validation runs once on the final result. Prefer this for any multi-step change.",
       inputSchema: S.obj(
         {
-          operations: {
-            type: 'array',
-            minItems: 1,
-            maxItems: 200,
-            description: 'Operations applied in order.',
-            items: S.obj({ tool: S.oneOf(opNames, 'Write tool name.'), args: { type: 'object', description: "That tool's arguments (without dryRun)." } }, ['tool', 'args']),
-          },
+          operations: operationsSchema,
           dryRun: dryRunProp,
         },
         ['operations'],
@@ -129,15 +150,7 @@ export function editTools(): ToolDef[] {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     },
     run(args, ctx) {
-      const ops = args.operations as { tool: string; args: Record<string, unknown> }[];
-      const specs: Spec[] = ops.map((o, i) => {
-        const def = OPS_BY_NAME.get(o.tool)!;
-        const { dryRun: _ignored, ...rest } = o.args;
-        const problems = validateArgs(def.schema, rest, `operations[${i}].args`);
-        if (problems.length) throw new ToolError(`Operation ${i + 1} (${o.tool}) has invalid arguments, so NOTHING was applied:\n${problems.map((p) => `- ${p}`).join('\n')}`, { data: { failedOperationIndex: i } });
-        return { op: o.tool, args: rest };
-      });
-      return runEdit(ctx, specs, { dryRun: args.dryRun === true, batch: true });
+      return runEdit(ctx, operationSpecs(args.operations), { dryRun: args.dryRun === true, batch: true });
     },
   });
 

@@ -1,9 +1,10 @@
 import { diffContracts, parseContract } from '@orbit/contract';
 import type { OrbitContract } from '@orbit/contract';
-import { proposalTag } from '../host/types';
+import { appliesTo, PROPOSAL_FILE } from './proposal';
+import type { ProposalFile } from './proposal';
 import type { GitContext, GitRef, OrbitHost } from '../host/types';
 import { shortSha } from '../lib/format';
-import type { CompareResult, Comparison, LifecyclePreset, RevSel, SnapMeta } from './types';
+import type { CompareResult, Comparison, LifecyclePreset, ProposalChangeLabel, RevSel, SnapMeta } from './types';
 
 export function revKey(sel: RevSel): string {
   switch (sel.type) {
@@ -17,12 +18,18 @@ export function revKey(sel: RevSel): string {
       return `sha:${sel.sha}`;
     case 'baseline':
       return `baseline:${sel.branch}`;
+    case 'pinned':
+      return `pinned:${sel.sha}`;
+    case 'proposal':
+      return `proposal:${sel.revision}`;
   }
 }
 
 export function revFromKey(key: string): RevSel {
   if (key === 'working') return { type: 'working' };
   if (key === 'unsaved') return { type: 'unsaved' };
+  if (key === 'proposal:draft' || key === 'proposal:approved') return { type: 'proposal', revision: key === 'proposal:draft' ? 'draft' : 'approved' };
+  if (key.startsWith('pinned:')) return { type: 'pinned', sha: key.slice(7) };
   if (key.startsWith('ref:')) return { type: 'ref', name: key.slice(4) };
   if (key.startsWith('baseline:')) return { type: 'baseline', branch: key.slice(9) };
   return { type: 'sha', sha: key.slice(4) };
@@ -35,26 +42,30 @@ export function revLabel(sel: RevSel): string {
     case 'unsaved':
       return 'Unsaved edits';
     case 'ref':
-      return sel.name.startsWith('orbit/proposal/') ? 'Proposal' : sel.name;
+      return sel.name;
     case 'sha':
       return `Commit ${shortSha(sel.sha)}`;
     case 'baseline':
       return `Baseline (${sel.branch})`;
+    case 'pinned':
+      return `Baseline (${shortSha(sel.sha)})`;
+    case 'proposal':
+      return sel.revision === 'approved' ? 'Approved proposal' : 'Proposal';
   }
 }
 
 /** UI name for one side of a comparison, with no git vocabulary. */
 export function sideLabel(sel: RevSel): string {
-  if (sel.type === 'baseline') return 'Baseline';
-  if (sel.type === 'ref' && sel.name.startsWith('orbit/proposal/')) return 'Proposal';
+  if (sel.type === 'baseline' || sel.type === 'pinned') return 'Baseline';
+  if (sel.type === 'proposal') return revLabel(sel);
   if (sel.type === 'working') return 'Latest';
   if (sel.type === 'unsaved') return 'Latest (unsaved edits)';
   return 'Another version';
 }
 
 /** UI title of the active comparison: the view name, or 'Custom comparison' for one the AI set up. */
-export function comparisonTitle(cmp: Comparison, git: GitContext | null, refs: GitRef[], dirty: boolean): string {
-  const p = activePreset(cmp, git, refs, dirty);
+export function comparisonTitle(cmp: Comparison, git: GitContext | null, refs: GitRef[], file?: ProposalFile | null): string {
+  const p = activePreset(cmp, git, refs, file);
   return p ? PRESET_LABELS[p] : 'Custom comparison';
 }
 
@@ -70,45 +81,31 @@ export function baseBranchFor(refs: GitRef[]): string | null {
   return null;
 }
 
-/** The proposal tag for the current branch, if it exists. */
-export function proposalRef(git: GitContext | null, refs: GitRef[]): GitRef | null {
-  if (!git?.available || !git.headBranch) return null;
-  const tag = proposalTag(git.headBranch);
-  return refs.find((r) => r.kind === 'tag' && r.name === tag) ?? null;
-}
-
 export type PresetResult = { ok: true; comparison: Comparison } | { ok: false; reason: string };
 
-export function presetComparison(preset: LifecyclePreset, git: GitContext | null, refs: GitRef[], dirty: boolean): PresetResult {
+export function presetComparison(preset: LifecyclePreset, git: GitContext | null, refs: GitRef[], file?: ProposalFile | null): PresetResult {
   if (!git?.available) return { ok: false, reason: 'These views need the contract to be inside a Git repository.' };
-  const latest: RevSel = dirty ? { type: 'unsaved' } : { type: 'working' };
+  const proposal = appliesTo(file?.proposal, git) ? file.proposal : null;
   const branch = baseBranchFor(refs);
-  const baseline: RevSel | null = branch ? { type: 'baseline', branch } : null;
-  const prop = proposalRef(git, refs);
-  const proposal: RevSel | null = prop ? { type: 'ref', name: prop.name } : null;
-  const noBase = "No 'main' or 'master' branch was found to use as the baseline.";
-  const noProposal = git.headBranch
-    ? `No proposal has been recorded for '${git.headBranch}' yet. Ask the AI to propose the change; it marks the proposal with the tag ${proposalTag(git.headBranch)}.`
-    : 'HEAD is detached, so there is no feature branch to find a proposal for.';
-  switch (preset) {
-    case 'actual':
-      return baseline ? { ok: true, comparison: { base: baseline, target: latest } } : { ok: false, reason: noBase };
-    case 'proposal':
-      if (!baseline) return { ok: false, reason: noBase };
-      return proposal ? { ok: true, comparison: { base: baseline, target: proposal } } : { ok: false, reason: noProposal };
-    case 'vs-proposal':
-      return proposal ? { ok: true, comparison: { base: proposal, target: latest } } : { ok: false, reason: noProposal };
+  const baseline: RevSel | null = proposal ? { type: 'pinned', sha: proposal.baseline } : branch ? { type: 'baseline', branch } : null;
+  const actual: RevSel = { type: 'working' };
+  if (preset === 'actual') {
+    return baseline ? { ok: true, comparison: { base: baseline, target: actual } } : { ok: false, reason: "No 'main' or 'master' branch was found to use as the baseline." };
   }
+  if (!proposal) {
+    return { ok: false, reason: file?.error ?? (file?.proposal ? `${PROPOSAL_FILE} belongs to a different branch or contract.` : 'Run /orbit-plan to create orbit.proposal.json.') };
+  }
+  if (preset === 'proposal') return { ok: true, comparison: { base: { type: 'pinned', sha: proposal.baseline }, target: { type: 'proposal', revision: 'draft' } } };
+  return proposal.approved
+    ? { ok: true, comparison: { base: { type: 'proposal', revision: 'approved' }, target: actual } }
+    : { ok: false, reason: 'Approve a proposal revision to compare it with Actual.' };
 }
 
-/** Which preset the active comparison corresponds to, if any. "Latest" matches either working tree or unsaved edits. */
-export function activePreset(cmp: Comparison | null, git: GitContext | null, refs: GitRef[], dirty: boolean): LifecyclePreset | null {
+export function activePreset(cmp: Comparison | null, git: GitContext | null, refs: GitRef[], file?: ProposalFile | null): LifecyclePreset | null {
   if (!cmp) return null;
-  const isLatest = (sel: RevSel) => sel.type === 'working' || sel.type === 'unsaved';
-  const sameSide = (want: RevSel, got: RevSel) => (isLatest(want) ? isLatest(got) : revKey(want) === revKey(got));
   for (const p of ['proposal', 'vs-proposal', 'actual'] as const) {
-    const r = presetComparison(p, git, refs, dirty);
-    if (r.ok && sameSide(r.comparison.base, cmp.base) && sameSide(r.comparison.target, cmp.target)) return p;
+    const result = presetComparison(p, git, refs, file);
+    if (result.ok && sameComparison(result.comparison, cmp)) return p;
   }
   return null;
 }
@@ -134,12 +131,19 @@ export interface CompareArgs {
   comparison: Comparison;
   /** In-memory working contract; null if it cannot be compared (invalid). */
   unsavedContract: OrbitContract | null;
+  proposalFile?: ProposalFile | null;
 }
 
 async function loadSide(args: CompareArgs, sel: RevSel): Promise<{ meta: SnapMeta; contract: OrbitContract | null }> {
   const { host, git, filePath } = args;
   const label = revLabel(sel);
   const meta: SnapMeta = { sel, label, exists: true, invalid: false, diagnostics: [] };
+  if (sel.type === 'proposal') {
+    const file = args.proposalFile;
+    const revision = appliesTo(file?.proposal, git) ? file.proposal[sel.revision] : undefined;
+    if (!file || !revision) throw new Error(file?.error ?? 'The selected proposal revision is unavailable.');
+    return { meta: { ...meta, proposal: { revision: revision.revision, fileHash: file.sha } }, contract: revision.contract };
+  }
   let text: string | undefined;
   if (sel.type === 'unsaved') {
     if (!args.unsavedContract) {
@@ -179,7 +183,22 @@ export async function computeComparison(args: CompareArgs): Promise<CompareResul
       return { status: 'error', message: 'The contract file does not exist at either revision, so there is nothing to compare.' };
     }
     const diff = diffContracts(b.contract, t.contract);
-    return { status: 'ready', diff, base: b.meta, target: t.meta };
+    const proposalLabels: Record<string, ProposalChangeLabel> = {};
+    if (args.comparison.target.type === 'proposal' && args.comparison.target.revision === 'draft') {
+      for (const change of diff.changes) if (change.kind === 'added') proposalLabels[change.key] = 'Planned';
+    }
+    const proposal = args.proposalFile?.proposal;
+    if (args.comparison.base.type === 'proposal' && args.comparison.base.revision === 'approved' &&
+        args.comparison.target.type === 'working' && appliesTo(proposal, args.git)) {
+      const pinned = await loadSide(args, { type: 'pinned', sha: proposal.baseline });
+      if (!pinned.contract) throw new Error('The pinned baseline contract is unavailable or invalid.');
+      const intended = new Set(diffContracts(pinned.contract, b.contract).changes.map((c) => c.key));
+      const implemented = new Set(diffContracts(pinned.contract, t.contract).changes.map((c) => c.key));
+      for (const change of diff.changes) {
+        proposalLabels[change.key] = !intended.has(change.key) ? 'Outside proposal' : implemented.has(change.key) ? 'Different' : 'Pending';
+      }
+    }
+    return { status: 'ready', diff, base: b.meta, target: t.meta, proposalLabels };
   } catch (e) {
     return { status: 'error', message: e instanceof Error ? e.message : String(e) };
   }

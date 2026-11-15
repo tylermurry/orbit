@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activePreset, computeComparison, presetComparison, revFromKey, revKey, revLabel } from '../../src/state/compare';
+import { computeComparison, presetComparison, revFromKey, revKey, revLabel } from '../../src/state/compare';
 import { createToolRuntime } from '../../src/mcp/tools';
 import type { MemorySeed } from '../../src/host/memoryHost';
 import { DEMO_BASE, DEMO_IMPL, FILE, SHA1, read, setup } from './util';
@@ -40,29 +40,20 @@ async function boot(git: NonNullable<MemorySeed['git']>, text = DEMO_IMPL) {
 }
 
 describe('lifecycle presets', () => {
-  it('round-trips the baseline revision and labels the proposal tag', () => {
-    const b = { type: 'baseline', branch: 'main' } as const;
-    expect(revFromKey(revKey(b))).toEqual(b);
-    expect(revLabel(b)).toBe('Baseline (main)');
-    expect(revLabel({ type: 'ref', name: 'orbit/proposal/feat' })).toBe('Proposal');
+  it('round-trips the pinned baseline and proposal revision', () => {
+    const baseline = { type: 'pinned', sha: SHA1 } as const;
+    const approved = { type: 'proposal', revision: 'approved' } as const;
+    expect(revFromKey(revKey(baseline))).toEqual(baseline);
+    expect(revFromKey(revKey(approved))).toEqual(approved);
+    expect(revLabel(approved)).toBe('Approved proposal');
   });
 
-  it('builds the three comparisons, and explains why proposal views are unavailable without a tag', async () => {
-    const { store } = await boot(featureRepo());
+  it('ignores legacy tags and falls back to the Git baseline for Actual', async () => {
+    const { store } = await boot(featureRepo({ tagged: true }));
     const s = store.getState();
-    expect(presetComparison('actual', s.git, s.refs, false)).toEqual({ ok: true, comparison: { base: { type: 'baseline', branch: 'main' }, target: { type: 'working' } } });
-    const p = presetComparison('proposal', s.git, s.refs, false);
-    expect(p.ok).toBe(false);
-    if (!p.ok) expect(p.reason).toContain('orbit/proposal/feat');
-    expect(presetComparison('vs-proposal', s.git, s.refs, true).ok).toBe(false);
-
-    const t = await boot(featureRepo({ tagged: true }));
-    const s2 = t.store.getState();
-    expect(presetComparison('proposal', s2.git, s2.refs, false)).toEqual({ ok: true, comparison: { base: { type: 'baseline', branch: 'main' }, target: { type: 'ref', name: 'orbit/proposal/feat' } } });
-    expect(presetComparison('vs-proposal', s2.git, s2.refs, true)).toEqual({ ok: true, comparison: { base: { type: 'ref', name: 'orbit/proposal/feat' }, target: { type: 'unsaved' } } });
-    // "latest" matches working tree or unsaved edits
-    expect(activePreset({ base: { type: 'ref', name: 'orbit/proposal/feat' }, target: { type: 'working' } }, s2.git, s2.refs, true)).toBe('vs-proposal');
-    expect(activePreset({ base: { type: 'ref', name: 'HEAD' }, target: { type: 'working' } }, s2.git, s2.refs, false)).toBeNull();
+    expect(presetComparison('actual', s.git, s.refs)).toEqual({ ok: true, comparison: { base: { type: 'baseline', branch: 'main' }, target: { type: 'working' } } });
+    expect(presetComparison('proposal', s.git, s.refs)).toEqual({ ok: false, reason: 'Run /orbit-plan to create orbit.proposal.json.' });
+    expect(presetComparison('vs-proposal', s.git, s.refs).ok).toBe(false);
   });
 
   it('baseline is the merge-base, not the tip of main', async () => {
@@ -85,51 +76,57 @@ describe('lifecycle presets', () => {
 
 });
 
-describe('mark_proposal / view_changes', () => {
-  it('refuses while the contract differs from HEAD, then tags HEAD once committed', async () => {
-    const { call } = await boot(featureRepo(), DEMO_IMPL);
-    const no = await call('mark_proposal');
-    expect(no.err).toBe(true);
-    expect(no.d.error ?? JSON.stringify(no.d)).toMatch(/differs from what is committed/);
+const PROPOSAL_FILE = '/work/repo/orbit.proposal.json';
+const addTest = { tool: 'create_test', args: { id: 'test.sample', name: 'Sample', location: 'tests/sample.ts › verifies sample' } };
+const rename = { tool: 'update_product', args: { name: 'Proposed title' } };
 
-    // after the AI commits the proposal, the working tree equals HEAD
-    const { call: call2, store: store2 } = await boot(featureRepo(), PROPOSAL);
-    const yes = await call2('mark_proposal', { show: true });
-    expect(yes.err, JSON.stringify(yes.d)).toBe(false);
-    expect(yes.d).toMatchObject({ tag: 'orbit/proposal/feat', commit: SHA_P, replaced: false });
-    const s = store2.getState();
-    expect(s.refs.some((r) => r.name === 'orbit/proposal/feat')).toBe(true);
-    expect(s.view).toBe('impact');
-    expect(activePreset(s.compare, s.git, s.refs, false)).toBe('proposal');
-
-    const again = await call2('mark_proposal');
-    expect(again.err).toBe(true);
-    expect((await call2('mark_proposal', { replace: true })).d).toMatchObject({ replaced: true });
+describe('file-backed proposal tools', () => {
+  it('creates from HEAD, pins approval, and keeps later drafts separate from Actual', async () => {
+    const { call, host, store } = await boot(featureRepo());
+    const made = await call('create_proposal', { operations: [addTest] });
+    expect(made.err).toBe(false);
+    expect(made.d).toMatchObject({ baseline: SHA_P, revision: 1, approvedRevision: null });
+    expect(host.getFile(FILE)).toBe(DEMO_IMPL);
+    expect((await call('view_changes', { view: 'vs-proposal' })).err).toBe(true);
+    const preview = await call('view_changes', { view: 'proposal', show: true });
+    expect(preview.err).toBe(false);
+    expect(preview.d.changes).toContainEqual(expect.objectContaining({ key: 'test:test.sample', proposalStatus: 'Planned' }));
+    expect((await call('approve_proposal', { revision: 1, fileHash: preview.d.proposalFileHash })).d.approvedRevision).toBe(1);
+    expect((await call('revise_proposal', { revision: 1, operations: [rename] })).d).toMatchObject({ baseline: SHA_P, revision: 2, approvedRevision: 1 });
+    expect((await call('approve_proposal', { revision: 1, fileHash: preview.d.proposalFileHash })).err).toBe(true);
+    const comparison = await call('view_changes', { view: 'vs-proposal' });
+    expect(comparison.err).toBe(false);
+    expect(comparison.d.changes).toContainEqual(expect.objectContaining({ key: 'test:test.sample', proposalStatus: 'Pending' }));
+    expect(store.getState().compareResult).toMatchObject({ status: 'ready', diff: { base: { product: { name: JSON.parse(PROPOSAL).product.name } } } });
+    expect(JSON.parse(host.getFile(PROPOSAL_FILE)!).draft.contract.product.name).toBe('Proposed title');
+    expect(host.getFile(FILE)).toBe(DEMO_IMPL);
   });
 
-  it('refuses on the base branch', async () => {
-    const git = featureRepo({ head: 'main' });
-    const { call } = await boot(git, DEMO_IMPL);
-    const r = await call('mark_proposal');
-    expect(r.err).toBe(true);
-    expect(JSON.stringify(r.d)).toContain('base branch');
+  it('checks explicit baselines and protects a different branch’s proposal', async () => {
+    const { call, host } = await boot(featureRepo());
+    expect((await call('create_proposal', { baseline: 'missing', operations: [addTest] })).err).toBe(true);
+    expect((await call('create_proposal', { baseline: SHA1, operations: [addTest] })).d.baseline).toBe(SHA1);
+    const file = JSON.parse(host.getFile(PROPOSAL_FILE)!);
+    await host.externalWrite(PROPOSAL_FILE, JSON.stringify({ ...file, branch: 'other' }));
+    expect((await call('create_proposal', { operations: [addTest] })).err).toBe(true);
+    expect((await call('create_proposal', { operations: [addTest], replace: true, revision: 1 })).d.branch).toBe('feat');
   });
 
-  it('view_changes returns the semantic diff for each view', async () => {
-    const { call } = await boot(featureRepo({ tagged: true }), DEMO_IMPL);
-    const prop = await call('view_changes', { view: 'proposal' });
-    expect(prop.err, JSON.stringify(prop.d)).toBe(false);
-    expect(prop.d.label).toBe('Proposal');
-    expect(prop.d.comparison.label).toBe('Baseline (main) → Proposal');
-    expect(prop.d.totalChanges).toBeGreaterThan(0);
-    const vs = await call('view_changes', { view: 'vs-proposal' });
-    expect(vs.d.comparison.label).toBe('Proposal → Working tree');
-    const act = await call('view_changes', { view: 'actual' });
-    expect(act.d.comparison.label).toBe('Baseline (main) → Working tree');
-    const st = await call('get_status');
-    expect(st.d.git.proposal).toEqual({ tag: 'orbit/proposal/feat', commit: SHA_P });
-    expect(st.d.comparison.view).toBe('actual');
-    const viaCompare = await call('compare', { base: 'baseline', target: 'proposal' });
-    expect(viaCompare.d.comparison.label).toBe('Baseline (main) → Proposal');
+  it('refreshes the active proposal when the file changes or is removed', async () => {
+    const { call, ctrl, host, store } = await boot(featureRepo());
+    await call('create_proposal', { operations: [addTest] });
+    await call('view_changes', { view: 'proposal' });
+    const file = JSON.parse(host.getFile(PROPOSAL_FILE)!);
+    file.draft.contract.product.name = 'Externally edited';
+    const review = await call('view_changes', { view: 'proposal' });
+    await host.externalWrite(PROPOSAL_FILE, JSON.stringify(file));
+    expect((await call('approve_proposal', { revision: 1, fileHash: review.d.proposalFileHash })).err).toBe(true);
+    await ctrl.refreshProposal();
+    await ctrl.recomputeCompare();
+    expect(store.getState().compareResult).toMatchObject({ status: 'ready', diff: { target: { product: { name: 'Externally edited' } } } });
+    host.externalDelete(PROPOSAL_FILE);
+    await ctrl.refreshProposal();
+    expect((await call('view_changes', { view: 'proposal' })).err).toBe(true);
+    expect((await call('view_changes', { view: 'actual' })).err).toBe(false);
   });
 });

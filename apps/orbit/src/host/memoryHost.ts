@@ -1,4 +1,3 @@
-import { proposalTag } from './types';
 import type { FileSnapshot, FileStat, GitContext, GitFileAtRevision, GitRef, OrbitHost, RunOutcome, WriteResult } from './types';
 
 /** Seed describing a fake git repository (read-only from Orbit's perspective). */
@@ -177,6 +176,7 @@ export function createMemoryHost(seed: MemorySeed): MemoryHost {
         trackedAtHead: atHead !== undefined,
         workingTreeDiffers: atHead === undefined ? true : wt !== atHead,
         shallow: git.shallow,
+        implementationDirty: atHead !== wt,
       };
     },
     async gitListRefs(): Promise<GitRef[]> {
@@ -243,17 +243,6 @@ export function createMemoryHost(seed: MemorySeed): MemoryHost {
       }
       return null;
     },
-    async gitTagProposal(_root, branch, replace) {
-      if (!git) throw new Error('Not a git repository.');
-      const commit = resolveRev('HEAD');
-      const tag = proposalTag(branch);
-      const existing = git.refs.find((r) => r.kind === 'tag' && r.name === tag);
-      if (existing && !replace) throw new Error(`Tag '${tag}' already exists (at ${existing.commit.slice(0, 7)}). Pass replace: true to move it to HEAD.`);
-      if (existing) existing.commit = commit;
-      else git.refs.push({ name: tag, kind: 'tag', commit });
-      return { tag, commit, replaced: !!existing };
-    },
-
     // ── test helpers ──
     async externalWrite(path, text) {
       touch(path, text);

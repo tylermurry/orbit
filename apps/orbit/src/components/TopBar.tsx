@@ -1,4 +1,4 @@
-import { DropdownMenu, IconButton, Text, Tooltip } from '@radix-ui/themes';
+import { Button, DropdownMenu, IconButton, Text, Tooltip } from '@radix-ui/themes';
 import { DotsHorizontalIcon, FileTextIcon } from '@radix-ui/react-icons';
 import { fileName } from '../lib/format';
 import { useApp, useAppState, useCtrl, useDispatch } from '../state/context';
@@ -7,6 +7,7 @@ import { isDirty } from '../state/store';
 import type { AppState, LifecyclePreset, ViewId } from '../state/types';
 import { AiButton } from './AiAccess';
 import { TerminalIcon, setTerminalOpen } from './TerminalPanel';
+import { useProjectSkills } from './ProjectSkills';
 import { ValidateButton } from './Validation';
 
 export function OrbitMark({ size = 22 }: { size?: number }) {
@@ -31,6 +32,7 @@ export function TopBar() {
   const hasFile = !!s.filePath && (!!s.contract || s.loadedInvalid);
   const recent = useApp((x) => x.recent);
   const terminalOpen = s.terminalOpen;
+  const skills = useProjectSkills();
   const productName = s.contract?.product.name ?? (hasFile ? 'Invalid contract' : 'Orbit');
 
   return (
@@ -99,6 +101,7 @@ export function TopBar() {
           </IconButton>
         </Tooltip>
         <AiButton />
+        {hasFile && skills?.primary && <Button size="2" onClick={skills.runPrimary}>{skills.primary}</Button>}
         {(
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
@@ -132,6 +135,7 @@ export function TopBar() {
               <DropdownMenu.Item onSelect={() => d({ type: 'ui', patch: { productDialog: true } })} disabled={!s.contract}>
                 Product settings…
               </DropdownMenu.Item>
+              {skills?.available && <DropdownMenu.Item disabled={!hasFile} onSelect={skills.openManager}>Install/Update Skills</DropdownMenu.Item>}
               <DropdownMenu.Sub>
                 <DropdownMenu.SubTrigger>Recent files</DropdownMenu.SubTrigger>
                 <DropdownMenu.SubContent>
@@ -227,15 +231,14 @@ const IMPACT_OPTIONS: { value: LifecyclePreset; label: string }[] = [
 function ImpactSelector({ s }: { s: AppState }) {
   const ctrl = useCtrl();
   if (!s.git?.available) return null;
-  const dirty = isDirty(s);
   // Nothing is selected here while a Capabilities option is.
-  const value = s.view === 'impact' ? activePreset(s.compare, s.git, s.refs, dirty) : null;
+  const value = s.view === 'impact' ? activePreset(s.compare, s.git, s.refs, s.proposalFile) : null;
   return (
     <Switcher
       label="Impact"
       value={value}
       options={IMPACT_OPTIONS.map((o) => {
-        const r = presetComparison(o.value, s.git, s.refs, dirty);
+        const r = presetComparison(o.value, s.git, s.refs, s.proposalFile);
         return {
           value: o.value,
           label: o.label,

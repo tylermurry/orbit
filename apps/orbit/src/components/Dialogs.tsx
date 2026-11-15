@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Dialog, Flex, Kbd, Text, TextArea, TextField } from '@radix-ui/themes';
+import { Button, Checkbox, Dialog, Flex, Kbd, Text, TextArea, TextField } from '@radix-ui/themes';
+import { useProjectSkills } from './ProjectSkills';
 import { slugify } from '../lib/format';
 import { useApp, useCtrl, useDispatch, useEdit } from '../state/context';
 
@@ -94,12 +95,15 @@ export function NewContractDialog() {
   const [idTouched, setIdTouched] = useState(false);
   const [summary, setSummary] = useState('');
   const [busy, setBusy] = useState(false);
+  const [installSkills, setInstallSkills] = useState(false);
+  const skills = useProjectSkills();
   useEffect(() => {
     if (open) {
       setName('');
       setId('');
       setIdTouched(false);
       setSummary('');
+      setInstallSkills(false);
     }
   }, [open]);
   const valid = name.trim() && id.trim() && summary.trim();
@@ -109,7 +113,10 @@ export function NewContractDialog() {
     setBusy(true);
     try {
       const ok = await ctrl.createNew({ id: id.trim(), name: name.trim(), summary: summary.trim() });
-      if (ok) close(false);
+      if (ok) {
+        close(false);
+        if (installSkills) void skills?.installForNewProject();
+      }
     } finally {
       setBusy(false);
     }
@@ -154,6 +161,14 @@ export function NewContractDialog() {
             <Field label="Summary">
               <TextField.Root aria-label="Product summary" placeholder="One sentence about what the product does" value={summary} onChange={(e) => setSummary(e.target.value)} />
             </Field>
+            {skills?.available && (
+              <Text as="label" size="2">
+                <Flex gap="2" align="center">
+                  <Checkbox checked={installSkills} onCheckedChange={(value) => setInstallSkills(value === true)} />
+                  Install Orbit skills for Claude Code
+                </Flex>
+              </Text>
+            )}
           </Flex>
           <Flex gap="3" mt="4" justify="end">
             <Dialog.Close>

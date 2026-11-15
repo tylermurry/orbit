@@ -5,7 +5,8 @@ import { parseJUnit } from '../lib/junit';
 import type { JUnitCase } from '../lib/junit';
 import { fileName } from '../lib/format';
 import { filePrefKey, loadPref, loadRecent, pushRecent, savePref } from '../lib/prefs';
-import { computeComparison, defaultComparison, presetComparison } from './compare';
+import { activePreset, computeComparison, defaultComparison, presetComparison, sameComparison } from './compare';
+import { readProposal } from './proposal';
 import { currentText, isDirty, structuredDirty } from './store';
 import type { Store } from './store';
 import type { AppState, Comparison, LifecyclePreset, ResultsFile } from './types';
@@ -30,6 +31,7 @@ export interface Controller {
   createNew(input: { id: string; name: string; summary: string }): Promise<boolean>;
   applyRaw(): boolean;
   refreshGit(): Promise<void>;
+  refreshProposal(): Promise<void>;
   poll(): Promise<void>;
   startBackground(pollMs: number): () => void;
   setCompare(c: Comparison | null): void;
@@ -84,11 +86,29 @@ export function createController(store: Store, host: OrbitHost): Controller {
     }
   }
 
+  function retainPreset(previous: AppState) {
+    const preset = activePreset(previous.compare, previous.git, previous.refs, previous.proposalFile);
+    if (preset && applyPreset(preset, { quiet: true })) setCompare(null);
+  }
+
+  async function refreshProposal() {
+    const s = getState();
+    const proposalFile = await readProposal(host, s.git, s.proposalFile);
+    const current = getState();
+    if (current.filePath !== s.filePath || current.git?.headBranch !== s.git?.headBranch || current.proposalFile !== s.proposalFile || proposalFile === s.proposalFile) return;
+    dispatch({ type: 'setProposalFile', proposalFile });
+    retainPreset(current);
+  }
+
   async function refreshGit() {
     const s = getState();
     if (!s.filePath) return;
     const { git, refs } = await loadGit(s.filePath);
-    if (getState().filePath === s.filePath) dispatch({ type: 'setGit', git, refs });
+    const proposalFile = await readProposal(host, git, s.proposalFile).catch(() => s.proposalFile);
+    const current = getState();
+    if (current.filePath !== s.filePath) return;
+    dispatch({ type: 'setGit', git, refs, proposalFile: current.proposalFile === s.proposalFile ? proposalFile : current.proposalFile });
+    retainPreset(current);
   }
 
   async function openPath(path: string, opts: { keepContext?: boolean; quiet?: boolean } = {}) {
@@ -96,6 +116,7 @@ export function createController(store: Store, host: OrbitHost): Controller {
       const snap = await host.readFile(path);
       const parse = parseContract(snap.text);
       const { git, refs } = await loadGit(path);
+      const proposalFile = await readProposal(host, git).catch(() => null);
       const keepContext = !!opts.keepContext && getState().filePath === path;
       dispatch({
         type: 'loaded',
@@ -105,6 +126,7 @@ export function createController(store: Store, host: OrbitHost): Controller {
         parse,
         git,
         refs,
+        proposalFile,
         keepContext,
         expanded: loadPref(filePrefKey(path, 'expanded'), {}),
       });
@@ -375,14 +397,16 @@ export function createController(store: Store, host: OrbitHost): Controller {
     const s = getState();
     if (!s.compare || !s.git?.available || !s.filePath) return;
     const my = ++compareSeq;
+    const key = compareKey();
     const result = await computeComparison({
       host,
       git: s.git,
       filePath: s.filePath,
       comparison: s.compare,
+      proposalFile: s.proposalFile,
       unsavedContract: s.contract && !s.loadedInvalid ? s.contract : null,
     });
-    if (my === compareSeq) dispatch({ type: 'setCompareResult', result });
+    if (my === compareSeq && key === compareKey()) dispatch({ type: 'setCompareResult', result });
   }
 
   const contractIds = new WeakMap<object, number>();
@@ -398,7 +422,7 @@ export function createController(store: Store, host: OrbitHost): Controller {
     if (!s.compare) return '';
     const usesUnsaved = s.compare.base.type === 'unsaved' || s.compare.target.type === 'unsaved';
     const refs = s.refs.map((r) => `${r.name}@${r.commit}`).join(',');
-    return JSON.stringify([s.compare, s.diskSha, s.git?.headCommit, s.git?.available, s.filePath, refs, usesUnsaved ? cid(s.contract) : 0]);
+    return JSON.stringify([s.compare, s.diskSha, s.git?.headCommit, s.git?.available, s.filePath, refs, s.proposalFile?.sha, usesUnsaved ? cid(s.contract) : 0]);
   }
 
   function setCompare(c: Comparison | null) {
@@ -408,7 +432,7 @@ export function createController(store: Store, host: OrbitHost): Controller {
   function ensureDefaultCompare() {
     const s = getState();
     if (s.compare || !s.git?.available) return;
-    if (presetComparison('actual', s.git, s.refs, isDirty(s)).ok) {
+    if (presetComparison('actual', s.git, s.refs, s.proposalFile).ok) {
       applyPreset('actual', { quiet: true });
       return;
     }
@@ -418,12 +442,12 @@ export function createController(store: Store, host: OrbitHost): Controller {
 
   function applyPreset(preset: LifecyclePreset, opts: { quiet?: boolean } = {}): string | null {
     const s = getState();
-    const r = presetComparison(preset, s.git, s.refs, isDirty(s));
+    const r = presetComparison(preset, s.git, s.refs, s.proposalFile);
     if (!r.ok) {
       if (!opts.quiet) toast(r.reason, 'error');
       return r.reason;
     }
-    setCompare(r.comparison);
+    if (!sameComparison(s.compare, r.comparison)) setCompare(r.comparison);
     return null;
   }
 
@@ -570,6 +594,7 @@ export function createController(store: Store, host: OrbitHost): Controller {
     const timer = setInterval(() => {
       void poll();
       void pollResults();
+      void refreshProposal().catch(() => undefined);
     }, pollMs);
     const onFocus = () => {
       void poll();
@@ -627,6 +652,7 @@ export function createController(store: Store, host: OrbitHost): Controller {
     createNew,
     applyRaw,
     refreshGit,
+    refreshProposal,
     poll,
     startBackground,
     setCompare,

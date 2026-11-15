@@ -9,6 +9,7 @@ import type {
   GitRef,
   OrbitHost,
   RunOutcome,
+  SkillStatus,
   TerminalSession,
   WriteResult,
 } from './types';
@@ -74,6 +75,9 @@ export function createTauriHost(): OrbitHost {
       }
     },
 
+    skillsStatus: (contract) => call<SkillStatus>('skills_status', { contract }),
+    installSkills: (contract, checked, replaceCustom) => call<SkillStatus>('install_skills', { contract, checked, replaceCustom }),
+
     initialFile: () => call<string | null>('initial_file'),
 
     openInEditor: (path) => call<void>('open_in_editor', { path }),
@@ -112,7 +116,5 @@ export function createTauriHost(): OrbitHost {
     },
 
     gitMergeBase: (repoRoot, a, b) => call<string | null>('git_merge_base', { repoRoot, a, b }),
-    gitTagProposal: (repoRoot, branch, replace) =>
-      call<{ tag: string; commit: string; replaced: boolean }>('git_tag_proposal', { repoRoot, branch, replace }),
   };
 }

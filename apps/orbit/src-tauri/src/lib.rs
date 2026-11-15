@@ -1,13 +1,14 @@
-//! Orbit desktop backend: file access with conflict-safe atomic writes, and read-only Git (plus the proposal tag).
+//! Orbit desktop backend: file access with conflict-safe atomic writes, and read-only Git.
 
 pub mod files;
 pub mod git;
 pub mod mcp;
 pub mod runner;
+pub mod skills;
 pub mod terminal;
 
 use files::{Expected, FileSnapshot, FileStat, WriteResult};
-use git::{GitContext, GitFileAtRevision, GitRef, ProposalTag};
+use git::{GitContext, GitFileAtRevision, GitRef};
 use mcp::{McpManager, McpStatus};
 use runner::{RunOutcome, Runner};
 use std::sync::Arc;
@@ -78,8 +79,13 @@ async fn git_merge_base(repo_root: String, a: String, b: String) -> Result<Optio
 }
 
 #[tauri::command]
-async fn git_tag_proposal(repo_root: String, branch: String, replace: bool) -> Result<ProposalTag, String> {
-    blocking(move || git::git_tag_proposal(&repo_root, &branch, replace)).await
+async fn skills_status(contract: String) -> Result<skills::SkillStatus, String> {
+    blocking(move || skills::status(&contract)).await
+}
+
+#[tauri::command]
+async fn install_skills(contract: String, checked: skills::SkillStatusRequest, replace_custom: bool) -> Result<skills::SkillStatus, String> {
+    blocking(move || skills::install(&contract, checked, replace_custom)).await
 }
 
 /// Streamed output of a validation run: `{ runId, text }`.
@@ -179,7 +185,8 @@ pub fn run() {
             git_list_refs,
             git_read_file_at,
             git_merge_base,
-            git_tag_proposal,
+            skills_status,
+            install_skills,
             run_command,
             cancel_command,
             mcp_status,

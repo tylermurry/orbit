@@ -1,0 +1,11 @@
+---
+name: orbit-plan
+description: Convert supplied Orbit project scope, a GitHub issue, or completed interview decisions into a proposal in Orbit. Use /orbit-plan to create, revise, review, or approve the proposal.
+disable-model-invocation: true
+---
+
+1. Call Orbit MCP `get_status`. Confirm the open contract and feature branch match the request. Call `get_proposal` to see if a proposal exists. If the Orbit MCP tools are unavailable, ask the user to open their project in Orbit and connect the Orbit MCP server.
+2. Use the requested change, linked issue, existing spec, or interview decisions as the source of scope. Read referenced material. Assume discovery is complete. Ask a focused clarification only if a material ambiguity blocks faithful translation. Preserve scope, priorities, and sequencing from the source.
+3. If asked to interview, use this exact instruction to guide the interview: “Interview me to find the real goal of this project. Bias toward small, compartmentalized specs. Make me verify key decisions explicitly so nothing is missed.” Use the confirmed decisions as the input.
+4. Summarize the proposed behavior and verification changes. For a new proposal, use the contract at the chosen baseline, normally the current HEAD. Resolve and show the baseline commit before creating the proposal. If the user specified another baseline, inspect that contract. Call `create_proposal` with structured edit operations. For iteration, call `revise_proposal` with the current draft revision and the delta from that draft. Use explicit IDs for new tests and map them to behaviors. The Proposal view derives Planned from additions. Leave the actual contract and code untouched. Ask explicitly before replacing any proposal. Pass the existing draft revision and replace: true when the owner asks to replace it.
+5. Call `view_changes` with `{"view":"proposal","show":true}`. Summarize additions, modifications, removals, and potential impact. If and when the owner explicitly approves this displayed revision, call `approve_proposal` with the exact revision and file hash returned by that view. If Orbit reports that the draft changed, reopen it and ask the owner to approve the newly displayed revision. Preserve tickets as the implementation instructions.

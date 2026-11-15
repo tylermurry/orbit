@@ -40,8 +40,9 @@ export function resultStatus(result: TestResult | undefined, since: string | nul
 }
 
 function testAssuranceIn(tests: Map<string, TestDefinition>, testId: string, ctx: AssuranceContext): TestAssurance {
-  const test = tests.get(testId);
-  const result = ctx.results.get(testId);
+  const registered = tests.get(testId);
+  const test = ctx.actual && registered?.placeholder ? undefined : registered;
+  const result = test ? ctx.results.get(testId) : undefined;
   const status: TestStatus = !test ? 'undefined' : test.placeholder ? 'planned' : resultStatus(result, ctx.since);
   return { testId, defined: test !== undefined, ...(test ? { test } : {}), status, ...(result ? { result } : {}) };
 }
@@ -140,9 +141,9 @@ function behaviorStatuses(contract: OrbitContract, ctx: AssuranceContext): Map<s
   return m;
 }
 
-function summarize(contract: OrbitContract, entityId: string, statuses: Map<string, BehaviorStatus>): AssuranceSummary {
+function summarize(contract: OrbitContract, entityId: string, statuses: Map<string, BehaviorStatus>, ctx: AssuranceContext): AssuranceSummary {
   const byId = entityById(contract);
-  const planned = plannedBehaviorIds(contract);
+  const planned = ctx.actual ? new Set<string>() : plannedBehaviorIds(contract);
   const summary = emptySummary();
   const root = byId.get(entityId);
   if (!root) return summary;
@@ -159,13 +160,13 @@ function summarize(contract: OrbitContract, entityId: string, statuses: Map<stri
 
 /** The entity's own behaviors plus those of all same-kind descendants, each behavior counted once. */
 export function entityAssurance(contract: OrbitContract, entityId: string, ctx: AssuranceContext): AssuranceSummary {
-  return summarize(contract, entityId, behaviorStatuses(contract, ctx));
+  return summarize(contract, entityId, behaviorStatuses(contract, ctx), ctx);
 }
 
 /** Summary for every entity; one pass over the hierarchy with memoized subtree merges. */
 export function computeAssurance(contract: OrbitContract, ctx: AssuranceContext): Map<string, AssuranceSummary> {
   const statuses = behaviorStatuses(contract, ctx);
-  const planned = plannedBehaviorIds(contract);
+  const planned = ctx.actual ? new Set<string>() : plannedBehaviorIds(contract);
   const result = new Map<string, AssuranceSummary>();
   const byId = entityById(contract);
   const behaviorCount = contract.entities.reduce((n, e) => n + e.behaviors.length, 0);
@@ -201,7 +202,7 @@ export function computeAssurance(contract: OrbitContract, ctx: AssuranceContext)
   }
   // Entities not reached (parent cycles) or contracts with duplicate behavior ids: slow, exact path.
   for (const e of byId.values()) {
-    if (!result.has(e.id)) result.set(e.id, summarize(contract, e.id, statuses));
+    if (!result.has(e.id)) result.set(e.id, summarize(contract, e.id, statuses, ctx));
   }
   return result;
 }

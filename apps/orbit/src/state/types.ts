@@ -1,16 +1,17 @@
 import type { Diagnostic, EntityKind, OrbitContract, SemanticDiff } from '@orbit/contract';
 import type { FileStat, GitContext, GitRef, RunOutcome } from '../host/types';
 import type { JUnitCase } from '../lib/junit';
+import type { ProposalFile } from './proposal';
 
 export type ViewId = 'product' | 'engineering' | 'impact';
 
 /** `baseline` = merge-base of HEAD and the base branch (resolved on every comparison). */
-export type RevSel = { type: 'working' } | { type: 'unsaved' } | { type: 'ref'; name: string } | { type: 'sha'; sha: string } | { type: 'baseline'; branch: string };
+export type RevSel = { type: 'working' } | { type: 'unsaved' } | { type: 'ref'; name: string } | { type: 'sha'; sha: string } | { type: 'baseline'; branch: string } | { type: 'pinned'; sha: string } | { type: 'proposal'; revision: 'draft' | 'approved' };
 
 /**
  * The three product-owner views of a feature branch:
- * - proposal:    baseline -> proposal tag   (what was proposed)
- * - vs-proposal: proposal tag -> latest     (how the actual work differs from the proposal)
+ * - proposal:    baseline -> proposal file   (what was proposed)
+ * - vs-proposal: proposal file -> latest     (how the actual work differs from the proposal)
  * - actual:      baseline -> latest         (everything that changed on this branch)
  * "latest" is the working tree, or unsaved edits when there are any.
  */
@@ -44,14 +45,17 @@ export interface SnapMeta {
   sel: RevSel;
   label: string;
   commit?: string;
+  proposal?: { revision: number; fileHash: string };
   exists: boolean;
   invalid: boolean;
   diagnostics: Diagnostic[];
 }
 
+export type ProposalChangeLabel = 'Planned' | 'Pending' | 'Different' | 'Outside proposal';
+
 export type CompareResult =
   | { status: 'loading' }
-  | { status: 'ready'; diff: SemanticDiff; base: SnapMeta; target: SnapMeta }
+  | { status: 'ready'; diff: SemanticDiff; base: SnapMeta; target: SnapMeta; proposalLabels?: Record<string, ProposalChangeLabel> }
   | { status: 'blocked'; base: SnapMeta; target: SnapMeta }
   | { status: 'error'; message: string };
 
@@ -101,6 +105,7 @@ export interface AppState {
   externalChange: null | { kind: 'modified' | 'deleted'; stat: FileStat };
   git: GitContext | null;
   refs: GitRef[];
+  proposalFile: ProposalFile | null;
 
   // navigation
   view: ViewId;

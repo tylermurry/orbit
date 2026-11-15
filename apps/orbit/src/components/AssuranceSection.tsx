@@ -2,7 +2,6 @@ import { Button, Flex, Text } from '@radix-ui/themes';
 import type { AssuranceBucket, AssuranceSummary } from '@orbit/contract';
 import { relativeTime } from '../lib/format';
 import { useApp, useDispatch } from '../state/context';
-import { proposalTime } from '../state/store';
 
 export type Bucket = AssuranceBucket;
 
@@ -20,13 +19,12 @@ export const BUCKET_LABEL: Record<Bucket, string> = {
 export function ResultsLine() {
   const validation = useApp((s) => s.contract?.validation);
   const file = useApp((s) => s.resultsFile);
-  const since = useApp(proposalTime);
   const d = useDispatch();
   let text: string;
   if (!validation) text = 'Tests are not set up to run yet.';
   else if (!file || file.state === 'missing') text = 'No test results yet.';
   else if (file.state === 'invalid') text = 'The test results file could not be read.';
-  else text = `Last test run ${relativeTime(file.at!)}${since ? `; results from before the proposal (${relativeTime(since)}) are unconfirmed` : ''}.`;
+  else text = `Last test run ${relativeTime(file.at!)}.`;
   return (
     <Flex align="center" gap="2" data-testid="results-line">
       <Text size="1" color="gray">
@@ -47,7 +45,6 @@ export function AssuranceSection({ summary, bucket, onBucket }: { summary: Assur
     { key: 'passing', label: 'Passing', value: summary.passing, tone: 'good' },
     { key: 'failing', label: 'Failing', value: summary.failing, tone: 'bad' },
     { key: 'unconfirmed', label: 'Unconfirmed', value: summary.unconfirmed, tone: 'warn' },
-    { key: 'planned', label: 'Planned', value: summary.planned, tone: 'planned' },
     { key: 'untested', label: 'No tests', value: summary.untested, tone: 'neutral' },
   ];
   const seg = (n: number, cls: string) => (summary.total ? <span className={`seg ${cls}`} style={{ width: `${(n / summary.total) * 100}%` }} /> : null);
@@ -72,7 +69,6 @@ export function AssuranceSection({ summary, bucket, onBucket }: { summary: Assur
           {seg(summary.passing, 'seg-good')}
           {seg(summary.failing, 'seg-bad')}
           {seg(summary.unconfirmed, 'seg-warn')}
-          {seg(summary.planned, 'seg-planned')}
           {seg(summary.untested, 'seg-none')}
         </div>
       )}

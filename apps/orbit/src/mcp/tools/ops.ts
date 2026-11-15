@@ -340,27 +340,27 @@ export const OPS: OpDef[] = [
 
   // ───────────────────────────── tests ─────────────────────────────
 
-  op<{ name: string; location: string; id?: string; placeholder?: boolean }>({
+  op<{ name: string; location: string; id?: string }>({
     name: 'create_test',
     title: 'Create test definition',
-    description: "Register an automated test (an external artifact) so behaviors can reference it. 'location' says where it lives, e.g. 'apps/tasky/tests/e2e/lists.spec.ts › creates a list'. placeholder: true registers a PLANNED test that does not exist yet - use it when proposing a change, so the product owner sees the intended test surface for each behavior (location = where it will live). Placeholders never count as coverage; once the test is written, update_test { placeholder: false }. Id defaults to 'test.<slug>'.",
-    schema: S.obj({ name: S.nonEmpty('Human-readable test name.'), location: S.nonEmpty('File path and test title where the test lives (or will live, for a placeholder).'), placeholder: S.bool('Planned, not implemented yet.'), id: idProp('test') }, ['name', 'location']),
+    description: "Register a test so behaviors can reference it. When used in a proposal, set location to the intended path and title. The proposal comparison labels new tests Planned.",
+    schema: S.obj({ name: S.nonEmpty('Human-readable test name.'), location: S.nonEmpty('File path and test title.'), id: idProp('test') }, ['name', 'location']),
     destructive: false,
     idempotent: false,
     run(c, a) {
       const ids = allIds(c);
       const id = a.id ? trim(a.id) : generateId('test', ids.tests, a.name);
       if (ids.tests.has(id)) throw new ToolError(`A test with id '${id}' already exists.`, { suggestions: ['Omit id to auto-generate one, or use update_test.'] });
-      const t: TestDefinition = { id, name: trim(a.name), location: trim(a.location), ...(a.placeholder ? { placeholder: true as const } : {}) };
-      return { contract: { ...c, tests: [...c.tests, t] }, summary: `Created ${t.placeholder ? 'placeholder ' : ''}test ${q(t.name)}`, result: { test: t } };
+      const t: TestDefinition = { id, name: trim(a.name), location: trim(a.location) };
+      return { contract: { ...c, tests: [...c.tests, t] }, summary: `Created test ${q(t.name)}`, result: { test: t } };
     },
   }),
 
   op<{ id: string; name?: string; location?: string; placeholder?: boolean }>({
     name: 'update_test',
     title: 'Update test definition',
-    description: "Change a test definition's name, location and/or placeholder flag (the id is permanent). placeholder: false marks a planned test as implemented. Mappings and evidence stay attached.",
-    schema: S.obj({ id: S.nonEmpty('Test id.'), name: S.nonEmpty('New name.'), location: S.nonEmpty('New location.'), placeholder: S.bool('true = planned, not implemented; false = implemented.') }, ['id']),
+    description: "Change a test definition's name, location and/or placeholder flag (the id is permanent). placeholder: false clears a legacy placeholder when the test exists. Mappings and evidence stay attached.",
+    schema: S.obj({ id: S.nonEmpty('Test id.'), name: S.nonEmpty('New name.'), location: S.nonEmpty('New location.'), placeholder: { type: 'boolean', enum: [false], description: 'Clear a legacy placeholder.' } }, ['id']),
     destructive: false,
     idempotent: true,
     run(c, a) {
@@ -368,8 +368,7 @@ export const OPS: OpDef[] = [
       if (!t) throw notFound('Test', a.id, testCandidates(c));
       needAny(a, ['name', 'location', 'placeholder'], `test '${a.id}'`);
       const nt: TestDefinition = { ...t, ...(a.name !== undefined ? { name: trim(a.name) } : {}), ...(a.location !== undefined ? { location: trim(a.location) } : {}) };
-      if (a.placeholder === true) nt.placeholder = true;
-      else if (a.placeholder === false) delete nt.placeholder;
+      if (a.placeholder === false) delete nt.placeholder;
       return { contract: { ...c, tests: c.tests.map((x) => (x.id === t.id ? nt : x)) }, summary: `Updated test ${q(nt.name)}`, result: { test: nt } };
     },
   }),

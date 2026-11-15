@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Code, Flex, Popover, Text } from '@radix-ui/themes';
 import { ChevronDownIcon } from '@radix-ui/react-icons';
-import { proposalTag } from '../host/types';
-import { formatDateTime, shortSha } from '../lib/format';
-import { PRESET_LABELS, activePreset, baseBranchFor, presetComparison, proposalRef } from '../state/compare';
-import { useApp, useHost } from '../state/context';
-import { isDirty } from '../state/store';
+import { shortSha } from '../lib/format';
+import { PRESET_LABELS, activePreset, baseBranchFor, presetComparison } from '../state/compare';
+import { useApp, useCtrl, useHost } from '../state/context';
+import { syncStatus } from '../state/store';
 import type { LifecyclePreset, RevSel } from '../state/types';
 
 const DESCRIPTIONS: Record<LifecyclePreset, string> = {
@@ -17,7 +16,7 @@ const DESCRIPTIONS: Record<LifecyclePreset, string> = {
 /** One row of the git details: what a side of the comparison is, in git terms. */
 function SideDetail({ role, sel, mergeBase }: { role: string; sel: RevSel; mergeBase: string | null | undefined }) {
   const git = useApp((s) => s.git);
-  const refs = useApp((s) => s.refs);
+  const file = useApp((s) => s.proposalFile);
   let title = '';
   let detail: React.ReactNode = null;
   if (sel.type === 'baseline') {
@@ -28,15 +27,12 @@ function SideDetail({ role, sel, mergeBase }: { role: string; sel: RevSel; merge
         {mergeBase === undefined ? '…' : mergeBase ? <Code size="1">{shortSha(mergeBase)}</Code> : 'not found'}
       </>
     );
-  } else if (sel.type === 'ref' && sel.name.startsWith('orbit/proposal/')) {
-    const r = refs.find((x) => x.name === sel.name);
-    title = 'Proposal';
-    detail = (
-      <>
-        Tag <Code size="1">{sel.name}</Code> at <Code size="1">{shortSha(r?.commit)}</Code>
-        {r?.subject ? ` “${r.subject}”` : ''}
-      </>
-    );
+  } else if (sel.type === 'pinned') {
+    title = 'Baseline';
+    detail = <Code size="1">{shortSha(sel.sha)}</Code>;
+  } else if (sel.type === 'proposal') {
+    title = sel.revision === 'approved' ? 'Approved proposal' : 'Draft proposal';
+    detail = <><Code size="1">orbit.proposal.json</Code> · revision {file?.proposal?.[sel.revision]?.revision}</>;
   } else if (sel.type === 'working' || sel.type === 'unsaved') {
     title = 'Latest';
     detail = (
@@ -58,8 +54,8 @@ function SideDetail({ role, sel, mergeBase }: { role: string; sel: RevSel; merge
 function Details({ preset }: { preset: LifecyclePreset }) {
   const s = useApp((x) => x);
   const host = useHost();
-  const dirty = isDirty(s);
-  const r = presetComparison(preset, s.git, s.refs, dirty);
+  const sync = syncStatus(s);
+  const r = presetComparison(preset, s.git, s.refs, s.proposalFile);
   const baseBranch = baseBranchFor(s.refs);
   const [mergeBase, setMergeBase] = useState<string | null | undefined>(undefined);
   const root = s.git?.repoRoot;
@@ -75,7 +71,6 @@ function Details({ preset }: { preset: LifecyclePreset }) {
       live = false;
     };
   }, [host, root, baseBranch, s.git?.headCommit]);
-  const prop = proposalRef(s.git, s.refs);
   return (
     <Flex direction="column" gap="3" data-testid={`details-${preset}`}>
       <Flex direction="column" gap="1">
@@ -90,29 +85,13 @@ function Details({ preset }: { preset: LifecyclePreset }) {
         <>
           <SideDetail role="From" sel={r.comparison.base} mergeBase={mergeBase} />
           <SideDetail role="To" sel={r.comparison.target} mergeBase={mergeBase} />
-          <Flex direction="column" gap="1">
-            <Text size="1" color="gray" weight="medium">
-              Test results
-            </Text>
-            <Text size="1">
-              {prop ? (
-                <>
-                  Results from runs since the proposal commit <Code size="1">{shortSha(prop.commit)}</Code> ({formatDateTime(prop.date)}) count; older ones are unconfirmed.
-                </>
-              ) : (
-                'Every result in the latest results file counts (there is no proposal yet).'
-              )}
-            </Text>
-          </Flex>
+          {preset === 'actual' && sync.tag && (
+            <Text size="1">{sync.current ? 'Local sync is current' : 'Local sync is required'} · <Code size="1">{sync.tag}</Code></Text>
+          )}
         </>
       ) : (
         <Text size="1" color="amber">
           {r.reason}
-        </Text>
-      )}
-      {preset !== 'actual' && !prop && s.git?.headBranch && r.ok === false && (
-        <Text size="1" color="gray">
-          The proposal is the commit tagged <Code size="1">{proposalTag(s.git.headBranch)}</Code>.
         </Text>
       )}
     </Flex>
@@ -121,11 +100,12 @@ function Details({ preset }: { preset: LifecyclePreset }) {
 
 /** Impact header: a "Details" popover with the git details of the active view. */
 export function ImpactDetails() {
+  const ctrl = useCtrl();
   const s = useApp((x) => x);
-  const preset = activePreset(s.compare, s.git, s.refs, isDirty(s));
+  const preset = activePreset(s.compare, s.git, s.refs, s.proposalFile);
   if (!preset) return null;
   return (
-    <Popover.Root>
+    <Popover.Root onOpenChange={(open) => { if (open) void ctrl.refreshGit(); }}>
       <Popover.Trigger>
         <Button size="1" variant="soft" color="gray" aria-label={`${PRESET_LABELS[preset]} details`}>
           Details <ChevronDownIcon aria-hidden />

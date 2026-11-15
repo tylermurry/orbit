@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { parseContract, serializeContract } from '@orbit/contract';
-import { DEMO, REL, SHA, TASKY, compareVia, gitSeed, launch } from './helpers';
+import { DEMO, FILE, REL, REPO, SHA, TASKY, compareVia, fileText, gitSeed, launch } from './helpers';
 
 const item = (page: Page, name: string) => page.getByRole('treeitem', { name: new RegExp(`^${name}`) });
 const row = (page: Page, key: string) => page.locator(`[data-change-key="${key}"]`);
@@ -273,61 +273,32 @@ test('a renamed behavior shows its text as a diff while comparing', async ({ pag
   await expect(diffed).toContainText('rename this behavior');
 });
 
-test.describe('product-owner change views', () => {
-  /** main: base. Branch feat: base -> proposal (tagged). Working tree: implementation. */
-  const featureRepo = (tagged: boolean) => {
-    const g = gitSeed();
-    g.commits[SHA.proposal].parents = [SHA.base];
-    g.refs.push({ name: 'feat', kind: 'branch', commit: SHA.proposal });
-    if (tagged) g.refs.push({ name: 'orbit/proposal/feat', kind: 'tag', commit: SHA.proposal });
-    g.head = { branch: 'feat' };
-    return g;
-  };
+test.describe('file-backed product-owner change views', () => {
+  const proposalButton = (page: Page, name: string) => page.getByRole('radiogroup', { name: 'Impact' }).getByRole('radio', { name, exact: true });
+  const call = (page: Page, name: string, args: Record<string, unknown>) => page.evaluate(([name, args]) => window.__orbitMcp!.callTool(name, args), [name, args] as const);
+  const file = `${REPO}/orbit.proposal.json`;
 
-  const evidence = (page: Page) => page.evaluate(() => window.__orbitMcp!.callTool('get_status', {}).then((r) => (r.structuredContent as { evidenceContext: { kind: string } }).evidenceContext.kind));
+  test('reviews draft revisions and compares the approved revision with saved Actual', async ({ page }) => {
+    await launch(page, { git: true, text: DEMO.base });
+    await expect(proposalButton(page, 'Proposal')).toHaveAttribute('aria-disabled', 'true');
+    expect((await call(page, 'create_proposal', { operations: [{ tool: 'create_test', args: { id: 'test.proposed', name: 'A planned test', location: 'tests/proposed.ts' } }] })).isError).toBeUndefined();
+    await proposalButton(page, 'Proposal').click();
+    await expect(title(page)).toHaveText('Proposal');
+    await expect(row(page, 'test:test.proposed').getByRole('img', { name: 'Planned' })).toBeVisible();
+    await expect(proposalButton(page, 'Actual vs. Proposal')).toHaveAttribute('aria-disabled', 'true');
+    const review = (await call(page, 'view_changes', { view: 'proposal' })).structuredContent!;
+    expect((await call(page, 'approve_proposal', { revision: 1, fileHash: review.proposalFileHash })).isError).toBeUndefined();
+    expect((await call(page, 'revise_proposal', { revision: 1, operations: [{ tool: 'update_product', args: { name: 'Draft only' } }] })).isError).toBeUndefined();
+    await proposalButton(page, 'Actual vs. Proposal').click();
+    await expect(title(page)).toHaveText('Actual vs. Proposal');
+    await expect(row(page, 'test:test.proposed').getByRole('img', { name: 'Pending' })).toBeVisible();
+    await expect(page.getByTestId('change-row')).toHaveCount(1);
+    expect(await fileText(page, FILE)).toBe(DEMO.base);
+    expect(JSON.parse((await fileText(page, file))!).approved.revision).toBe(1);
 
-  test('View proposal, Actual vs proposal and View actual pick the right sides and drive evidence', async ({ page }) => {
-    await launch(page, { git: featureRepo(true), text: DEMO.implementation });
-    await page.keyboard.press('Control+3');
-
-    await viewBtn(page, 'View proposal').click();
-    await expect(title(page)).toHaveText('View proposal');
-    await expect(viewBtn(page, 'View proposal')).toHaveAttribute('aria-pressed', 'true');
-    expect(await evidence(page)).toBe('none');
-
-    await viewBtn(page, 'Actual vs proposal').click();
-    await expect(title(page)).toHaveText('Actual vs proposal');
-    expect(await evidence(page)).toBe('head');
-
-    await viewBtn(page, 'View actual').click();
-    await expect(title(page)).toHaveText('View actual');
-    await expect(viewBtn(page, 'View actual')).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  test('git details appear only in the dropdowns', async ({ page }) => {
-    await launch(page, { git: featureRepo(true), text: DEMO.implementation });
-    await page.keyboard.press('Control+3');
-    await viewBtn(page, 'Actual vs proposal').click();
-    await expect(page.getByTestId('change-row').first()).toBeVisible();
-    for (const t of [/\bfeat\b/, /orbit\/proposal/, /\bHEAD\b/, /\bmain\b/, /c3c3c3c/]) {
-      await expect(page.getByRole('banner')).not.toContainText(t);
-      await expect(page.getByTestId('impact-view')).not.toContainText(t);
-      await expect(page.getByRole('contentinfo', { name: 'Status' })).not.toContainText(t);
-    }
-    await page.getByRole('button', { name: 'Actual vs proposal details' }).click();
-    const pop = page.getByTestId('details-vs-proposal');
-    await expect(pop).toContainText('orbit/proposal/feat');
-    await expect(pop).toContainText('c3c3c3c');
-    await expect(pop).toContainText('feat');
-  });
-
-  test('proposal views are disabled until a proposal is tagged', async ({ page }) => {
-    await launch(page, { git: featureRepo(false), text: DEMO.implementation });
-    await page.keyboard.press('Control+3');
-    await expect(viewBtn(page, 'View proposal')).toBeDisabled();
-    await expect(viewBtn(page, 'Actual vs proposal')).toBeDisabled();
-    await expect(viewBtn(page, 'View actual')).toBeEnabled();
-    await page.getByRole('button', { name: 'View proposal details' }).click();
-    await expect(page.getByTestId('details-proposal')).toContainText('No proposal has been recorded');
+    await page.evaluate((name) => window.__orbitMemoryHost!.externalDelete(name), file);
+    await expect(proposalButton(page, 'Proposal')).toHaveAttribute('aria-disabled', 'true');
+    await proposalButton(page, 'Actual').click();
+    await expect(page.getByTestId('no-changes')).toBeVisible();
   });
 });
