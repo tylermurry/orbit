@@ -7,7 +7,6 @@ import { Prompts } from './components/Prompts';
 import { TopBar, registerNavHandlers, requestView } from './components/TopBar';
 import { Toasts } from './components/common';
 import { ReviewSheet } from './components/ReviewSheet';
-import { ValidationDialog } from './components/Validation';
 import { fileName } from './lib/format';
 import { setWindowTitle } from './lib/windowTitle';
 import { useAppState, useCtrl, useDispatch, useHost, useStore } from './state/context';
@@ -131,7 +130,6 @@ export function App() {
       <ProductDialog />
       <NewContractDialog />
       <ShortcutsDialog />
-      <ValidationDialog />
       <ReviewSheet />
       <Prompts />
     </Flex>

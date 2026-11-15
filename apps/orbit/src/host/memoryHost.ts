@@ -134,6 +134,10 @@ export function createMemoryHost(seed: MemorySeed): MemoryHost {
       if (!f) return { path, exists: false };
       return { path, exists: true, sha256: await sha256Hex(f.text), modifiedMs: f.modifiedMs };
     },
+    async listXmlFiles(dir): Promise<string[]> {
+      const prefix = `${dir.replace(/\/+$/, '')}/`;
+      return [...files.keys()].filter((p) => p.startsWith(prefix) && p.toLowerCase().endsWith('.xml')).sort();
+    },
     async writeFileAtomic(path, text, expected): Promise<WriteResult> {
       const cur = await api.statFile(path);
       if (expected === null && cur.exists) return { ok: false, reason: 'conflict', current: cur };

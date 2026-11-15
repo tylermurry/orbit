@@ -3,7 +3,9 @@
 //! interactive shell when it exits. The UI renders it with xterm.js.
 //!
 //! Deliberately narrow: the webview can only ask for that one session shape in a folder of its choosing, never an
-//! arbitrary program, so the terminal does not widen what a script in the webview could run.
+//! arbitrary program, so the terminal does not widen what a script in the webview could run. The one addition is
+//! `open_run`: the Validate tab runs the contract's test command (a person confirms it first in the UI) in the
+//! login shell, then the session ends with the command's exit code.
 
 pub use portable_pty::CommandBuilder;
 use portable_pty::{native_pty_system, Child, MasterPty, PtySize};
@@ -50,6 +52,27 @@ fn startup_command() -> CommandBuilder {
     }
 }
 
+/// The program a Validate terminal runs: the login shell running exactly `command`, exiting with its status.
+fn run_command(command: &str) -> CommandBuilder {
+    #[cfg(windows)]
+    {
+        let mut cmd = CommandBuilder::new("powershell.exe");
+        cmd.args(["-NoLogo", "-Command", command]);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        let shell = std::env::var("SHELL")
+            .ok()
+            .filter(|s| !s.is_empty() && Path::new(s).exists())
+            .unwrap_or_else(|| if cfg!(target_os = "macos") { "/bin/zsh".into() } else { "/bin/bash".into() });
+        let mut cmd = CommandBuilder::new(&shell);
+        cmd.args(["-l", "-i", "-c", command]);
+        cmd.env("SHELL", &shell);
+        cmd
+    }
+}
+
 impl Terminals {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
@@ -58,6 +81,11 @@ impl Terminals {
     /// Start a terminal in `cwd`. Output streams to `on_data` as raw bytes; `on_exit` gets the exit code once.
     pub fn open(self: &Arc<Self>, cwd: &str, cols: u16, rows: u16, on_data: Channel<InvokeResponseBody>, on_exit: Channel<Option<u32>>) -> Result<u32, String> {
         self.open_command(startup_command(), cwd, cols, rows, on_data, on_exit)
+    }
+
+    /// Run `command` (the validation command) in `cwd` in a terminal; the session ends when the command does.
+    pub fn open_run(self: &Arc<Self>, command: &str, cwd: &str, cols: u16, rows: u16, on_data: Channel<InvokeResponseBody>, on_exit: Channel<Option<u32>>) -> Result<u32, String> {
+        self.open_command(run_command(command), cwd, cols, rows, on_data, on_exit)
     }
 
     /// `open` with a given program (tests use this so they do not start Claude Code).

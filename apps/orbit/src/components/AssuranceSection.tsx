@@ -33,7 +33,7 @@ export function ResultsLine() {
         {text}
       </Text>
       {!validation && (
-        <Button size="1" variant="ghost" onClick={() => d({ type: 'ui', patch: { runDialog: true } })}>
+        <Button size="1" variant="ghost" onClick={() => d({ type: 'ui', patch: { terminalOpen: true, terminalTab: 'validate' } })}>
           Set up
         </Button>
       )}

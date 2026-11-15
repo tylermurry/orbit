@@ -144,6 +144,30 @@ pub fn stat_file(path: &str) -> Result<FileStat, String> {
     }
 }
 
+/// Every `*.xml` file under `dir` (recursive, sorted). Empty when `dir` is missing or not a directory.
+pub fn list_xml_files(dir: &str) -> Result<Vec<String>, String> {
+    let root = absolutize(dir)?;
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(d) = stack.pop() {
+        let rd = match fs::read_dir(&d) {
+            Ok(rd) => rd,
+            Err(_) => continue,
+        };
+        for entry in rd.flatten() {
+            let p = entry.path();
+            let Ok(ft) = entry.file_type() else { continue };
+            if ft.is_dir() {
+                stack.push(p);
+            } else if p.extension().map(|e| e.eq_ignore_ascii_case("xml")).unwrap_or(false) {
+                out.push(p.to_string_lossy().into_owned());
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
 fn temp_name(target: &Path) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)

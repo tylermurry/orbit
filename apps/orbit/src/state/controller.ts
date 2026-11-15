@@ -2,6 +2,7 @@ import { createEmptyContract, diffContracts, parseContract, serializeContract } 
 import type { Diagnostic, OrbitContract } from '@orbit/contract';
 import type { FileStat, GitContext, GitRef, OrbitHost } from '../host/types';
 import { parseJUnit } from '../lib/junit';
+import type { JUnitCase } from '../lib/junit';
 import { fileName } from '../lib/format';
 import { filePrefKey, loadPref, loadRecent, pushRecent, savePref } from '../lib/prefs';
 import { computeComparison, defaultComparison, presetComparison } from './compare';
@@ -197,7 +198,9 @@ export function createController(store: Store, host: OrbitHost): Controller {
     }
     if (!rawEdit && expected !== null && cur.contract && !cur.loadedInvalid) {
       const disk = parseContract(cur.diskText);
-      if (disk.ok && disk.contract && diffContracts(disk.contract, cur.contract).changes.length === 0 && !cur.externalChange) {
+      // The semantic diff ignores the validation block (command and results folder), so compare it explicitly.
+      const sameValidation = JSON.stringify(disk.contract?.validation ?? null) === JSON.stringify(cur.contract.validation ?? null);
+      if (disk.ok && disk.contract && sameValidation && diffContracts(disk.contract, cur.contract).changes.length === 0 && !cur.externalChange) {
         dispatch({ type: 'saved', text: cur.diskText, sha: cur.diskSha!, parse: disk });
         toast('No changes to save: the file already contains these edits', 'info');
         return;
@@ -436,24 +439,37 @@ export function createController(store: Store, host: OrbitHost): Controller {
         if (s.resultsFile) dispatch({ type: 'setResultsFile', file: null });
         return;
       }
-      const st = await host.statFile(path).catch(() => null);
+      // A directory (the default, "reports") contributes every *.xml file in it; a plain file path still works.
+      const dirFiles = await host.listXmlFiles(path).catch(() => [] as string[]);
+      const sources = dirFiles.length ? dirFiles : [path];
+      const stats = await Promise.all(sources.map((p) => host.statFile(p).catch(() => null)));
       const cur = getState();
       if (resultsPathOf(cur) !== path) return;
-      if (!st?.exists) {
+      const present = sources.map((p, i) => ({ p, st: stats[i] })).filter((x) => x.st?.exists);
+      if (!present.length) {
         if (cur.resultsFile?.path !== path || cur.resultsFile.state !== 'missing') dispatch({ type: 'setResultsFile', file: { path, state: 'missing', at: null, cases: [] } });
         return;
       }
-      if (!force && cur.resultsFile?.path === path && cur.resultsFile.sha === st.sha256) return;
-      const at = new Date(st.modifiedMs ?? Date.now()).toISOString();
+      const sha = present.map((x) => `${x.p}:${x.st!.sha256}`).join('|');
+      if (!force && cur.resultsFile?.path === path && cur.resultsFile.sha === sha) return;
+      // The run time is the newest file's modification time.
+      const at = new Date(Math.max(...present.map((x) => x.st!.modifiedMs ?? Date.now()))).toISOString();
       let file: ResultsFile;
       try {
-        const snap = await host.readFile(path);
-        const parsed = parseJUnit(snap.text);
-        file = parsed.ok
-          ? { path, state: 'ok', at, sha: snap.sha256, cases: parsed.cases }
-          : { path, state: 'invalid', at, sha: snap.sha256, cases: [], message: parsed.message };
+        const cases: JUnitCase[] = [];
+        const bad: string[] = [];
+        for (const { p } of present) {
+          const parsed = parseJUnit((await host.readFile(p)).text);
+          if (parsed.ok) cases.push(...parsed.cases);
+          else if (!dirFiles.length) throw new Error(parsed.message);
+          else bad.push(p); // non-JUnit XML in the folder (e.g. coverage) is ignored
+        }
+        file =
+          dirFiles.length && bad.length === present.length
+            ? { path, state: 'invalid', at, sha, cases: [], message: 'No JUnit XML results (no <testsuite> or <testcase> elements) were found in this folder. Configure the test runners to write JUnit XML there.' }
+            : { path, state: 'ok', at, sha, cases };
       } catch (e) {
-        file = { path, state: 'invalid', at, sha: st.sha256, cases: [], message: e instanceof Error ? e.message : String(e) };
+        file = { path, state: 'invalid', at, sha, cases: [], message: e instanceof Error ? e.message : String(e) };
       }
       if (resultsPathOf(getState()) === path) dispatch({ type: 'setResultsFile', file });
     } finally {

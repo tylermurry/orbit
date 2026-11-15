@@ -49,7 +49,8 @@ export function initialState(): AppState {
     resultsFile: null,
     run: null,
     lastRun: null,
-    runDialog: false,
+    terminalTab: 'claude',
+    validateRun: 0,
     diagnosticsOpen: false,
     libraryOpen: false,
     libraryFocusTest: null,
@@ -151,7 +152,7 @@ export type Action =
   | { type: 'setExpanded'; expanded: Record<string, boolean> }
   | { type: 'setSearch'; search: string }
   | { type: 'setViewFilter'; filter: ViewFilter | null }
-  | { type: 'ui'; patch: Partial<Pick<AppState, 'diagnosticsOpen' | 'libraryOpen' | 'libraryFocusTest' | 'runDialog' | 'productDialog' | 'newDialog' | 'shortcutsOpen' | 'bannerNote' | 'terminalOpen'>> }
+  | { type: 'ui'; patch: Partial<Pick<AppState, 'diagnosticsOpen' | 'libraryOpen' | 'libraryFocusTest' | 'terminalTab' | 'validateRun' | 'productDialog' | 'newDialog' | 'shortcutsOpen' | 'bannerNote' | 'terminalOpen'>> }
   | { type: 'prompt'; prompt: Prompt | null }
   | { type: 'review'; review: ReviewState | null }
   | { type: 'toast'; id: number; message: string; tone: 'info' | 'success' | 'error' }

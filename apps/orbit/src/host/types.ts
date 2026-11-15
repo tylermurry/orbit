@@ -92,6 +92,8 @@ export interface TerminalOptions {
   onData(bytes: Uint8Array): void;
   /** Fires once when the shell exits (null code when it was killed). */
   onExit(code: number | null): void;
+  /** Run this command (the validation command) instead of Claude Code; the session ends when it does. */
+  command?: string;
 }
 
 export interface OrbitHost {
@@ -106,6 +108,8 @@ export interface OrbitHost {
   // ── files ──
   readFile(path: string): Promise<FileSnapshot>;
   statFile(path: string): Promise<FileStat>;
+  /** Absolute paths of every `*.xml` file under a directory (recursive, sorted); [] when it is missing or not a directory. */
+  listXmlFiles(dir: string): Promise<string[]>;
   /**
    * Atomic write (temp file in same dir + rename). If expectedSha256 is a string, write only if the current
    * on-disk sha matches; if null, write only if the file does NOT exist; if undefined, write unconditionally (Save As after the

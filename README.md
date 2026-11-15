@@ -11,7 +11,7 @@ that verify each behavior. Orbit gives you three perspectives on that file:
 | **Engineering** | engineering leads | the same for internal systems |
 | **Impact** | everyone | what changed (Proposal, Actual vs. Proposal, Actual), the *potential* downstream impact, and whether each changed behavior is tested and passing |
 
-**Validate capabilities** runs the product's whole test suite with one command you configure, then reads the JUnit XML
+**Validate** runs the product's whole test suite in the terminal's Validate tab with one command you confirm (default `npm run build`), then reads the JUnit XML
 results it writes. That is what every test's status comes from: **Passing**, **Failing**, **Unconfirmed** (no result
 since the proposal was committed) or **Planned** (a placeholder test). Orbit re-reads the results file whenever it
 changes, so runs started from a terminal or by an AI show up too.
@@ -22,7 +22,7 @@ stages anything. The one exception is the MCP tool `mark_proposal`, which create
 `orbit/proposal/<branch>`, so the product owner can always find the proposal.
 
 **Tasky** (`apps/tasky`) is a small, real personal task manager in the same repo. It's the reference product: its
-contract is [`examples/tasky.orbit.json`](examples/tasky.orbit.json), and **Validate capabilities** runs its real
+contract is [`examples/tasky.orbit.json`](examples/tasky.orbit.json), and **Validate** runs its real
 Vitest and Playwright suites (`npm run validate -w @orbit/tasky`) to fill in every test status.
 
 Orbit also has a built-in **MCP server**, so AI agents can do everything a user can in the running app. See
@@ -66,7 +66,7 @@ npm run tasky                                   # Tasky at http://localhost:5174
 ```
 
 In Orbit: **Open contract…** → `examples/tasky.orbit.json`. Try the Product and Engineering trees, select an entity,
-edit behaviors, open **Tests**, click **Validate capabilities**, toggle **Raw JSON**, and pick an **Impact** view.
+edit behaviors, open **Tests**, click **Validate**, toggle **Raw JSON**, and pick an **Impact** view.
 
 ## Test and verify
 
@@ -145,8 +145,8 @@ import { parseContract } from '@orbit/contract/dist'; // after: npm run build -w
 
 ### Test results
 
-Test results are never stored in the contract. **Validate capabilities** runs `validation.command` from the repository
-root (or the contract's folder outside Git) and reads the JUnit XML file at `validation.results`. Each result is matched
+Test results are never stored in the contract. **Validate** runs `validation.command` from the repository
+root (or the contract's folder outside Git) and reads every JUnit XML file in `validation.results` (default `reports/`). Each result is matched
 to a contract test by a `[<test id>]` tag in the test's name when present (Tasky's tests use these), else by the test's
 `location` (`<file> › <describe> › <title>`).
 
@@ -210,8 +210,8 @@ For stdio-only clients, use `node scripts/orbit-mcp-stdio.mjs` (optionally with 
 - **Test results are local.** They come from the results file on this machine, so they are as current as the last run
   here (or in CI, if CI writes that file). A result counts from the proposal's commit time onwards; Orbit does not
   check which code commit a run used.
-- **One results file.** A product with several test runners combines them into one JUnit file (see
-  `apps/tasky/scripts/validate.mjs`).
+- **Results folder.** `validation.results` defaults to `reports/` at the repository root; every `*.xml` file in it
+  (recursively) is read, so several test runners can each write their own JUnit file. A single file path also works.
 - **Comparisons use the same file path at both revisions.** A renamed or moved contract shows as added/removed;
   open the other path explicitly.
 - **The E2E tests don't run the native shell.** Playwright drives the real UI against an in-memory host. The Rust host

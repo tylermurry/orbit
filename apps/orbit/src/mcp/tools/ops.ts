@@ -399,8 +399,8 @@ export const OPS: OpDef[] = [
     name: 'set_validation',
     title: 'Set how tests are run',
     description:
-      "Set the command that runs the ENTIRE test suite (run from the repository root, or the contract's folder outside git) and the JUnit XML file it writes (relative to the same folder). Orbit reads test status from that file, matching each test by its location: '<file> › <describe> › <test title>' as the runner reports it. command: null removes the validation setup. Saved in the contract; a person must approve a new or changed command before it runs.",
-    schema: S.obj({ command: S.nullableStr("Shell command, e.g. 'npm test'; null to remove the setup."), results: S.nonEmpty("Results file, e.g. 'test-results/junit.xml'.") }),
+      "Set the command that runs the ENTIRE test suite (run from the repository root, or the contract's folder outside git) and the folder of JUnit XML files it writes, normally 'reports' (relative to the same folder). Orbit reads test status from that file, matching each test by its location: '<file> › <describe> › <test title>' as the runner reports it. command: null removes the validation setup. Saved in the contract; a person must approve a new or changed command before it runs.",
+    schema: S.obj({ command: S.nullableStr("Shell command, e.g. 'npm test'; null to remove the setup."), results: S.nonEmpty("Results folder (default 'reports'; every *.xml file in it is read) or a single XML file.") }),
     destructive: false,
     idempotent: true,
     run(c, a) {
@@ -412,7 +412,7 @@ export const OPS: OpDef[] = [
       }
       const command = a.command !== undefined ? trim(a.command) : c.validation?.command;
       const results = a.results !== undefined ? trim(a.results) : c.validation?.results;
-      if (!command || !results) throw new ToolError('Both a command and a results file are needed.', { suggestions: ["set_validation({ command: 'npm test', results: 'test-results/junit.xml' })"] });
+      if (!command || !results) throw new ToolError('Both a command and a results file are needed.', { suggestions: ["set_validation({ command: 'npm test', results: 'reports' })"] });
       const validation = { command, results };
       return { contract: { ...c, validation }, summary: `Set the test command to ${q(command)}`, result: { validation } };
     },

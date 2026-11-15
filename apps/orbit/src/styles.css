@@ -19,6 +19,12 @@ body { overflow: hidden; }
 .terminal-resize { position: absolute; top: -3px; left: 0; right: 0; height: 6px; cursor: row-resize; z-index: 2; }
 .terminal-resize:hover { background: var(--accent-a5); }
 .terminal-header { display: flex; align-items: center; gap: 10px; padding: 4px 10px 4px 14px; border-bottom: 1px solid var(--gray-a4); min-height: 30px; flex: none; }
+.terminal-tabs { display: flex; gap: 2px; }
+.terminal-tab { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 0; border-radius: var(--radius-2); background: transparent; color: var(--gray-11); font: inherit; font-size: var(--font-size-1); cursor: pointer; }
+.terminal-tab:hover { background: var(--gray-a3); }
+.terminal-tab[aria-selected='true'] { background: var(--gray-a4); color: var(--gray-12); font-weight: 500; }
+.validate-bar { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--gray-a4); flex: none; }
+.validate-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .terminal-host { flex: 1; min-height: 0; padding: 6px 0 0 12px; background: #ffffff; }
 .terminal-note { flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px; }
 @media (prefers-color-scheme: dark) { .terminal-host { background: #111113; } }

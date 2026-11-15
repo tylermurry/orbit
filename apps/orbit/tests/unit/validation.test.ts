@@ -99,12 +99,12 @@ describe('watching the results file', () => {
 });
 
 describe('run_tests (MCP)', () => {
-  it('refuses an unapproved command and opens Validate capabilities for the person', async () => {
+  it('refuses an unapproved command and opens the Validate tab for the person', async () => {
     const { call, store, host } = await boot({ commands: { [COMMAND]: { exitCode: 0 } } });
     const r = await call('run_tests');
     expect(r.err).toBe(true);
     expect(r.d.error).toMatch(/not approved/);
-    expect(store.getState().runDialog).toBe(true);
+    expect(store.getState()).toMatchObject({ terminalOpen: true, terminalTab: 'validate' });
     expect(host.ranCommands).toEqual([]);
   });
 

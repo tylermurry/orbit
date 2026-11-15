@@ -60,6 +60,7 @@ export function createTauriHost(): OrbitHost {
 
     readFile: (path) => call<FileSnapshot>('read_file', { path }),
     statFile: (path) => call<FileStat>('stat_file', { path }),
+    listXmlFiles: (dir) => call<string[]>('list_xml_files', { dir }),
 
     async writeFileAtomic(path, text, expectedSha256) {
       try {
@@ -94,12 +95,14 @@ export function createTauriHost(): OrbitHost {
     },
     cancelCommand: (runId) => call<boolean>('cancel_command', { runId }),
 
-    async openTerminal({ cwd, cols, rows, onData, onExit }): Promise<TerminalSession> {
+    async openTerminal({ cwd, cols, rows, onData, onExit, command }): Promise<TerminalSession> {
       const data = new Channel<ArrayBuffer>();
       data.onmessage = (buf) => onData(new Uint8Array(buf));
       const exit = new Channel<number | null>();
       exit.onmessage = (code) => onExit(code);
-      const id = await call<number>('term_open', { cwd, cols, rows, onData: data, onExit: exit });
+      const id = await (command === undefined
+        ? call<number>('term_open', { cwd, cols, rows, onData: data, onExit: exit })
+        : call<number>('term_run', { cwd, command, cols, rows, onData: data, onExit: exit }));
       const quiet = (p: Promise<unknown>) => void p.catch(() => {});
       return {
         write: (text) => quiet(invoke('term_write', { id, data: text })),

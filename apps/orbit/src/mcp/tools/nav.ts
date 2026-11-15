@@ -246,17 +246,17 @@ export function navTools(): ToolDef[] {
       name: 'run_tests',
       title: 'Run the test suite',
       description:
-        "Run the contract's validation command (the whole test suite, see set_validation) and wait for it, then return each test's status from the results file. Only runs a command the person has approved in Orbit (Validate capabilities asks once per command); otherwise fails and asks them to. Alternatively run the same command yourself in a terminal: Orbit picks up the results file automatically whenever it changes. Statuses: passing / failing (a result at or after the proposal time), unconfirmed (no current result), planned (placeholder).",
+        "Run the contract's validation command (the whole test suite, see set_validation) and wait for it, then return each test's status from the results file. Only runs a command the person has approved in Orbit (the Validate tab asks once per command); otherwise fails and asks them to. Alternatively run the same command yourself in a terminal: Orbit picks up the results file automatically whenever it changes. Statuses: passing / failing (a result at or after the proposal time), unconfirmed (no current result), planned (placeholder).",
       inputSchema: S.obj({ timeoutSeconds: S.int('Give up waiting after this many seconds (default 600). The run keeps going in Orbit.', { minimum: 5, maximum: 3600 }) }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false as const },
     },
     async run(a, ctx) {
       requireContract(ctx);
       const started = await ctx.ctrl.runValidation();
-      if (started === 'not-configured') throw new ToolError('No test command is set up for this contract.', { suggestions: ["set_validation({ command: 'npm test', results: 'test-results/junit.xml' }) and save, then ask the person to approve it with Validate capabilities."] });
+      if (started === 'not-configured') throw new ToolError('No test command is set up for this contract.', { suggestions: ["set_validation({ command: 'npm test', results: 'reports' }) and save, then ask the person to confirm it with Validate in the terminal."] });
       if (started === 'needs-approval') {
-        ctx.store.dispatch({ type: 'ui', patch: { runDialog: true } });
-        throw new ToolError(`The person has not approved running '${st(ctx).contract!.validation!.command}' yet. Orbit opened Validate capabilities so they can approve it.`, { suggestions: ['Ask the person to click Run tests in Orbit, or run the command yourself in a terminal.'] });
+        ctx.store.dispatch({ type: 'ui', patch: { terminalOpen: true, terminalTab: 'validate' } });
+        throw new ToolError(`The person has not approved running '${st(ctx).contract!.validation!.command}' yet. Orbit opened the Validate tab in the terminal so they can confirm the run values.`, { suggestions: ['Ask the person to click Run tests in Orbit, or run the command yourself in a terminal.'] });
       }
       if (started === 'busy') throw new ToolError('A test run is already in progress.', { suggestions: ['Wait for it, then call get_assurance or list_tests.'] });
       const deadline = Date.now() + ((a.timeoutSeconds as number | undefined) ?? 600) * 1000;

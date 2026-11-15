@@ -1,6 +1,6 @@
 // The bottom terminal: xterm.js rendering a host pseudo-terminal that runs Claude Code in the contract's folder.
 import { useEffect, useRef, useState } from 'react';
-import { IconButton, Text, Tooltip } from '@radix-ui/themes';
+import { IconButton, Spinner, Text, Tooltip } from '@radix-ui/themes';
 import { ChevronDownIcon, ReloadIcon } from '@radix-ui/react-icons';
 import { Terminal } from '@xterm/xterm';
 import type { ITheme } from '@xterm/xterm';
@@ -8,7 +8,9 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { loadPref, savePref } from '../lib/prefs';
 import type { TerminalSession } from '../host/types';
-import { useApp, useDispatch, useHost } from '../state/context';
+import { useApp, useCtrl, useDispatch, useHost } from '../state/context';
+import { runFolderOf } from '../state/controller';
+import { ValidateBar } from './ValidateBar';
 import type { Action } from '../state/store';
 import { TERMINAL_OPEN_KEY } from '../state/store';
 
@@ -43,29 +45,33 @@ const DARK: ITheme = {
 };
 const darkQuery = () => window.matchMedia('(prefers-color-scheme: dark)');
 
-export function TerminalPanel() {
+interface ViewProps {
+  cwd: string | null;
+  /** Undefined runs Claude Code; otherwise this command (Validate). */
+  command?: string;
+  /** Changing it (re)starts the session. */
+  runKey: number;
+  /** Nothing starts until true; the session keeps running while hidden. */
+  enabled: boolean;
+  visible: boolean;
+  exitText: (code: number | null) => string;
+  onExit?: (code: number | null) => void;
+  onSession?: (s: TerminalSession | null) => void;
+  onError?: (message: string | null) => void;
+}
+
+/** One xterm.js instance bound to a host pseudo-terminal session. */
+function TerminalView({ cwd, command, runKey, enabled, visible, exitText, onExit, onSession, onError }: ViewProps) {
   const host = useHost();
-  const d = useDispatch();
-  const open = useApp((s) => s.terminalOpen);
-  const filePath = useApp((s) => s.filePath);
-  const cwd = filePath ? dirnameOf(filePath) : null;
-  const [height, setHeight] = useState(() => loadPref<number>(HEIGHT_KEY, 300));
-  const [exited, setExited] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [generation, setGeneration] = useState(0);
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<{ term: Terminal; fit: FitAddon } | null>(null);
   const sessionRef = useRef<TerminalSession | null>(null);
-  const dragging = useRef<{ y: number; h: number } | null>(null);
-  // Start only once the panel has been shown; afterwards hiding keeps the session running.
-  const [started, setStarted] = useState(open);
-  useEffect(() => {
-    if (open) setStarted(true);
-  }, [open]);
+  const latest = useRef({ command, exitText, onExit, onSession, onError });
+  latest.current = { command, exitText, onExit, onSession, onError };
 
-  // xterm instance (one for the panel's lifetime)
+  // xterm instance (one for the view's lifetime)
   useEffect(() => {
-    if (!started || !hostRef.current || !host.openTerminal) return;
+    if (!enabled || !hostRef.current || !host.openTerminal) return;
     const term = new Terminal({
       fontFamily: '"SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace',
       fontSize: 12.5,
@@ -102,58 +108,102 @@ export function TerminalPanel() {
       term.dispose();
       termRef.current = null;
     };
-  }, [started, host]);
+  }, [enabled, host]);
 
-  // session: (re)started for the contract's folder, or on Restart
+  // session: (re)started for the folder, or when runKey changes
   useEffect(() => {
     const t = termRef.current;
-    if (!started || !t || !cwd || !host.openTerminal) return;
+    if (!enabled || !t || !cwd || !host.openTerminal) return;
     let cancelled = false;
     let session: TerminalSession | null = null;
     t.term.reset();
-    setExited(false);
-    setError(null);
+    latest.current.onError?.(null);
     if (hostRef.current?.offsetParent) t.fit.fit();
     host
       .openTerminal({
         cwd,
         cols: t.term.cols,
         rows: t.term.rows,
+        ...(latest.current.command !== undefined ? { command: latest.current.command } : {}),
         onData: (bytes) => t.term.write(bytes),
-        onExit: () => {
+        onExit: (code) => {
           if (cancelled) return;
-          t.term.write('\r\n\x1b[2m[Terminal exited. Restart to start Claude Code again.]\x1b[0m\r\n');
-          setExited(true);
+          t.term.write(`\r\n\x1b[2m${latest.current.exitText(code)}\x1b[0m\r\n`);
           sessionRef.current = null;
+          latest.current.onSession?.(null);
+          latest.current.onExit?.(code);
         },
       })
       .then((s) => {
         if (cancelled) return s.close();
         session = s;
         sessionRef.current = s;
+        latest.current.onSession?.(s);
         if (hostRef.current?.offsetParent) t.term.focus();
       })
-      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => !cancelled && latest.current.onError?.(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;
       session?.close();
       if (sessionRef.current === session) sessionRef.current = null;
+      latest.current.onSession?.(null);
     };
-  }, [started, cwd, generation, host]);
+  }, [enabled, cwd, runKey, host]);
 
   // refit + focus when shown again
   useEffect(() => {
     const t = termRef.current;
-    if (!open || !t) return;
+    if (!visible || !t) return;
     requestAnimationFrame(() => {
       t.fit.fit();
       sessionRef.current?.resize(t.term.cols, t.term.rows);
       t.term.focus();
     });
+  }, [visible]);
+
+  return <div ref={hostRef} className="terminal-host" style={{ display: visible ? undefined : 'none' }} />;
+}
+
+export function TerminalPanel() {
+  const host = useHost();
+  const d = useDispatch();
+  const ctrl = useCtrl();
+  const open = useApp((s) => s.terminalOpen);
+  const tab = useApp((s) => s.terminalTab);
+  const validateRun = useApp((s) => s.validateRun);
+  const filePath = useApp((s) => s.filePath);
+  const claudeCwd = filePath ? dirnameOf(filePath) : null;
+  const validation = useApp((s) => s.contract?.validation);
+  const runCwd = useApp((s) => runFolderOf(s));
+  const [height, setHeight] = useState(() => loadPref<number>(HEIGHT_KEY, 300));
+  const [exited, setExited] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [generation, setGeneration] = useState(0);
+  const [vRunning, setVRunning] = useState(false);
+  const [vExit, setVExit] = useState<number | null | undefined>(undefined);
+  const [vError, setVError] = useState<string | null>(null);
+  const [vHidden, setVHidden] = useState(false);
+  const vSession = useRef<TerminalSession | null>(null);
+  const dragging = useRef<{ y: number; h: number } | null>(null);
+  // Start only once the panel has been shown; afterwards hiding keeps the sessions running.
+  const [started, setStarted] = useState(open);
+  useEffect(() => {
+    if (open) setStarted(true);
   }, [open]);
+  // Each Validate run starts "running" with no exit code yet.
+  useEffect(() => {
+    if (validateRun > 0) {
+      setVRunning(true);
+      setVExit(undefined);
+    }
+  }, [validateRun]);
 
   if (!started) return null;
   const supported = !!host.openTerminal;
+  const showValidate = validateRun > 0 || tab === 'validate';
+  const activeTab = showValidate ? tab : 'claude';
+  const cwd = activeTab === 'validate' ? runCwd : claudeCwd;
+  const setTab = (t: 'claude' | 'validate') => d({ type: 'ui', patch: { terminalTab: t } });
 
   return (
     <section className="terminal-panel" style={{ height, display: open ? undefined : 'none' }} aria-label="Terminal">
@@ -177,16 +227,24 @@ export function TerminalPanel() {
         }}
       />
       <div className="terminal-header">
-        <Text size="1" weight="medium">
-          Claude Code
-        </Text>
+        <div className="terminal-tabs" role="tablist">
+          <button role="tab" aria-selected={activeTab === 'claude'} className="terminal-tab" onClick={() => setTab('claude')}>
+            Claude Code
+          </button>
+          {showValidate && (
+            <button role="tab" aria-selected={activeTab === 'validate'} className="terminal-tab" onClick={() => setTab('validate')}>
+              Validate
+              {vRunning && <Spinner size="1" />}
+            </button>
+          )}
+        </div>
         {cwd && (
           <Text size="1" color="gray" className="truncate" title={cwd}>
             {shortPath(cwd)}
           </Text>
         )}
         <span style={{ flex: 1 }} />
-        {supported && cwd && (
+        {supported && claudeCwd && activeTab === 'claude' && (
           <Tooltip content={exited ? 'Start again' : 'Restart'}>
             <IconButton size="1" variant="ghost" color="gray" aria-label="Restart terminal" onClick={() => setGeneration((g) => g + 1)}>
               <ReloadIcon />
@@ -199,20 +257,64 @@ export function TerminalPanel() {
           </IconButton>
         </Tooltip>
       </div>
+
+      {activeTab === 'validate' && (
+        <ValidateBar
+          running={vRunning}
+          exitCode={vExit}
+          onHideOutput={setVHidden}
+          onRun={() => d({ type: 'ui', patch: { validateRun: validateRun + 1 } })}
+          onStop={() => vSession.current?.close()}
+        />
+      )}
+
       {!supported ? (
         <div className="terminal-note">
           <Text size="2" color="gray">The terminal is available in the Orbit desktop app.</Text>
         </div>
       ) : !cwd ? (
         <div className="terminal-note">
-          <Text size="2" color="gray">Open a contract to start Claude Code in its folder.</Text>
+          <Text size="2" color="gray">{activeTab === 'validate' ? 'Open a contract to run its tests.' : 'Open a contract to start Claude Code in its folder.'}</Text>
         </div>
-      ) : error ? (
+      ) : (activeTab === 'validate' ? vError : error) ? (
         <div className="terminal-note">
-          <Text size="2" color="red">{error}</Text>
+          <Text size="2" color="red">{activeTab === 'validate' ? vError : error}</Text>
+        </div>
+      ) : activeTab === 'validate' && (validateRun === 0 || vHidden) ? (
+        <div className="terminal-note">
+          <Text size="2" color="gray">{validateRun === 0 ? 'Confirm the run values above to run the tests.' : 'Confirm the new run values above to run again.'}</Text>
         </div>
       ) : null}
-      <div ref={hostRef} className="terminal-host" style={{ display: supported && cwd && !error ? undefined : 'none' }} />
+
+      <TerminalView
+        cwd={claudeCwd}
+        runKey={generation}
+        enabled={started && supported && !!claudeCwd}
+        visible={open && activeTab === 'claude' && !error}
+        exitText={() => '[Terminal exited. Restart to start Claude Code again.]'}
+        onExit={() => setExited(true)}
+        onError={(m) => {
+          setError(m);
+          if (m === null) setExited(false);
+        }}
+      />
+      {validateRun > 0 && (
+        <TerminalView
+          cwd={runCwd}
+          command={validation?.command}
+          runKey={validateRun}
+          enabled={supported && !!runCwd && !!validation}
+          visible={open && activeTab === 'validate' && !vError && !vHidden}
+          exitText={(code) => (code === null ? '[Stopped.]' : code === 0 ? '[Finished: all commands succeeded (exit code 0).]' : `[Finished with exit code ${code}.]`)}
+          onSession={(s) => (vSession.current = s)}
+          onError={setVError}
+          onExit={(code) => {
+            setVRunning(false);
+            setVExit(code);
+            void ctrl.pollResults(true);
+          }}
+        />
+      )}
     </section>
   );
 }

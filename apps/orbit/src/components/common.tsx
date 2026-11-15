@@ -68,9 +68,9 @@ export function testStatusReason(status: TestStatus, result: TestResult | undefi
     case 'undefined':
       return 'This test id is not defined in the contract.';
     case 'unconfirmed':
-      if (!result) return 'No result yet: this test was not found in the latest test results. Run Validate capabilities.';
+      if (!result) return 'No result yet: this test was not found in the latest test results. Run Validate.';
       if (result.status === 'skipped') return `Skipped in the last test run (${when}).`;
-      return since ? `The last result (${when}) is older than the proposal. Run Validate capabilities to confirm it.` : 'No current result.';
+      return since ? `The last result (${when}) is older than the proposal. Run Validate to confirm it.` : 'No current result.';
   }
 }
 

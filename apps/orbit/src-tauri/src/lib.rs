@@ -37,6 +37,11 @@ async fn stat_file(path: String) -> Result<FileStat, String> {
 }
 
 #[tauri::command]
+async fn list_xml_files(dir: String) -> Result<Vec<String>, String> {
+    blocking(move || files::list_xml_files(&dir)).await
+}
+
+#[tauri::command]
 async fn write_file_atomic(path: String, text: String, expected: Expected) -> Result<WriteResult, String> {
     blocking(move || Ok(files::write_file_atomic(&path, &text, &expected))).await
 }
@@ -131,6 +136,12 @@ fn term_open(terms: State<'_, Arc<Terminals>>, cwd: String, cols: u16, rows: u16
     terms.inner().open(&cwd, cols, rows, on_data, on_exit)
 }
 
+/// Run the validation `command` in a terminal in `cwd`; the session ends with the command.
+#[tauri::command]
+fn term_run(terms: State<'_, Arc<Terminals>>, cwd: String, command: String, cols: u16, rows: u16, on_data: Channel<InvokeResponseBody>, on_exit: Channel<Option<u32>>) -> Result<u32, String> {
+    terms.inner().open_run(&command, &cwd, cols, rows, on_data, on_exit)
+}
+
 #[tauri::command]
 fn term_write(terms: State<'_, Arc<Terminals>>, id: u32, data: String) -> Result<(), String> {
     terms.write(id, &data)
@@ -160,6 +171,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_file,
             stat_file,
+            list_xml_files,
             write_file_atomic,
             initial_file,
             open_in_editor,
@@ -175,6 +187,7 @@ pub fn run() {
             mcp_respond,
             mcp_regenerate_token,
             term_open,
+            term_run,
             term_write,
             term_resize,
             term_close

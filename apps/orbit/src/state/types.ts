@@ -122,7 +122,10 @@ export interface AppState {
   resultsFile: ResultsFile | null;
   run: RunState | null;
   lastRun: (RunOutcome & { command: string; finishedAt: string }) | null;
-  runDialog: boolean;
+  /** Which terminal tab is showing. */
+  terminalTab: 'claude' | 'validate';
+  /** Counts Validate runs in the terminal; each increment starts one (0 = none yet). */
+  validateRun: number;
 
   // ui
   diagnosticsOpen: boolean;

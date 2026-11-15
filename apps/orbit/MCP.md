@@ -60,7 +60,7 @@ replies, and returns a JSON-RPC error such as "Is Orbit running with AI access e
   there are unsaved changes unless `discardUnsavedChanges: true`. `save_file_as` refuses to replace a file unless
   `overwrite: true`.
 - **Tests run only with the person's approval.** `run_tests` runs the contract's validation command only after the
-  person approved that exact command in Orbit (Validate capabilities asks once per command, and again if it changes).
+  person approved that exact command in Orbit (the Validate tab asks once per command, and again if it changes).
   Git access is read-only except `mark_proposal`, which only creates or moves the lightweight tag
   `orbit/proposal/<branch>`.
 - **Serialized.** Tool calls run one at a time, so concurrent AI requests never interleave edits.
@@ -154,8 +154,8 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 
 **Set up validation and check the product**
 
-`set_validation { command: "npm test", results: "test-results/junit.xml" }` -> `save_file` -> the person approves the
-command once (Validate capabilities) -> `run_tests` (or run the command in a terminal; Orbit reads the results file
+`set_validation { command: "npm test", results: "reports" }` -> `save_file` -> the person approves the
+command once (Validate) -> `run_tests` (or run the command in a terminal; Orbit reads the results file
 whenever it changes) -> `get_assurance` (counts) / `list_tests { status: "failing" }`.
 
 **Propose a feature, then track it against the proposal**
