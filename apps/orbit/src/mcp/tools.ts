@@ -5,7 +5,7 @@ import type { Store } from '../state/store';
 import { editTools } from './tools/edit';
 import { fileTools } from './tools/files';
 import { navTools } from './tools/nav';
-import { proposalTools } from './tools/proposal';
+import { planTools } from './tools/plan';
 import { readTools } from './tools/read';
 import { validateArgs } from './tools/schema';
 import { ToolError, UnknownToolError } from './tools/types';
@@ -26,7 +26,7 @@ function failure(message: string, extra: { suggestions?: string[]; data?: Record
 }
 
 export function buildRegistry(): ToolDef[] {
-  return [...readTools(), ...fileTools(), ...editTools(), ...proposalTools(), ...navTools()];
+  return [...readTools(), ...fileTools(), ...editTools(), ...planTools(), ...navTools()];
 }
 
 export interface ToolRuntimeOptions {

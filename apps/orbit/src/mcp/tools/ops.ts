@@ -343,7 +343,7 @@ export const OPS: OpDef[] = [
   op<{ name: string; location: string; id?: string }>({
     name: 'create_test',
     title: 'Create test definition',
-    description: "Register a test so behaviors can reference it. When used in a proposal, set location to the intended path and title. The proposal comparison labels new tests Planned.",
+    description: "Register a test so behaviors can reference it. When used in a plan, set location to the intended path and title. The plan comparison labels new tests Planned.",
     schema: S.obj({ name: S.nonEmpty('Human-readable test name.'), location: S.nonEmpty('File path and test title.'), id: idProp('test') }, ['name', 'location']),
     destructive: false,
     idempotent: false,

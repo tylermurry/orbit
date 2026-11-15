@@ -5,7 +5,7 @@ import { matchResults } from '../lib/junit';
 import { applyViewFilter, buildTree } from '../lib/model';
 import { loadPref } from '../lib/prefs';
 import type { JUnitCase, MatchedResults } from '../lib/junit';
-import type { ProposalFile } from './proposal';
+import type { PlanFile } from './plan';
 import type { AppState, CompareResult, Comparison, Prompt, ResultsFile, ReviewState, RunState, ViewFilter, ViewId } from './types';
 
 const canonCache = new WeakMap<OrbitContract, string>();
@@ -35,8 +35,9 @@ export function initialState(): AppState {
     externalChange: null,
     git: null,
     refs: [],
-    proposalFile: null,
+    planFile: null,
     view: 'product',
+    explorerView: 'product',
     rawMode: false,
     selected: { capability: null, system: null },
     focusBehaviorId: null,
@@ -131,7 +132,7 @@ export function canUndo(s: AppState): boolean {
 // ───────────── actions ─────────────
 
 export type Action =
-  | { type: 'loaded'; path: string; text: string; sha: string | null; parse: ParseResult; git: GitContext | null; refs: GitRef[]; proposalFile?: ProposalFile | null; keepContext: boolean; expanded?: Record<string, boolean> }
+  | { type: 'loaded'; path: string; text: string; sha: string | null; parse: ParseResult; git: GitContext | null; refs: GitRef[]; planFile?: PlanFile | null; keepContext: boolean; expanded?: Record<string, boolean> }
   | { type: 'edit'; fn: (c: OrbitContract) => OrbitContract }
   | { type: 'undo' }
   | { type: 'redo' }
@@ -144,8 +145,8 @@ export type Action =
   | { type: 'applyRaw'; parse: ParseResult }
   | { type: 'saved'; text: string; sha: string; parse: ParseResult; path?: string }
   | { type: 'externalChange'; change: AppState['externalChange'] }
-  | { type: 'setGit'; git: GitContext | null; refs: GitRef[]; proposalFile?: ProposalFile | null }
-  | { type: 'setProposalFile'; proposalFile: ProposalFile | null }
+  | { type: 'setGit'; git: GitContext | null; refs: GitRef[]; planFile?: PlanFile | null }
+  | { type: 'setPlanFile'; planFile: PlanFile | null }
   | { type: 'setCompare'; compare: Comparison | null }
   | { type: 'setCompareResult'; result: CompareResult | null }
   | { type: 'selectChange'; key: string | null }
@@ -176,7 +177,8 @@ export function reducer(s: AppState, a: Action): AppState {
             ...initialState(),
             recent: s.recent,
             toasts: s.toasts,
-            view: s.view === 'impact' ? 'product' : s.view,
+            view: s.view === 'impact' ? s.explorerView : s.view,
+            explorerView: s.explorerView,
             expanded: a.expanded ?? {},
           };
       return {
@@ -193,7 +195,7 @@ export function reducer(s: AppState, a: Action): AppState {
         externalChange: null,
         git: a.git,
         refs: a.refs,
-        proposalFile: a.proposalFile ?? null,
+        planFile: a.planFile ?? null,
         rawMode: !contract ? true : a.keepContext ? s.rawMode && !ok : false,
         diagnosticsOpen: ok || !contract ? (a.keepContext ? s.diagnosticsOpen && ok : false) : true,
         bannerNote: null,
@@ -216,14 +218,14 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, contract: next, redo: s.redo.slice(0, -1), undo: [...s.undo, s.contract] };
     }
     case 'setView':
-      return { ...s, view: a.view };
+      return { ...s, view: a.view, explorerView: a.view === 'impact' ? s.explorerView : a.view };
     case 'selectEntity': {
       const view: ViewId = a.kind === 'capability' ? 'product' : 'engineering';
-      return { ...s, view, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: a.behaviorId ?? null, focusBehaviorIds: [], rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
+      return { ...s, view, explorerView: view, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: a.behaviorId ?? null, focusBehaviorIds: [], rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
     }
     case 'focusBehaviors': {
       const view: ViewId = a.kind === 'capability' ? 'product' : 'engineering';
-      return { ...s, view, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: null, focusBehaviorIds: a.behaviorIds, rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
+      return { ...s, view, explorerView: view, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: null, focusBehaviorIds: a.behaviorIds, rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
     }
     case 'clearFocusBehavior':
       return s.focusBehaviorId || s.focusBehaviorIds.length ? { ...s, focusBehaviorId: null, focusBehaviorIds: [] } : s;
@@ -266,9 +268,9 @@ export function reducer(s: AppState, a: Action): AppState {
     case 'externalChange':
       return { ...s, externalChange: a.change };
     case 'setGit':
-      return { ...s, git: a.git, refs: a.refs, proposalFile: a.proposalFile === undefined ? s.proposalFile : a.proposalFile };
-    case 'setProposalFile':
-      return s.proposalFile === a.proposalFile ? s : { ...s, proposalFile: a.proposalFile };
+      return { ...s, git: a.git, refs: a.refs, planFile: a.planFile === undefined ? s.planFile : a.planFile };
+    case 'setPlanFile':
+      return s.planFile === a.planFile ? s : { ...s, planFile: a.planFile };
     case 'setCompare':
       return { ...s, compare: a.compare, compareResult: a.compare ? (s.compareResult ?? { status: 'loading' }) : null, impactSelection: null };
     case 'setCompareResult':

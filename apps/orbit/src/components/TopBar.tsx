@@ -9,6 +9,7 @@ import { AiButton } from './AiAccess';
 import { TerminalIcon, setTerminalOpen } from './TerminalPanel';
 import { useProjectSkills } from './ProjectSkills';
 import { ValidateButton } from './Validation';
+import { useSplit } from '../lib/useSplit';
 
 export function OrbitMark({ size = 22 }: { size?: number }) {
   return (
@@ -34,131 +35,166 @@ export function TopBar() {
   const terminalOpen = s.terminalOpen;
   const skills = useProjectSkills();
   const productName = s.contract?.product.name ?? (hasFile ? 'Invalid contract' : 'Orbit');
+  const split = useSplit();
 
+  const left = (
+    <div className="topbar-left">
+      <span className="brand">
+        <OrbitMark />
+      </span>
+      <div className="identity">
+        {hasFile ? (
+          <Tooltip content="Product settings">
+            <button type="button" className="product-name" onClick={() => d({ type: 'ui', patch: { productDialog: true } })} aria-label={`Product settings for ${productName}`} disabled={!s.contract}>
+              {productName}
+            </button>
+          </Tooltip>
+        ) : (
+          <span className="product-name static">Orbit</span>
+        )}
+        {hasFile && (
+          <Tooltip content={s.filePath}>
+            <span className="file-name" data-testid="file-name">
+              {dirty && (
+                <span className="dirty-dot" role="img" aria-label="Unsaved changes" title="Unsaved changes">
+                  •
+                </span>
+              )}
+              {fileName(s.filePath)}
+            </span>
+          </Tooltip>
+        )}
+      </div>
+    </div>
+  );
+  const capabilities = (
+    <Switcher
+      label="Capabilities"
+      // Side by side, both panes are visible, so both switchers show their selection.
+      value={split ? s.explorerView : s.view === 'impact' ? null : s.view}
+      options={[
+        {
+          value: 'product',
+          label: 'Product',
+          onSelect: () => requestView('product'),
+        },
+        {
+          value: 'engineering',
+          label: 'Engineering',
+          onSelect: () => requestView('engineering'),
+        },
+      ]}
+    />
+  );
+  const right = (
+    <div className="topbar-right">
+      {hasFile && dirty && (
+        <Text size="2" color="gray" data-testid="unsaved-label" className="unsaved-label">
+          Unsaved changes
+        </Text>
+      )}
+      {hasFile && <ValidateButton />}
+      <Tooltip content={terminalOpen ? 'Hide terminal (Ctrl+`)' : 'Claude Code terminal (Ctrl+`)'}>
+        <IconButton variant={terminalOpen ? 'soft' : 'surface'} color="gray" size="2" aria-label="Toggle terminal" aria-pressed={terminalOpen} onClick={() => setTerminalOpen(d, !terminalOpen)}>
+          <TerminalIcon />
+        </IconButton>
+      </Tooltip>
+      <AiButton />
+      {hasFile && skills?.primary && (
+        <Button size="2" onClick={skills.runPrimary}>
+          {skills.primary}
+        </Button>
+      )}
+      {
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger>
+            <IconButton variant="surface" color="gray" size="2" aria-label="More actions">
+              <DotsHorizontalIcon />
+            </IconButton>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content align="end">
+            <DropdownMenu.Item onSelect={() => void ctrl.openDialog()}>
+              Open…
+              <div className="rt-DropdownMenuShortcut">{MOD}O</div>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => ctrl.guard('Creating a new contract', () => d({ type: 'ui', patch: { newDialog: true } }))}>New…</DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => void ctrl.save()} disabled={!hasFile || !dirty}>
+              Save
+              <div className="rt-DropdownMenuShortcut">{MOD}S</div>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => void ctrl.saveAs()} disabled={!hasFile}>
+              Save As…
+              <div className="rt-DropdownMenuShortcut">⇧{MOD}S</div>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              disabled={!hasFile}
+              onSelect={() => {
+                if (dirty) d({ type: 'prompt', prompt: { type: 'reload' } });
+                else void ctrl.reloadFromDisk();
+              }}
+            >
+              Reload from disk
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => d({ type: 'ui', patch: { productDialog: true } })} disabled={!s.contract}>
+              Product settings…
+            </DropdownMenu.Item>
+            {skills?.available && (
+              <DropdownMenu.Item disabled={!hasFile} onSelect={skills.openManager}>
+                Install/Update Skills
+              </DropdownMenu.Item>
+            )}
+            <DropdownMenu.Sub>
+              <DropdownMenu.SubTrigger>Recent files</DropdownMenu.SubTrigger>
+              <DropdownMenu.SubContent>
+                {recent.length === 0 && <DropdownMenu.Item disabled>No recent files</DropdownMenu.Item>}
+                {recent.map((p) => (
+                  <DropdownMenu.Item key={p} onSelect={() => ctrl.guard('Opening another file', () => void ctrl.openPath(p))}>
+                    <FileTextIcon /> {fileName(p)}
+                    <Text size="1" color="gray" ml="2">
+                      {p}
+                    </Text>
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.SubContent>
+            </DropdownMenu.Sub>
+            <DropdownMenu.Separator />
+            <DropdownMenu.Item onSelect={() => d({ type: 'ui', patch: { shortcutsOpen: true } })}>
+              Keyboard shortcuts
+              <div className="rt-DropdownMenuShortcut">?</div>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
+      }
+    </div>
+  );
+
+  if (split) {
+    // Halves line up with the panes below: the Impact switcher sits over the Impact pane.
+    return (
+      <header className="topbar split" role="banner">
+        <div className="topbar-half">
+          {left}
+          {capabilities}
+        </div>
+        <div className="topbar-half right">
+          <ImpactSelector s={s} split />
+          {right}
+        </div>
+      </header>
+    );
+  }
   return (
     <header className="topbar" role="banner">
-      <div className="topbar-left">
-        <span className="brand">
-          <OrbitMark />
-        </span>
-        <div className="identity">
-          {hasFile ? (
-            <Tooltip content="Product settings">
-              <button type="button" className="product-name" onClick={() => d({ type: 'ui', patch: { productDialog: true } })} aria-label={`Product settings for ${productName}`} disabled={!s.contract}>
-                {productName}
-              </button>
-            </Tooltip>
-          ) : (
-            <span className="product-name static">Orbit</span>
-          )}
-          {hasFile && (
-            <Tooltip content={s.filePath}>
-              <span className="file-name" data-testid="file-name">
-                {dirty && (
-                  <span className="dirty-dot" role="img" aria-label="Unsaved changes" title="Unsaved changes">
-                    •
-                  </span>
-                )}
-                {fileName(s.filePath)}
-              </span>
-            </Tooltip>
-          )}
-        </div>
-      </div>
-
+      {left}
       <div className="topbar-center">
         {hasFile && (
           <>
-            <Switcher
-              label="Capabilities"
-              value={s.view === 'impact' ? null : s.view}
-              options={[
-                { value: 'product', label: 'Product', onSelect: () => requestView('product') },
-                { value: 'engineering', label: 'Engineering', onSelect: () => requestView('engineering') },
-              ]}
-            />
+            {capabilities}
             <ImpactSelector s={s} />
-            <div className="topbar-group">
-              {/* Invisible label keeps the button on the same row as the switchers below their captions. */}
-              <span className="topbar-group-label" aria-hidden style={{ visibility: 'hidden' }}>
-                &nbsp;
-              </span>
-              <ValidateButton />
-            </div>
           </>
         )}
       </div>
-
-      <div className="topbar-right">
-        {hasFile && dirty && (
-          <Text size="2" color="gray" data-testid="unsaved-label" className="unsaved-label">
-            Unsaved changes
-          </Text>
-        )}
-        <Tooltip content={terminalOpen ? 'Hide terminal (Ctrl+`)' : 'Claude Code terminal (Ctrl+`)'}>
-          <IconButton variant={terminalOpen ? 'soft' : 'surface'} color="gray" size="2" aria-label="Toggle terminal" aria-pressed={terminalOpen} onClick={() => setTerminalOpen(d, !terminalOpen)}>
-            <TerminalIcon />
-          </IconButton>
-        </Tooltip>
-        <AiButton />
-        {hasFile && skills?.primary && <Button size="2" onClick={skills.runPrimary}>{skills.primary}</Button>}
-        {(
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
-              <IconButton variant="surface" color="gray" size="2" aria-label="More actions">
-                <DotsHorizontalIcon />
-              </IconButton>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content align="end">
-              <DropdownMenu.Item onSelect={() => void ctrl.openDialog()}>
-                Open…
-                <div className="rt-DropdownMenuShortcut">{MOD}O</div>
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => ctrl.guard('Creating a new contract', () => d({ type: 'ui', patch: { newDialog: true } }))}>New…</DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => void ctrl.save()} disabled={!hasFile || !dirty}>
-                Save
-                <div className="rt-DropdownMenuShortcut">{MOD}S</div>
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => void ctrl.saveAs()} disabled={!hasFile}>
-                Save As…
-                <div className="rt-DropdownMenuShortcut">⇧{MOD}S</div>
-              </DropdownMenu.Item>
-              <DropdownMenu.Item
-                disabled={!hasFile}
-                onSelect={() => {
-                  if (dirty) d({ type: 'prompt', prompt: { type: 'reload' } });
-                  else void ctrl.reloadFromDisk();
-                }}
-              >
-                Reload from disk
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => d({ type: 'ui', patch: { productDialog: true } })} disabled={!s.contract}>
-                Product settings…
-              </DropdownMenu.Item>
-              {skills?.available && <DropdownMenu.Item disabled={!hasFile} onSelect={skills.openManager}>Install/Update Skills</DropdownMenu.Item>}
-              <DropdownMenu.Sub>
-                <DropdownMenu.SubTrigger>Recent files</DropdownMenu.SubTrigger>
-                <DropdownMenu.SubContent>
-                  {recent.length === 0 && <DropdownMenu.Item disabled>No recent files</DropdownMenu.Item>}
-                  {recent.map((p) => (
-                    <DropdownMenu.Item key={p} onSelect={() => ctrl.guard('Opening another file', () => void ctrl.openPath(p))}>
-                      <FileTextIcon /> {fileName(p)}
-                      <Text size="1" color="gray" ml="2">
-                        {p}
-                      </Text>
-                    </DropdownMenu.Item>
-                  ))}
-                </DropdownMenu.SubContent>
-              </DropdownMenu.Sub>
-              <DropdownMenu.Separator />
-              <DropdownMenu.Item onSelect={() => d({ type: 'ui', patch: { shortcutsOpen: true } })}>
-                Keyboard shortcuts
-                <div className="rt-DropdownMenuShortcut">?</div>
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
-        )}
-      </div>
+      {right}
     </header>
   );
 }
@@ -222,23 +258,23 @@ function Switcher({ label, value, options }: { label: string; value: string | nu
 }
 
 const IMPACT_OPTIONS: { value: LifecyclePreset; label: string }[] = [
-  { value: 'proposal', label: 'Proposal' },
-  { value: 'vs-proposal', label: 'Actual vs. Proposal' },
+  { value: 'plan', label: 'Plan' },
+  { value: 'plan-vs-actual', label: 'Plan vs. Actual' },
   { value: 'actual', label: 'Actual' },
 ];
 
 /** Impact: each option opens the Impact screen sliced by a different comparison. */
-function ImpactSelector({ s }: { s: AppState }) {
+function ImpactSelector({ s, split }: { s: AppState; split?: boolean }) {
   const ctrl = useCtrl();
   if (!s.git?.available) return null;
   // Nothing is selected here while a Capabilities option is.
-  const value = s.view === 'impact' ? activePreset(s.compare, s.git, s.refs, s.proposalFile) : null;
+  const value = s.view === 'impact' || split ? activePreset(s.compare, s.git, s.refs, s.planFile) : null;
   return (
     <Switcher
       label="Impact"
       value={value}
       options={IMPACT_OPTIONS.map((o) => {
-        const r = presetComparison(o.value, s.git, s.refs, s.proposalFile);
+        const r = presetComparison(o.value, s.git, s.refs, s.planFile);
         return {
           value: o.value,
           label: o.label,
@@ -253,8 +289,14 @@ function ImpactSelector({ s }: { s: AppState }) {
 }
 
 // View switching must respect unapplied raw edits; App registers the guard-aware handlers.
-type Handlers = { requestView: (v: ViewId) => void; requestRaw: (on: boolean) => void };
-let handlers: Handlers = { requestView: () => undefined, requestRaw: () => undefined };
+type Handlers = {
+  requestView: (v: ViewId) => void;
+  requestRaw: (on: boolean) => void;
+};
+let handlers: Handlers = {
+  requestView: () => undefined,
+  requestRaw: () => undefined,
+};
 export function registerNavHandlers(h: Handlers) {
   handlers = h;
 }

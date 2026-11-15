@@ -3,7 +3,7 @@ import type { AssuranceSummary, BehaviorAssurance, EntityKind, OrbitContract, Te
 import { buildTree, REL_INFO } from '../../lib/model';
 import type { TreeNode } from '../../lib/model';
 import { activePreset, baseBranchFor, revKey, revLabel } from '../../state/compare';
-import { appliesTo } from '../../state/proposal';
+import { appliesTo } from '../../state/plan';
 import { currentText, isDirty, matchedResults, syncStatus } from '../../state/store';
 import { resultsPathOf } from '../../state/controller';
 import type { AppState } from '../../state/types';
@@ -93,11 +93,11 @@ export function readTools(): ToolDef[] {
             history: historyState(s),
             git: git
               ? git.available
-                ? { available: true, repoRoot: git.repoRoot, relPath: git.relPath, branch: git.headBranch ?? null, detached: !!git.detached, headCommit: git.headCommit ?? null, trackedAtHead: git.trackedAtHead, workingTreeDiffers: git.workingTreeDiffers, baseBranch: baseBranchFor(s.refs), proposal: appliesTo(s.proposalFile?.proposal, git) ? { baseline: s.proposalFile.proposal.baseline, revision: s.proposalFile.proposal.draft.revision, approvedRevision: s.proposalFile.proposal.approved?.revision ?? null } : null, sync: syncStatus(s) }
+                ? { available: true, repoRoot: git.repoRoot, relPath: git.relPath, branch: git.headBranch ?? null, detached: !!git.detached, headCommit: git.headCommit ?? null, trackedAtHead: git.trackedAtHead, workingTreeDiffers: git.workingTreeDiffers, baseBranch: baseBranchFor(s.refs), plan: appliesTo(s.planFile?.plan, git) ? { baseline: s.planFile.plan.baseline, fileHash: s.planFile.sha } : null, sync: syncStatus(s) }
                 : { available: false, reason: git.unavailableReason, message: git.message }
               : null,
             refsCount: s.refs.length,
-            comparison: s.compare ? { base: revKey(s.compare.base), target: revKey(s.compare.target), label: `${revLabel(s.compare.base)} → ${revLabel(s.compare.target)}`, view: activePreset(s.compare, s.git, s.refs, s.proposalFile), status: s.compareResult?.status ?? 'loading' } : null,
+            comparison: s.compare ? { base: revKey(s.compare.base), target: revKey(s.compare.target), label: `${revLabel(s.compare.base)} → ${revLabel(s.compare.target)}`, view: activePreset(s.compare, s.git, s.refs, s.planFile), status: s.compareResult?.status ?? 'loading' } : null,
             testResults: resultsInfo(s),
             externalChange: s.externalChange ? { kind: s.externalChange.kind, path: s.externalChange.stat.path } : null,
             counts: c

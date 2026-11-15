@@ -32,7 +32,7 @@ export function requireEditable(ctx: ToolContext): OrbitContract {
   return c;
 }
 
-/** Test results and the proposal time that assurance is judged against. */
+/** Test results and the plan time that assurance is judged against. */
 export function actxOf(s: AppState): AssuranceContext {
   return assuranceContext(s);
 }

@@ -1,10 +1,10 @@
 import { diffContracts, parseContract } from '@orbit/contract';
 import type { OrbitContract } from '@orbit/contract';
-import { appliesTo, PROPOSAL_FILE } from './proposal';
-import type { ProposalFile } from './proposal';
+import { appliesTo, PLAN_FILE } from './plan';
+import type { PlanFile } from './plan';
 import type { GitContext, GitRef, OrbitHost } from '../host/types';
 import { shortSha } from '../lib/format';
-import type { CompareResult, Comparison, LifecyclePreset, ProposalChangeLabel, RevSel, SnapMeta } from './types';
+import type { CompareResult, Comparison, LifecyclePreset, PlanChangeLabel, RevSel, SnapMeta } from './types';
 
 export function revKey(sel: RevSel): string {
   switch (sel.type) {
@@ -20,15 +20,15 @@ export function revKey(sel: RevSel): string {
       return `baseline:${sel.branch}`;
     case 'pinned':
       return `pinned:${sel.sha}`;
-    case 'proposal':
-      return `proposal:${sel.revision}`;
+    case 'plan':
+      return 'plan';
   }
 }
 
 export function revFromKey(key: string): RevSel {
   if (key === 'working') return { type: 'working' };
   if (key === 'unsaved') return { type: 'unsaved' };
-  if (key === 'proposal:draft' || key === 'proposal:approved') return { type: 'proposal', revision: key === 'proposal:draft' ? 'draft' : 'approved' };
+  if (key === 'plan') return { type: 'plan' };
   if (key.startsWith('pinned:')) return { type: 'pinned', sha: key.slice(7) };
   if (key.startsWith('ref:')) return { type: 'ref', name: key.slice(4) };
   if (key.startsWith('baseline:')) return { type: 'baseline', branch: key.slice(9) };
@@ -49,29 +49,23 @@ export function revLabel(sel: RevSel): string {
       return `Baseline (${sel.branch})`;
     case 'pinned':
       return `Baseline (${shortSha(sel.sha)})`;
-    case 'proposal':
-      return sel.revision === 'approved' ? 'Approved proposal' : 'Proposal';
+    case 'plan':
+      return 'Plan';
   }
 }
 
 /** UI name for one side of a comparison, with no git vocabulary. */
 export function sideLabel(sel: RevSel): string {
   if (sel.type === 'baseline' || sel.type === 'pinned') return 'Baseline';
-  if (sel.type === 'proposal') return revLabel(sel);
+  if (sel.type === 'plan') return revLabel(sel);
   if (sel.type === 'working') return 'Latest';
   if (sel.type === 'unsaved') return 'Latest (unsaved edits)';
   return 'Another version';
 }
 
-/** UI title of the active comparison: the view name, or 'Custom comparison' for one the AI set up. */
-export function comparisonTitle(cmp: Comparison, git: GitContext | null, refs: GitRef[], file?: ProposalFile | null): string {
-  const p = activePreset(cmp, git, refs, file);
-  return p ? PRESET_LABELS[p] : 'Custom comparison';
-}
-
 export const PRESET_LABELS: Record<LifecyclePreset, string> = {
-  proposal: 'Proposal',
-  'vs-proposal': 'Actual vs. Proposal',
+  plan: 'Plan',
+  'plan-vs-actual': 'Plan vs. Actual',
   actual: 'Actual',
 };
 
@@ -83,27 +77,25 @@ export function baseBranchFor(refs: GitRef[]): string | null {
 
 export type PresetResult = { ok: true; comparison: Comparison } | { ok: false; reason: string };
 
-export function presetComparison(preset: LifecyclePreset, git: GitContext | null, refs: GitRef[], file?: ProposalFile | null): PresetResult {
+export function presetComparison(preset: LifecyclePreset, git: GitContext | null, refs: GitRef[], file?: PlanFile | null): PresetResult {
   if (!git?.available) return { ok: false, reason: 'These views need the contract to be inside a Git repository.' };
-  const proposal = appliesTo(file?.proposal, git) ? file.proposal : null;
+  const plan = appliesTo(file?.plan, git) ? file.plan : null;
   const branch = baseBranchFor(refs);
-  const baseline: RevSel | null = proposal ? { type: 'pinned', sha: proposal.baseline } : branch ? { type: 'baseline', branch } : null;
+  const baseline: RevSel | null = plan ? { type: 'pinned', sha: plan.baseline } : branch ? { type: 'baseline', branch } : null;
   const actual: RevSel = { type: 'working' };
   if (preset === 'actual') {
     return baseline ? { ok: true, comparison: { base: baseline, target: actual } } : { ok: false, reason: "No 'main' or 'master' branch was found to use as the baseline." };
   }
-  if (!proposal) {
-    return { ok: false, reason: file?.error ?? (file?.proposal ? `${PROPOSAL_FILE} belongs to a different branch or contract.` : 'Run /orbit-plan to create orbit.proposal.json.') };
+  if (!plan) {
+    return { ok: false, reason: file?.error ?? (file?.plan ? `${PLAN_FILE} belongs to a different branch or contract.` : 'Run /orbit-plan to create orbit.plan.json.') };
   }
-  if (preset === 'proposal') return { ok: true, comparison: { base: { type: 'pinned', sha: proposal.baseline }, target: { type: 'proposal', revision: 'draft' } } };
-  return proposal.approved
-    ? { ok: true, comparison: { base: { type: 'proposal', revision: 'approved' }, target: actual } }
-    : { ok: false, reason: 'Approve a proposal revision to compare it with Actual.' };
+  if (preset === 'plan') return { ok: true, comparison: { base: { type: 'pinned', sha: plan.baseline }, target: { type: 'plan' } } };
+  return { ok: true, comparison: { base: { type: 'plan' }, target: actual } };
 }
 
-export function activePreset(cmp: Comparison | null, git: GitContext | null, refs: GitRef[], file?: ProposalFile | null): LifecyclePreset | null {
+export function activePreset(cmp: Comparison | null, git: GitContext | null, refs: GitRef[], file?: PlanFile | null): LifecyclePreset | null {
   if (!cmp) return null;
-  for (const p of ['proposal', 'vs-proposal', 'actual'] as const) {
+  for (const p of ['plan', 'plan-vs-actual', 'actual'] as const) {
     const result = presetComparison(p, git, refs, file);
     if (result.ok && sameComparison(result.comparison, cmp)) return p;
   }
@@ -131,18 +123,18 @@ export interface CompareArgs {
   comparison: Comparison;
   /** In-memory working contract; null if it cannot be compared (invalid). */
   unsavedContract: OrbitContract | null;
-  proposalFile?: ProposalFile | null;
+  planFile?: PlanFile | null;
 }
 
 async function loadSide(args: CompareArgs, sel: RevSel): Promise<{ meta: SnapMeta; contract: OrbitContract | null }> {
   const { host, git, filePath } = args;
   const label = revLabel(sel);
   const meta: SnapMeta = { sel, label, exists: true, invalid: false, diagnostics: [] };
-  if (sel.type === 'proposal') {
-    const file = args.proposalFile;
-    const revision = appliesTo(file?.proposal, git) ? file.proposal[sel.revision] : undefined;
-    if (!file || !revision) throw new Error(file?.error ?? 'The selected proposal revision is unavailable.');
-    return { meta: { ...meta, proposal: { revision: revision.revision, fileHash: file.sha } }, contract: revision.contract };
+  if (sel.type === 'plan') {
+    const file = args.planFile;
+    const plan = appliesTo(file?.plan, git) ? file.plan : undefined;
+    if (!plan) throw new Error(file?.error ?? 'No plan applies to this branch and contract.');
+    return { meta, contract: plan.contract };
   }
   let text: string | undefined;
   if (sel.type === 'unsaved') {
@@ -183,22 +175,21 @@ export async function computeComparison(args: CompareArgs): Promise<CompareResul
       return { status: 'error', message: 'The contract file does not exist at either revision, so there is nothing to compare.' };
     }
     const diff = diffContracts(b.contract, t.contract);
-    const proposalLabels: Record<string, ProposalChangeLabel> = {};
-    if (args.comparison.target.type === 'proposal' && args.comparison.target.revision === 'draft') {
-      for (const change of diff.changes) if (change.kind === 'added') proposalLabels[change.key] = 'Planned';
+    const planLabels: Record<string, PlanChangeLabel> = {};
+    if (args.comparison.target.type === 'plan') {
+      for (const change of diff.changes) if (change.kind === 'added') planLabels[change.key] = 'Planned';
     }
-    const proposal = args.proposalFile?.proposal;
-    if (args.comparison.base.type === 'proposal' && args.comparison.base.revision === 'approved' &&
-        args.comparison.target.type === 'working' && appliesTo(proposal, args.git)) {
-      const pinned = await loadSide(args, { type: 'pinned', sha: proposal.baseline });
+    const plan = args.planFile?.plan;
+    if (args.comparison.base.type === 'plan' && args.comparison.target.type === 'working' && appliesTo(plan, args.git)) {
+      const pinned = await loadSide(args, { type: 'pinned', sha: plan.baseline });
       if (!pinned.contract) throw new Error('The pinned baseline contract is unavailable or invalid.');
       const intended = new Set(diffContracts(pinned.contract, b.contract).changes.map((c) => c.key));
       const implemented = new Set(diffContracts(pinned.contract, t.contract).changes.map((c) => c.key));
       for (const change of diff.changes) {
-        proposalLabels[change.key] = !intended.has(change.key) ? 'Outside proposal' : implemented.has(change.key) ? 'Different' : 'Pending';
+        planLabels[change.key] = !intended.has(change.key) ? 'Outside plan' : implemented.has(change.key) ? 'Different' : 'Pending';
       }
     }
-    return { status: 'ready', diff, base: b.meta, target: t.meta, proposalLabels };
+    return { status: 'ready', diff, base: b.meta, target: t.meta, planLabels };
   } catch (e) {
     return { status: 'error', message: e instanceof Error ? e.message : String(e) };
   }

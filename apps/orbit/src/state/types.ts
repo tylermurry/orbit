@@ -1,21 +1,21 @@
 import type { Diagnostic, EntityKind, OrbitContract, SemanticDiff } from '@orbit/contract';
 import type { FileStat, GitContext, GitRef, RunOutcome } from '../host/types';
 import type { JUnitCase } from '../lib/junit';
-import type { ProposalFile } from './proposal';
+import type { PlanFile } from './plan';
 
 export type ViewId = 'product' | 'engineering' | 'impact';
 
 /** `baseline` = merge-base of HEAD and the base branch (resolved on every comparison). */
-export type RevSel = { type: 'working' } | { type: 'unsaved' } | { type: 'ref'; name: string } | { type: 'sha'; sha: string } | { type: 'baseline'; branch: string } | { type: 'pinned'; sha: string } | { type: 'proposal'; revision: 'draft' | 'approved' };
+export type RevSel = { type: 'working' } | { type: 'unsaved' } | { type: 'ref'; name: string } | { type: 'sha'; sha: string } | { type: 'baseline'; branch: string } | { type: 'pinned'; sha: string } | { type: 'plan' };
 
 /**
  * The three product-owner views of a feature branch:
- * - proposal:    baseline -> proposal file   (what was proposed)
- * - vs-proposal: proposal file -> latest     (how the actual work differs from the proposal)
+ * - plan:    baseline -> plan file   (what was proposed)
+ * - plan-vs-actual: plan file -> latest     (how the actual work differs from the plan)
  * - actual:      baseline -> latest         (everything that changed on this branch)
  * "latest" is the working tree, or unsaved edits when there are any.
  */
-export type LifecyclePreset = 'proposal' | 'vs-proposal' | 'actual';
+export type LifecyclePreset = 'plan' | 'plan-vs-actual' | 'actual';
 export interface Comparison {
   base: RevSel;
   target: RevSel;
@@ -45,17 +45,16 @@ export interface SnapMeta {
   sel: RevSel;
   label: string;
   commit?: string;
-  proposal?: { revision: number; fileHash: string };
   exists: boolean;
   invalid: boolean;
   diagnostics: Diagnostic[];
 }
 
-export type ProposalChangeLabel = 'Planned' | 'Pending' | 'Different' | 'Outside proposal';
+export type PlanChangeLabel = 'Planned' | 'Pending' | 'Different' | 'Outside plan';
 
 export type CompareResult =
   | { status: 'loading' }
-  | { status: 'ready'; diff: SemanticDiff; base: SnapMeta; target: SnapMeta; proposalLabels?: Record<string, ProposalChangeLabel> }
+  | { status: 'ready'; diff: SemanticDiff; base: SnapMeta; target: SnapMeta; planLabels?: Record<string, PlanChangeLabel> }
   | { status: 'blocked'; base: SnapMeta; target: SnapMeta }
   | { status: 'error'; message: string };
 
@@ -105,10 +104,12 @@ export interface AppState {
   externalChange: null | { kind: 'modified' | 'deleted'; stat: FileStat };
   git: GitContext | null;
   refs: GitRef[];
-  proposalFile: ProposalFile | null;
+  planFile: PlanFile | null;
 
   // navigation
   view: ViewId;
+  /** The capabilities view last shown (the left pane of the wide split). */
+  explorerView: Exclude<ViewId, 'impact'>;
   rawMode: boolean;
   selected: Record<EntityKind, string | null>;
   focusBehaviorId: string | null;

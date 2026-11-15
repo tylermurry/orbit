@@ -9,15 +9,15 @@ that verify each behavior. Orbit gives you three perspectives on that file:
 |---|---|---|
 | **Product** | product owners | capability tree, behaviors, assurance rollups, focused relationship graph |
 | **Engineering** | engineering leads | the same for internal systems |
-| **Impact** | everyone | what changed (Proposal, Actual vs. Proposal, Actual), the *potential* downstream impact, and whether each changed behavior is tested and passing |
+| **Impact** | everyone | what changed (Plan, Plan vs. Actual, Actual), the *potential* downstream impact, and whether each changed behavior is tested and passing |
 
 **Validate** runs the product's whole test suite in the terminal's Validate tab with one command you confirm (default `npm run build`), then reads the JUnit XML
 results it writes. The latest matching result determines **Passing** or **Failing**. Missing or skipped results are
 **Unconfirmed**. Orbit re-reads the results file when it changes.
 
 Orbit edits the product contract directly with conflict-safe saves and compares local Git revisions without writing Git.
-The project’s `orbit.proposal.json` holds the pinned baseline, draft, and approved proposal. Orbit marks additions
-as **Planned** in the Proposal view. Actual comes from the saved product contract.
+`orbit.plan.json`, next to the contract (e.g. `orbit.json`), holds the pinned baseline and the planned contract. Orbit marks additions
+as **Planned** in the Plan view. There is no approval step. Actual comes from the saved product contract.
 
 **Tasky** (`apps/tasky`) is a small, real personal task manager in the same repo. It's the reference product: its
 contract is [`examples/tasky.orbit.json`](examples/tasky.orbit.json), and **Validate** runs its real
@@ -120,7 +120,7 @@ In short:
 
 - The top level has `schemaVersion: 1` plus `product`, `entities`, `relationships`, `tests`, and an optional
   `validation` (`command` + `results`) that says how to run the test suite.
-- Older contracts may contain `placeholder: true`. Orbit ignores these entries for Actual coverage. New planned tests belong in the proposal file.
+- Older contracts may contain `placeholder: true`. Orbit ignores these entries for Actual coverage. New planned tests belong in the plan file.
 - Entities are flat, with `parentId`. Each has `kind` `capability` or `system`, and parents must be the same kind.
 - Behaviors live inside their owning entity and have globally unique ids.
 - Relationships are `dependsOn`, `uses`, or `implementedBy`, read source → target.
@@ -150,7 +150,7 @@ to a contract test by a `[<test id>]` tag in the test's name when present (Tasky
 
 - **Passing / Failing:** the latest matching result.
 - **Unconfirmed:** no matching result or a skipped test.
-- **Planned:** an added test in the Proposal comparison.
+- **Planned:** an added test in the Plan comparison.
 - A behavior is **Passing** only when all its real tests pass, and **Failing** when any fails.
 
 Orbit asks you to approve the exact command before it first runs it, and again whenever it changes (the command comes
@@ -162,10 +162,10 @@ from the contract file, which could come from someone else's branch). The comman
 1. Open your project in Orbit and enable its MCP connection in Claude Code.
 2. Use **Install Skills** when creating a project or **… → Install/Update Skills** for an existing one. Orbit installs
    the two commands in the project's `.claude/skills/` folder. You can commit them to share the installed versions.
-3. Run `/orbit-plan` with the work description, spec, or issue. Review `orbit.proposal.json` in the **Proposal** view
-   and approve the revision you want to implement. The baseline stays fixed until you explicitly replace the proposal.
+3. Run `/orbit-plan` with the work description, spec, or issue. Review `orbit.plan.json` in the **Plan** view
+   and iterate on it with `/orbit-plan` until it's right. The baseline stays fixed until you explicitly replace the plan.
 4. Implement and commit your tickets. Run `/orbit-sync` to reconcile the saved Actual contract and mark the reviewed
-   commit with `orbit/sync/<branch>`. **Actual vs. Proposal** uses the approved revision. **Actual** uses the pinned baseline.
+   commit with `orbit/sync/<branch>`. **Plan vs. Actual** compares `orbit.plan.json` with Actual. **Actual** uses the pinned baseline.
 
 To require sync for PRs, copy [the workflow template](.github/workflow-templates/orbit-sync.yml) into the consuming
 repository's `.github/workflows/` directory and require its **Orbit Sync** check on the protected branch. Push the branch

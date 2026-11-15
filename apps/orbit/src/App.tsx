@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Flex } from '@radix-ui/themes';
 import { Banners } from './components/Shell';
 import { TerminalPanel, setTerminalOpen } from './components/TerminalPanel';
@@ -17,6 +17,8 @@ import { EmptyState } from './views/EmptyState';
 import { ExplorerView } from './views/ExplorerView';
 import { ImpactView } from './views/ImpactView';
 import { RawEditor } from './views/RawEditor';
+import { useSplit } from './lib/useSplit';
+import { WorkspaceSplit } from './components/WorkspaceSplit';
 import type { MemoryHost } from './host/memoryHost';
 
 export function App() {
@@ -26,6 +28,9 @@ export function App() {
   const host = useHost();
   const store = useStore();
   const dirty = isDirty(s);
+  const split = useSplit();
+  const splitRef = useRef(split);
+  splitRef.current = split;
 
   // navigation handlers that respect unapplied raw edits
   useEffect(() => {
@@ -42,7 +47,7 @@ export function App() {
           d({ type: 'setRawMode', on: false });
           d({ type: 'setView', view: v });
           if (v === 'impact') ctrl.ensureDefaultCompare();
-          else ctrl.setCompare(null); // diffs only exist on the Impact screen
+          else if (!splitRef.current) ctrl.setCompare(null); // diffs only exist on the Impact screen (always visible when split)
         }),
       requestRaw: (on: boolean) => {
         if (on) d({ type: 'setRawMode', on: true });
@@ -58,6 +63,11 @@ export function App() {
     void ctrl.initialize();
     return stop;
   }, [ctrl, host]);
+
+  // Side by side, the Impact pane is always visible, so it always needs a comparison.
+  useEffect(() => {
+    if (split) ctrl.ensureDefaultCompare();
+  }, [split, ctrl, s.git, s.refs, s.planFile]);
 
   // window title
   const productName = s.contract?.product.name;
@@ -117,9 +127,10 @@ export function App() {
   const body = useMemo(() => {
     if (!hasDoc) return <EmptyState />;
     if (s.rawMode || !s.contract) return <RawEditor />;
+    if (split) return <WorkspaceSplit left={<ExplorerView kind={s.explorerView === 'product' ? 'capability' : 'system'} />} right={<ImpactView />} />;
     if (s.view === 'impact') return <ImpactView />;
     return <ExplorerView kind={s.view === 'product' ? 'capability' : 'system'} />;
-  }, [hasDoc, s.rawMode, s.contract, s.view]);
+  }, [hasDoc, s.rawMode, s.contract, s.view, s.explorerView, split]);
 
   return (
     <ProjectSkills>

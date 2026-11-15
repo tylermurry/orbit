@@ -318,10 +318,10 @@ fn merge_base_of_feature_and_main() {
 }
 
 #[test]
-fn implementation_status_ignores_only_the_proposal_file() {
+fn implementation_status_ignores_only_the_plan_file() {
     let (r, f, _) = populated();
     assert_eq!(git_context(s(&f)).implementation_dirty, Some(false));
-    fs::write(r.root.join("orbit.proposal.json"), "{}").unwrap();
+    fs::write(f.parent().unwrap().join("orbit.plan.json"), "{}").unwrap();
     assert_eq!(git_context(s(&f)).implementation_dirty, Some(false));
     fs::write(r.root.join("new-code.rs"), "fn main() {}").unwrap();
     assert_eq!(git_context(s(&f)).implementation_dirty, Some(true));

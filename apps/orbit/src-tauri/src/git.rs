@@ -248,9 +248,15 @@ pub fn git_context(path: &str) -> GitContext {
             .unwrap_or(false),
     );
 
+    // The plan (orbit.plan.json, next to the contract) is not implementation work.
+    let plan_rel = match rel_path.rfind('/') {
+        Some(i) => format!("{}/orbit.plan.json", &rel_path[..i]),
+        None => "orbit.plan.json".to_string(),
+    };
+    let exclude_plan = format!(":(exclude,top,literal){plan_rel}");
     ctx.implementation_dirty = run_git(
         &root,
-        &["status", "--porcelain", "-z", "--untracked-files=all", "--", ".", ":(exclude,top)orbit.proposal.json"],
+        &["status", "--porcelain", "-z", "--untracked-files=all", "--", ".", &exclude_plan],
         None,
     ).ok().map(|out| !out.text().is_empty());
 

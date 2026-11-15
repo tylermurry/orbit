@@ -96,7 +96,7 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 | `delete_behavior` | write | Delete a behavior. |
 | `map_tests` | write | Map existing tests to a behavior. |
 | `unmap_tests` | write | Remove test mappings from a behavior. |
-| `create_test` | write | Define a test (`name`, `location`). Add it to the proposal to mark it as planned. |
+| `create_test` | write | Define a test (`name`, `location`). Add it to the plan to mark it as planned. |
 | `update_test` | write | Change a test's name/location, or clear a legacy placeholder once implemented (`placeholder: false`). |
 | `delete_test` | write | Delete a test and unmap it (like the UI). |
 | `set_validation` | write | Set the command that runs the whole test suite and the JUnit XML results file it writes. |
@@ -117,11 +117,10 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 | `get_change` | read | Field-level before/after for one change key of the active comparison. |
 | `get_impact` | read | Potential impact for the active comparison or for arbitrary `entityIds` ("what would this affect?"). |
 | `clear_comparison` | navigate | Remove the comparison. |
-| `get_proposal` | read | Read the project’s draft and approved proposal snapshots. |
-| `create_proposal` | write | Apply structured operations to the contract from a pinned Git baseline and create `orbit.proposal.json`. |
-| `revise_proposal` | write | Apply operations to an expected draft revision. Preserve the approved snapshot. |
-| `approve_proposal` | write | Pin the exact displayed draft revision after the owner approves it. |
-| `view_changes` | navigate | Open Proposal, Actual vs. Proposal, or Actual. |
+| `get_plan` | read | Read `orbit.plan.json` (next to the contract: pinned baseline and planned contract) and its `fileHash`. |
+| `create_plan` | write | Apply structured operations to the contract from a pinned Git baseline and create `orbit.plan.json`. |
+| `revise_plan` | write | Apply operations to the planned contract, given the `fileHash` you last read or wrote. Keeps the baseline. |
+| `view_changes` | navigate | Open Plan, Plan vs. Actual, or Actual. |
 
 ### Conventions
 
@@ -133,7 +132,7 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
   (unknown tool) are JSON-RPC `-32602`.
 - Results are JSON in both `content[0].text` and `structuredContent`.
 - Test status comes from the latest JUnit results. A missing or skipped result is unconfirmed. Legacy placeholders
-  are ignored for Actual coverage. The Proposal comparison labels additions as Planned.
+  are ignored for Actual coverage. The Plan comparison labels additions as Planned.
 - Results are matched to tests by a `[<test id>]` tag in the runner's test name when present, else by `location`
   (`<file> › <describe> › <test title>`, as the runner reports it).
 - Potential impact is inferred from relationships (changed targets affect their sources); it is never observed breakage.
@@ -159,15 +158,15 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 command once (Validate) -> `run_tests` (or run the command in a terminal; Orbit reads the results file
 whenever it changes) -> `get_assurance` (counts) / `list_tests { status: "failing" }`.
 
-**Propose a feature, then track it against the proposal**
+**Plan a feature, then track it against the plan**
 
-1. On a feature branch, run `/orbit-plan` with the supplied scope. The skill calls `create_proposal` or
-   `revise_proposal`, then `view_changes { view: "proposal", show: true }`.
-2. After the owner approves the displayed revision, call `approve_proposal { revision: <displayed revision>, fileHash: <proposalFileHash> }`.
-3. After implementation, run `/orbit-sync`. Use `view_changes { view: "vs-proposal" }` to compare the approved revision with Actual.
-   For custom comparisons, `compare` accepts `baseline`, `proposal`, and `approved`.
+1. On a feature branch, run `/orbit-plan` with the supplied scope. The skill calls `create_plan` or
+   `revise_plan`, then `view_changes { view: "plan", show: true }`. No approval is needed.
+2. Iterate with `revise_plan { fileHash, operations }` until the owner is happy with the Plan view.
+3. After implementation, run `/orbit-sync`. Use `view_changes { view: "plan-vs-actual" }` to compare the plan with Actual.
+   For custom comparisons, `compare` accepts `baseline` and `plan`.
 
-**Review a proposal before merging**
+**Review a feature branch before merging**
 
 `list_git_refs` -> `compare { base: "main", target: "proposal", show: true }` -> `get_change { key }` for each guarantee
 change -> `get_impact` for the potentially affected capabilities.

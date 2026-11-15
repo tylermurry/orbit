@@ -273,32 +273,33 @@ test('a renamed behavior shows its text as a diff while comparing', async ({ pag
   await expect(diffed).toContainText('rename this behavior');
 });
 
-test.describe('file-backed product-owner change views', () => {
-  const proposalButton = (page: Page, name: string) => page.getByRole('radiogroup', { name: 'Impact' }).getByRole('radio', { name, exact: true });
+test.describe('file-backed plan views', () => {
+  const viewButton = (page: Page, name: string) => page.getByRole('radiogroup', { name: 'Impact' }).getByRole('radio', { name, exact: true });
   const call = (page: Page, name: string, args: Record<string, unknown>) => page.evaluate(([name, args]) => window.__orbitMcp!.callTool(name, args), [name, args] as const);
-  const file = `${REPO}/orbit.proposal.json`;
+  const file = `${REPO}/orbit.plan.json`;
 
-  test('reviews draft revisions and compares the approved revision with saved Actual', async ({ page }) => {
+  test('reviews the plan and compares it with saved Actual without any approval step', async ({ page }) => {
     await launch(page, { git: true, text: DEMO.base });
-    await expect(proposalButton(page, 'Proposal')).toHaveAttribute('aria-disabled', 'true');
-    expect((await call(page, 'create_proposal', { operations: [{ tool: 'create_test', args: { id: 'test.proposed', name: 'A planned test', location: 'tests/proposed.ts' } }] })).isError).toBeUndefined();
-    await proposalButton(page, 'Proposal').click();
-    await expect(title(page)).toHaveText('Proposal');
-    await expect(row(page, 'test:test.proposed').getByRole('img', { name: 'Planned' })).toBeVisible();
-    await expect(proposalButton(page, 'Actual vs. Proposal')).toHaveAttribute('aria-disabled', 'true');
-    const review = (await call(page, 'view_changes', { view: 'proposal' })).structuredContent!;
-    expect((await call(page, 'approve_proposal', { revision: 1, fileHash: review.proposalFileHash })).isError).toBeUndefined();
-    expect((await call(page, 'revise_proposal', { revision: 1, operations: [{ tool: 'update_product', args: { name: 'Draft only' } }] })).isError).toBeUndefined();
-    await proposalButton(page, 'Actual vs. Proposal').click();
-    await expect(title(page)).toHaveText('Actual vs. Proposal');
-    await expect(row(page, 'test:test.proposed').getByRole('img', { name: 'Pending' })).toBeVisible();
-    await expect(page.getByTestId('change-row')).toHaveCount(1);
+    await expect(viewButton(page, 'Plan')).toHaveAttribute('aria-disabled', 'true');
+    const made = await call(page, 'create_plan', { operations: [{ tool: 'update_entity', args: { id: 'cap.task-management', name: 'Proposed name' } }] });
+    expect(made.isError).toBeUndefined();
+    await viewButton(page, 'Plan').click();
+    await expect(viewButton(page, 'Plan')).toHaveAttribute('aria-checked', 'true');
+    await expect(row(page, 'entity:cap.task-management').getByRole('img', { name: 'Modified' })).toBeVisible();
+    await expect(viewButton(page, 'Plan vs. Actual')).not.toHaveAttribute('aria-disabled', 'true');
+    const revised = await call(page, 'revise_plan', { fileHash: made.structuredContent!.fileHash, operations: [{ tool: 'update_product', args: { name: 'Proposed product' } }] });
+    expect(revised.isError).toBeUndefined();
+    await viewButton(page, 'Plan vs. Actual').click();
+    await expect(viewButton(page, 'Plan vs. Actual')).toHaveAttribute('aria-checked', 'true');
+    await expect(row(page, 'entity:cap.task-management').getByRole('img', { name: 'Pending' })).toBeVisible();
     expect(await fileText(page, FILE)).toBe(DEMO.base);
-    expect(JSON.parse((await fileText(page, file))!).approved.revision).toBe(1);
+    const saved = JSON.parse((await fileText(page, file))!);
+    expect(saved.contract.product.name).toBe('Proposed product');
+    expect(saved).not.toHaveProperty('approved');
 
     await page.evaluate((name) => window.__orbitMemoryHost!.externalDelete(name), file);
-    await expect(proposalButton(page, 'Proposal')).toHaveAttribute('aria-disabled', 'true');
-    await proposalButton(page, 'Actual').click();
+    await expect(viewButton(page, 'Plan')).toHaveAttribute('aria-disabled', 'true');
+    await viewButton(page, 'Actual').click();
     await expect(page.getByTestId('no-changes')).toBeVisible();
   });
 });

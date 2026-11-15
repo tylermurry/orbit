@@ -2,7 +2,7 @@ import { ancestorsOf, behaviorIndex, potentialImpact, testAssurance } from '@orb
 import type { Change, ImpactPath, OrbitContract, SemanticDiff, TestAssurance } from '@orbit/contract';
 import { shortSha } from '../../lib/format';
 import { REL_INFO } from '../../lib/model';
-import { appliesTo } from '../../state/proposal';
+import { appliesTo } from '../../state/plan';
 import { PRESET_LABELS, baseBranchFor, revKey, revLabel } from '../../state/compare';
 import { currentText } from '../../state/store';
 import type { CompareResult, LifecyclePreset, RevSel } from '../../state/types';
@@ -33,16 +33,12 @@ function parseRev(ctx: ToolContext, raw: string): RevSel {
   if (v === 'working') return { type: 'working' };
   if (v === 'unsaved') return { type: 'unsaved' };
   if (v === 'baseline') {
-    if (appliesTo(s.proposalFile?.proposal, s.git)) return { type: 'pinned', sha: s.proposalFile.proposal.baseline };
+    if (appliesTo(s.planFile?.plan, s.git)) return { type: 'pinned', sha: s.planFile.plan.baseline };
     const branch = baseBranchFor(s.refs);
     if (!branch) throw new ToolError("There is no 'main' or 'master' branch to use as the baseline.");
     return { type: 'baseline', branch };
   }
-  if (v === 'proposal' && appliesTo(s.proposalFile?.proposal, s.git)) return { type: 'proposal', revision: 'draft' };
-  if (v === 'approved') {
-    if (appliesTo(s.proposalFile?.proposal, s.git) && s.proposalFile.proposal.approved) return { type: 'proposal', revision: 'approved' };
-    throw new ToolError('Approve a proposal revision first.');
-  }
+  if (v === 'plan' && appliesTo(s.planFile?.plan, s.git)) return { type: 'plan' };
   const ref = s.refs.find((r) => r.name === v) ?? (v.toUpperCase() === 'HEAD' ? s.refs.find((r) => r.kind === 'head') : undefined);
   if (ref) return { type: 'ref', name: ref.kind === 'head' ? 'HEAD' : ref.name };
   if (/^[0-9a-f]{4,40}$/i.test(v)) return { type: 'sha', sha: v.toLowerCase() };
@@ -91,7 +87,6 @@ function describeCompare(ctx: ToolContext, r: Extract<CompareResult, { status: '
   const kindOf = (id: string) => [...(d.target?.entities ?? []), ...(d.base?.entities ?? [])].find((e) => e.id === id)?.kind ?? 'unknown';
   return {
     comparison: { base: s.compare ? revKey(s.compare.base) : null, target: s.compare ? revKey(s.compare.target) : null, label: s.compare ? `${revLabel(s.compare.base)} → ${revLabel(s.compare.target)}` : null, baseCommit: r.base.commit ? shortSha(r.base.commit) : undefined, targetCommit: r.target.commit ? shortSha(r.target.commit) : undefined },
-    ...(r.target.proposal ? { proposalRevision: r.target.proposal.revision, proposalFileHash: r.target.proposal.fileHash } : {}),
     contractStatus: d.contractStatus,
     totalChanges: d.changes.length,
     guaranteeChanges: d.changes.filter((c) => c.group === 'guarantee').length,
@@ -100,7 +95,7 @@ function describeCompare(ctx: ToolContext, r: Extract<CompareResult, { status: '
     directlyChanged: d.directlyChangedEntityIds.map((id) => ({ id, name: nm(id), kind: kindOf(id), status: d.entityStates[id]?.status, reasons: d.entityStates[id]?.reasons ?? [] })),
     potentiallyAffected: impactRows(d.potentiallyAffected, nm, kindOf),
     potentialNote: 'Potential impact is INFERRED from relationships (dependsOn/uses/implementedBy flow from changed targets to their sources); it is not observed breakage.',
-    changes: d.changes.map((change) => ({ ...changeRow(change), proposalStatus: r.proposalLabels?.[change.key] })),
+    changes: d.changes.map((change) => ({ ...changeRow(change), planStatus: r.planLabels?.[change.key] })),
   };
 }
 
@@ -316,7 +311,7 @@ export function navTools(): ToolDef[] {
       name: 'compare',
       title: 'Compare two revisions semantically',
       description:
-        "Set the app's comparison (trees highlight added/modified/removed/potentially-affected entities) and return the semantic diff. base/target each: 'working' (saved file on disk), 'unsaved' (in-app edits), 'baseline' (pinned proposal baseline, or branch merge-base), 'proposal' (draft), 'approved' (approved proposal), 'HEAD', a branch or tag name, a commit sha, or a git revision expression such as 'main~1' or 'HEAD^'. Needs the file to be in a git repository. Returns totals per category, directly changed entities, potentially affected entities (with the relationship path), and the change list (use get_change for field-level before/after). Direct changes and inferred potential impact are always reported separately. show: true also switches the UI to the Impact view.",
+        "Set the app's comparison (trees highlight added/modified/removed/potentially-affected entities) and return the semantic diff. base/target each: 'working' (saved file on disk), 'unsaved' (in-app edits), 'baseline' (pinned plan baseline, or branch merge-base), 'plan' (orbit.plan.json), 'HEAD', a branch or tag name, a commit sha, or a git revision expression such as 'main~1' or 'HEAD^'. Needs the file to be in a git repository. Returns totals per category, directly changed entities, potentially affected entities (with the relationship path), and the change list (use get_change for field-level before/after). Direct changes and inferred potential impact are always reported separately. show: true also switches the UI to the Impact view.",
       inputSchema: S.obj({ base: S.nonEmpty("Older side, e.g. 'HEAD' or 'main'."), target: S.nonEmpty("Newer side, e.g. 'unsaved' or 'working'."), show: S.bool('Also open the Impact view.') }, ['base', 'target']),
       annotations: ann(false),
     },
@@ -350,8 +345,8 @@ export function navTools(): ToolDef[] {
       name: 'view_changes',
       title: 'Show a product-owner change view',
       description:
-        "Open a lifecycle view: proposal compares the pinned baseline to the draft, vs-proposal compares the approved snapshot to the saved Actual, and actual compares the baseline to saved Actual. show: true opens Impact.",
-      inputSchema: S.obj({ view: S.oneOf(['proposal', 'vs-proposal', 'actual'], 'Which view.'), show: S.bool('Also open the Impact view.') }, ['view']),
+        "Open a lifecycle view: plan compares the pinned baseline to the plan, plan-vs-actual compares the plan to the saved Actual, and actual compares the baseline to saved Actual. show: true opens Impact.",
+      inputSchema: S.obj({ view: S.oneOf(['plan', 'plan-vs-actual', 'actual'], 'Which view.'), show: S.bool('Also open the Impact view.') }, ['view']),
       annotations: ann(false),
     },
     async run(a, ctx) {
@@ -359,7 +354,7 @@ export function navTools(): ToolDef[] {
       needGit(ctx);
       const preset = a.view as LifecyclePreset;
       const why = ctx.ctrl.applyPreset(preset, { quiet: true });
-      if (why) throw new ToolError(why, { suggestions: preset === 'actual' ? ["compare({ base: '<branch>', target: 'working' })"] : ['Use /orbit-plan to create or approve a proposal.'] });
+      if (why) throw new ToolError(why, { suggestions: preset === 'actual' ? ["compare({ base: '<branch>', target: 'working' })"] : ['Use /orbit-plan to create a plan.'] });
       ctx.store.dispatch({ type: 'setCompareResult', result: { status: 'loading' } });
       await ctx.ctrl.recomputeCompare();
       const r = await awaitCompare(ctx);

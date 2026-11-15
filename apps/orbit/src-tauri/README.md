@@ -59,7 +59,7 @@ Temp files are removed on every failure path. No other file is ever touched.
 ## Read-only Git guarantee
 
 Git runs with `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, and fsmonitor disabled. Contract lookup uses
-literal pathspecs. The read-only implementation status check excludes the project-root proposal file.
+literal pathspecs. The read-only implementation status check excludes the plan file (`orbit.plan.json` next to the contract).
 `workingTreeDiffers` compares the contract bytes with `git show HEAD:<path>`.
 `tests/git.rs` (AC-13) snapshots every file under `.git` and the worktree (bytes and mtimes) before/after exercising every function
 on dirty, detached, packed-refs and unborn repos, and a control test proves the harness detects `git status` rewriting the index.

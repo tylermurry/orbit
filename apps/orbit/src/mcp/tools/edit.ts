@@ -111,7 +111,7 @@ function operationSpecs(operations: unknown): Spec[] {
   });
 }
 
-export function editProposalContract(ctx: ToolContext, before: OrbitContract, operations: unknown): OrbitContract {
+export function editPlanContract(ctx: ToolContext, before: OrbitContract, operations: unknown): OrbitContract {
   return applyEditSpecs(ctx, before, operationSpecs(operations), { batch: true }).contract;
 }
 

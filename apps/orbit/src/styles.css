@@ -232,7 +232,9 @@ mark.hl { background: var(--yellow-a5); color: inherit; border-radius: 2px; padd
 /* impact */
 .impact { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
 .impact-header { flex: none; padding: 14px 20px 12px; border-bottom: 1px solid var(--gray-a5); background: var(--color-panel-solid); }
-.impact-main { padding: 14px 20px 20px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.impact-main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.impact-main > .rt-CalloutRoot { margin: 12px 20px 0; }
+.impact-main > .empty-inline { margin: 20px; }
 .impact-pad { padding: 20px; max-width: 760px; }
 .impact-empty { flex: 1; padding: 40px; text-align: center; }
 .bignums { display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; margin-bottom: 14px; }
@@ -250,10 +252,9 @@ mark.hl { background: var(--yellow-a5); color: inherit; border-radius: 2px; padd
 .total-label { font-size: 12px; color: var(--gray-11); font-weight: 500; }
 .total-nums { display: flex; gap: 8px; font-weight: 650; font-size: 13px; font-variant-numeric: tabular-nums; }
 .n-added { color: var(--green-11); } .n-modified { color: var(--amber-11); } .n-removed { color: var(--red-11); }
-.impact-split { display: flex; gap: 16px; flex: 1; min-height: 360px; }
-.impact-left { width: 42%; min-width: 340px; display: flex; flex-direction: column; min-height: 0; }
-.impact-right { flex: 1; min-width: 0; border: 1px solid var(--gray-a5); border-radius: 10px; padding: 16px 18px; overflow: auto; background: var(--color-panel-solid); }
-.impact-scroll { flex: 1; overflow: auto; min-height: 0; border: 1px solid var(--gray-a5); border-radius: 10px; background: var(--color-panel-solid); }
+.impact-split { flex: 1; min-height: 0; }
+.impact-left { flex: none; max-width: calc(100% - 280px); min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.impact-scroll { flex: 1; overflow: auto; min-height: 0; }
 .chips { display: flex; gap: 4px; flex-wrap: wrap; }
 .fchip { all: unset; cursor: pointer; font-size: 12px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--gray-a6); color: var(--gray-11); }
 .fchip.active { background: var(--accent-a4); border-color: var(--accent-8); color: var(--accent-12); font-weight: 600; }
@@ -390,11 +391,27 @@ mark.hl { background: var(--yellow-a5); color: inherit; border-radius: 2px; padd
 .link-item:focus-visible { outline: 2px solid var(--accent-9); }
 .link-item-name { font-size: 15px; font-weight: 500; }
 .link-item-meta { font-size: 13px; color: var(--gray-11); }
-.impact-toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+/* Flush bar over the Impact list and details (padding-left + pane border lines up with the top bar's Impact switcher when split). */
+.impact-toolbar { flex: none; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 8px; border-bottom: 1px solid var(--gray-a5); background: var(--color-panel-solid); }
 .impact-tabs { flex: none; }
-.impact-toolbar-only { flex: none; padding-bottom: 0; }
 .change-list.flat { list-style: none; margin: 0; padding: 0; }
 .entity-crumbs { color: var(--gray-10); }
 .entity-reasons { margin: 8px 0 0; padding-left: 18px; color: var(--gray-11); }
 .nested-change { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--gray-a4); }
 .nested-change .change-title { font-size: 15px; }
+/* Wide windows: Capabilities | Impact side by side (50/50, so the top bar can align its halves to the panes). */
+.workspace-split { display: grid; grid-template-columns: var(--orbit-split, 50%) 1fr; min-height: 0; position: relative; }
+.workspace-splitter { position: absolute; top: 0; bottom: 0; left: calc(var(--orbit-split, 50%) - 3px); width: 7px; cursor: col-resize; z-index: 3; }
+.workspace-splitter:hover, .workspace-splitter:focus-visible { background: linear-gradient(var(--accent-a8), var(--accent-a8)) center / 3px 100% no-repeat; outline: none; }
+.workspace-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.workspace-pane > * { flex: 1; min-height: 0; }
+.workspace-pane.impact-pane { border-left: 1px solid var(--gray-a5); }
+.topbar.split { display: grid; grid-template-columns: var(--orbit-split, 50%) 1fr; gap: 0; padding: 0; }
+.topbar.split .topbar-half:first-child { padding-left: 16px; }
+.topbar-half { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.topbar-half.right { padding-left: 9px; padding-right: 16px; } /* = pane border + .impact-toolbar side padding */
+.topbar-half .topbar-left { flex: 0 1 auto; }
+.topbar-half .topbar-right { flex: 1 1 0; }
+/* Details inside the Impact details pane: an entity's own details view supplies no extra padding. */
+.detail-inner .detail-inner { padding: 0; max-width: none; margin: 0; }
+.impact-entity-title { margin-top: 12px; margin-bottom: 8px; }

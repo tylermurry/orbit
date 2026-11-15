@@ -54,7 +54,7 @@ export function useEdit(): (fn: (c: OrbitContract) => OrbitContract) => void {
   return useMemo(() => (fn) => d({ type: 'edit', fn }), [d]);
 }
 
-/** Test results and the proposal time that assurance is judged against. */
+/** Test results and the plan time that assurance is judged against. */
 export function useAssuranceCtx(): AssuranceContext {
   return useApp(assuranceContext);
 }

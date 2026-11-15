@@ -70,7 +70,7 @@ export function testStatusReason(status: TestStatus, result: TestResult | undefi
     case 'unconfirmed':
       if (!result) return 'No result yet: this test was not found in the latest test results. Run Validate.';
       if (result.status === 'skipped') return `Skipped in the last test run (${when}).`;
-      return since ? `The last result (${when}) is older than the proposal. Run Validate to confirm it.` : 'No current result.';
+      return since ? `The last result (${when}) is older than the plan. Run Validate to confirm it.` : 'No current result.';
   }
 }
 
@@ -86,7 +86,7 @@ export function TestStatusBadge({ status, reason }: { status: TestStatus; reason
   return reason ? <Tooltip content={reason}>{badge}</Tooltip> : badge;
 }
 
-/** Marks a placeholder test: planned by a proposal, not implemented yet. */
+/** Marks a placeholder test: planned by a plan, not implemented yet. */
 export function PlannedBadge() {
   return <TestStatusBadge status="planned" reason={testStatusReason('planned', undefined, null)} />;
 }
@@ -372,6 +372,20 @@ export function InlineText({ value, onCommit, label, placeholder, disabled, sing
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
   }, [draft]);
+  // Re-fit when the width changes (pane resized, split layout settling): fewer or more lines wrap.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let width = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const commit = () => {
     if (cancelled.current) {
       cancelled.current = false;
