@@ -40,7 +40,8 @@ test.describe('AC-06 concurrent change safeguard', () => {
     await expect(banner).toHaveCount(0);
     await expect(page.getByLabel('Entity name')).toHaveValue('Task Management');
     await expect(page.getByTestId('save-button')).toHaveAttribute('data-dirty', 'false');
-    await page.getByRole('button', { name: /Product settings/ }).click();
+    await page.getByRole('button', { name: 'Switch project (Tasky)' }).click();
+    await page.getByRole('menuitem', { name: 'Product Settings' }).click();
     await expect(page.getByLabel('Product summary')).toHaveValue('Edited by another program');
   });
 
@@ -52,7 +53,7 @@ test.describe('AC-06 concurrent change safeguard', () => {
     await externalWrite(page, FILE, ext);
     await page.keyboard.press('Control+s');
     await page.getByRole('alertdialog').getByRole('button', { name: 'Save As…' }).click();
-    await expect(page.getByTestId('file-name')).toContainText('mine.orbit.json');
+    await expect(page).toHaveTitle(/mine\.orbit\.json/);
     expect(await fileText(page, FILE)).toBe(ext);
     const mine = parseContract((await fileText(page, '/work/tasky/mine.orbit.json'))!).contract!;
     expect(mine.entities.find((e) => e.id === 'cap.task-management')!.name).toBe('Mine');
@@ -62,7 +63,8 @@ test.describe('AC-06 concurrent change safeguard', () => {
     await launch(page, { path: FILE });
     await externalWrite(page, FILE, ext);
     await expect(page.getByTestId('toast').filter({ hasText: 'Reloaded — file changed on disk' })).toBeVisible();
-    await page.getByRole('button', { name: /Product settings/ }).click();
+    await page.getByRole('button', { name: 'Switch project (Tasky)' }).click();
+    await page.getByRole('menuitem', { name: 'Product Settings' }).click();
     await expect(page.getByLabel('Product summary')).toHaveValue('Edited by another program');
   });
 

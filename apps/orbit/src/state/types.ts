@@ -1,6 +1,7 @@
 import type { Diagnostic, EntityKind, OrbitContract, SemanticDiff } from '@orbit/contract';
 import type { FileStat, GitContext, GitRef, RunOutcome } from '../host/types';
 import type { JUnitCase } from '../lib/junit';
+import type { WalkthroughReport } from '../lib/walkthrough';
 import type { PlanFile } from './plan';
 
 export type ViewId = 'product' | 'engineering' | 'impact';
@@ -126,6 +127,7 @@ export interface AppState {
 
   // validation
   resultsFile: ResultsFile | null;
+  walkthroughs: WalkthroughReport | null;
   run: RunState | null;
   lastRun: (RunOutcome & { command: string; finishedAt: string }) | null;
   /** Which terminal tab is showing. */

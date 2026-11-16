@@ -21,7 +21,7 @@ rmSync(e2e, { force: true });
 const run = (cmd, args, env = {}) => spawnSync(cmd, args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32', env: { ...process.env, ...env } }).status ?? 1;
 
 const unitStatus = run('npx', ['vitest', 'run', '--reporter=default', '--reporter=junit', `--outputFile.junit=${unit}`]);
-const e2eStatus = run('npx', ['playwright', 'test', '--reporter=list,junit'], { PLAYWRIGHT_JUNIT_OUTPUT_FILE: e2e });
+const e2eStatus = run('npx', ['playwright', 'test'], { PLAYWRIGHT_JUNIT_OUTPUT_FILE: e2e });
 
 // Combine the suites of both reports under one <testsuites> root.
 const suites = [unit, e2e]

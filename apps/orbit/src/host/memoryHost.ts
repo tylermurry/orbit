@@ -128,6 +128,23 @@ export function createMemoryHost(seed: MemorySeed): MemoryHost {
       if (!f) throw new Error(`File not found: ${path}`);
       return { path, text: f.text, sha256: await sha256Hex(f.text), modifiedMs: f.modifiedMs };
     },
+    async readPlaywrightBlob(path) {
+      const file = files.get(path);
+      if (!file) throw new Error(`File not found: ${path}`);
+      return Uint8Array.from(atob(file.text), (character) => character.charCodeAt(0)).buffer;
+    },
+    async listPlaywrightBlobs(dir) {
+      const prefix = `${dir}/`;
+      return [...files].flatMap(([path, file]) => path.startsWith(prefix) && /^[^/]+\.zip$/i.test(path.slice(prefix.length))
+        ? [{ path, modifiedMs: file.modifiedMs, size: file.text.length }]
+        : []);
+    },
+    async readWalkthroughImage(manifest, image) {
+      const folder = manifest.slice(0, manifest.lastIndexOf('/'));
+      const file = files.get(`${folder}/${image}`);
+      if (!file) throw new Error('Screenshot file is unavailable.');
+      return Uint8Array.from(atob(file.text), (character) => character.charCodeAt(0)).buffer;
+    },
     async statFile(path): Promise<FileStat> {
       const f = files.get(path);
       if (!f) return { path, exists: false };

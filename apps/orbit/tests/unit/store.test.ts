@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseContract } from '@orbit/contract';
 import { assuranceContext, canUndo, currentText, initialState, isDirty, matchedResults, reducer, structuredDirty } from '../../src/state/store';
 import { FILE, INVALID, SHA1, TASKY, setup } from './util';
@@ -254,13 +254,16 @@ describe('external changes', () => {
 
 describe('create new', () => {
   it('writes a schema-valid empty contract and opens it', async () => {
-    const { store, ctrl, host } = setup({ savePicks: ['/work/new/shop.orbit.json'] });
+    const path = '/work/new/orbit.json';
+    const { store, ctrl, host } = setup({ savePicks: [path] });
+    const pickSaveFile = vi.spyOn(host, 'pickSaveFile');
     const ok = await ctrl.createNew({ id: 'shop', name: 'Shop', summary: 'A shop' });
     expect(ok).toBe(true);
-    const parsed = parseContract(host.getFile('/work/new/shop.orbit.json')!);
+    expect(pickSaveFile).toHaveBeenCalledWith('orbit.json');
+    const parsed = parseContract(host.getFile(path)!);
     expect(parsed.ok).toBe(true);
     expect(parsed.contract).toMatchObject({ schemaVersion: 1, product: { id: 'shop', name: 'Shop' }, entities: [], relationships: [], tests: [] });
-    expect(store.getState().filePath).toBe('/work/new/shop.orbit.json');
+    expect(store.getState().filePath).toBe(path);
   });
 
   it('refuses to overwrite an existing file', async () => {

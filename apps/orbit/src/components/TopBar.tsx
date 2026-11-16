@@ -1,7 +1,5 @@
-import { Button, DropdownMenu, IconButton, Text, Tooltip } from '@radix-ui/themes';
-import { DotsHorizontalIcon, FileTextIcon } from '@radix-ui/react-icons';
-import { fileName } from '../lib/format';
-import { useApp, useAppState, useCtrl, useDispatch } from '../state/context';
+import { Button, IconButton, Text, Tooltip } from '@radix-ui/themes';
+import { useAppState, useCtrl, useDispatch } from '../state/context';
 import { activePreset, presetComparison } from '../state/compare';
 import { isDirty } from '../state/store';
 import type { AppState, LifecyclePreset, ViewId } from '../state/types';
@@ -10,6 +8,8 @@ import { TerminalIcon, setTerminalOpen } from './TerminalPanel';
 import { useProjectSkills } from './ProjectSkills';
 import { ValidateButton } from './Validation';
 import { useSplit } from '../lib/useSplit';
+import { FileMenu } from './FileMenu';
+import { ProjectSwitcher } from './ProjectSwitcher';
 
 export function OrbitMark({ size = 22 }: { size?: number }) {
   return (
@@ -22,19 +22,13 @@ export function OrbitMark({ size = 22 }: { size?: number }) {
   );
 }
 
-export const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
-export const MOD = isMac ? '⌘' : 'Ctrl+';
-
 export function TopBar() {
   const s = useAppState();
   const d = useDispatch();
-  const ctrl = useCtrl();
   const dirty = isDirty(s);
   const hasFile = !!s.filePath && (!!s.contract || s.loadedInvalid);
-  const recent = useApp((x) => x.recent);
   const terminalOpen = s.terminalOpen;
   const skills = useProjectSkills();
-  const productName = s.contract?.product.name ?? (hasFile ? 'Invalid contract' : 'Orbit');
   const split = useSplit();
 
   const left = (
@@ -42,28 +36,9 @@ export function TopBar() {
       <span className="brand">
         <OrbitMark />
       </span>
+      <FileMenu />
       <div className="identity">
-        {hasFile ? (
-          <Tooltip content="Product settings">
-            <button type="button" className="product-name" onClick={() => d({ type: 'ui', patch: { productDialog: true } })} aria-label={`Product settings for ${productName}`} disabled={!s.contract}>
-              {productName}
-            </button>
-          </Tooltip>
-        ) : (
-          <span className="product-name static">Orbit</span>
-        )}
-        {hasFile && (
-          <Tooltip content={s.filePath}>
-            <span className="file-name" data-testid="file-name">
-              {dirty && (
-                <span className="dirty-dot" role="img" aria-label="Unsaved changes" title="Unsaved changes">
-                  •
-                </span>
-              )}
-              {fileName(s.filePath)}
-            </span>
-          </Tooltip>
-        )}
+        <ProjectSwitcher />
       </div>
     </div>
   );
@@ -105,66 +80,6 @@ export function TopBar() {
           {skills.primary}
         </Button>
       )}
-      {
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger>
-            <IconButton variant="surface" color="gray" size="2" aria-label="More actions">
-              <DotsHorizontalIcon />
-            </IconButton>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Content align="end">
-            <DropdownMenu.Item onSelect={() => void ctrl.openDialog()}>
-              Open…
-              <div className="rt-DropdownMenuShortcut">{MOD}O</div>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => ctrl.guard('Creating a new contract', () => d({ type: 'ui', patch: { newDialog: true } }))}>New…</DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => void ctrl.save()} disabled={!hasFile || !dirty}>
-              Save
-              <div className="rt-DropdownMenuShortcut">{MOD}S</div>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => void ctrl.saveAs()} disabled={!hasFile}>
-              Save As…
-              <div className="rt-DropdownMenuShortcut">⇧{MOD}S</div>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item
-              disabled={!hasFile}
-              onSelect={() => {
-                if (dirty) d({ type: 'prompt', prompt: { type: 'reload' } });
-                else void ctrl.reloadFromDisk();
-              }}
-            >
-              Reload from disk
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => d({ type: 'ui', patch: { productDialog: true } })} disabled={!s.contract}>
-              Product settings…
-            </DropdownMenu.Item>
-            {skills?.available && (
-              <DropdownMenu.Item disabled={!hasFile} onSelect={skills.openManager}>
-                Install/Update Skills
-              </DropdownMenu.Item>
-            )}
-            <DropdownMenu.Sub>
-              <DropdownMenu.SubTrigger>Recent files</DropdownMenu.SubTrigger>
-              <DropdownMenu.SubContent>
-                {recent.length === 0 && <DropdownMenu.Item disabled>No recent files</DropdownMenu.Item>}
-                {recent.map((p) => (
-                  <DropdownMenu.Item key={p} onSelect={() => ctrl.guard('Opening another file', () => void ctrl.openPath(p))}>
-                    <FileTextIcon /> {fileName(p)}
-                    <Text size="1" color="gray" ml="2">
-                      {p}
-                    </Text>
-                  </DropdownMenu.Item>
-                ))}
-              </DropdownMenu.SubContent>
-            </DropdownMenu.Sub>
-            <DropdownMenu.Separator />
-            <DropdownMenu.Item onSelect={() => d({ type: 'ui', patch: { shortcutsOpen: true } })}>
-              Keyboard shortcuts
-              <div className="rt-DropdownMenuShortcut">?</div>
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Root>
-      }
     </div>
   );
 

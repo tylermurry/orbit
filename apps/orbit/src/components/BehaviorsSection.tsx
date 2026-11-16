@@ -7,6 +7,8 @@ import { useApp, useAssuranceCtx, useCtrl, useDispatch, useEdit, useHost } from 
 import { BUCKET_LABEL } from './AssuranceSection';
 import type { Bucket } from './AssuranceSection';
 import { Confirm, EntityLink, InlineText, TestStatusBadge, testStatusReason } from './common';
+import { TestWalkthrough } from './TestWalkthrough';
+import { walkthroughPathsOf } from '../state/controller';
 
 /** Absolute path of the file a test location points at, e.g. "tests/a.spec.ts › does x" or "a.ts#fn" or "a.ts:42". */
 export function testFilePath(location: string, baseDir: string | null): string | null {
@@ -109,6 +111,7 @@ function BehaviorRow({
     host.openInEditor(abs).catch((e: unknown) => ctrl.toast(e instanceof Error ? e.message : String(e), 'error'));
   };
   const actx = useAssuranceCtx();
+  const walkthroughs = useApp((s) => s.walkthroughs && walkthroughPathsOf(s).includes(s.walkthroughs.path) ? s.walkthroughs : null);
   const ba = useMemo(() => behaviorAssurance(contract, behavior.id, actx), [contract, behavior.id, actx]);
   useEffect(() => {
     if (focused) {
@@ -154,14 +157,11 @@ function BehaviorRow({
       data-behavior-id={behavior.id}
       data-status={ba?.status ?? 'untested'}
       tabIndex={-1}
-      onClick={(e) => {
-        if (!(e.target as HTMLElement).closest('textarea, button, a')) setOpen(!open);
-      }}
     >
       <div className="bh-head">
-        <button type="button" className="bh-chevron" aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${behavior.name}`} onClick={() => setOpen(!open)}>
+        <span className="bh-chevron" aria-hidden="true">
           {open ? <ChevronDownIcon /> : <ChevronRightIcon />}
-        </button>
+        </span>
         <div className="bh-text">
           <div className="bh-titlerow">
             {editing && editable ? (
@@ -177,7 +177,15 @@ function BehaviorRow({
               />
             ) : (
               <div className="bh-title">
-                <span className="bh-name-text">{behavior.name}</span>
+                <button
+                  type="button"
+                  className="bh-name-text"
+                  aria-expanded={open}
+                  aria-label={`${open ? 'Collapse' : 'Expand'} ${behavior.name}`}
+                  onClick={() => setOpen(!open)}
+                >
+                  {behavior.name}
+                </button>
                 {editable && (
                   <Tooltip content="Edit text">
                     <IconButton size="1" variant="ghost" color="gray" className="bh-edit" aria-label={`Edit ${behavior.name}`} onClick={() => setEditing(true)}>
@@ -224,7 +232,11 @@ function BehaviorRow({
                 <div className="bh-test-row">
                   <span className="bh-test-main">
                     <TestStatusBadge status={t.status} reason={testStatusReason(t.status, t.result, actx.since)} />
-                    <span className="bh-test-name">{t.test?.name ?? t.testId}</span>
+                    <TestWalkthrough
+                      report={t.test?.placeholder ? null : walkthroughs}
+                      testId={t.testId}
+                      testName={t.test?.name ?? t.testId}
+                    />
                     {links > 0 && (
                       <Tooltip content="Other capabilities that use this test">
                         <button

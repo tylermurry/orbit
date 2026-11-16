@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::{ErrorKind, Write};
-use std::path::{Path, PathBuf};
+use std::io::{ErrorKind, Read, Write};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize)]
@@ -119,6 +119,132 @@ pub fn read_file(path: &str) -> Result<FileSnapshot, String> {
         sha256: sha256_hex(&bytes),
         modified_ms: modified_ms(&meta),
     })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaywrightBlob {
+    path: String,
+    modified_ms: f64,
+    size: u64,
+}
+
+fn is_zip(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+}
+
+pub fn list_playwright_blobs(dir: &str) -> Result<Vec<PlaywrightBlob>, String> {
+    let dir = absolutize(dir)?;
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("Cannot list {}: {e}", dir.display())),
+    };
+    Ok(entries.flatten().filter_map(|entry| {
+        let path = entry.path();
+        if !is_zip(&path) || !entry.file_type().ok()?.is_file() {
+            return None;
+        }
+        let metadata = entry.metadata().ok()?;
+        Some(PlaywrightBlob {
+            path: path.to_string_lossy().into_owned(),
+            modified_ms: modified_ms(&metadata),
+            size: metadata.len(),
+        })
+    }).collect())
+}
+
+pub fn read_playwright_blob(path: &str) -> Result<Vec<u8>, String> {
+    const MAX_BYTES: u64 = 256 * 1024 * 1024;
+    let path = absolutize(path)?;
+    if !is_zip(&path) || !fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()) {
+        return Err("Playwright blob report is unavailable.".into());
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(&path)
+        .and_then(|file| file.take(MAX_BYTES + 1).read_to_end(&mut bytes))
+        .map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err("Playwright blob report exceeds 256 MiB.".into());
+    }
+    Ok(bytes)
+}
+
+pub fn read_walkthrough_image(manifest: &str, image: &str) -> Result<Vec<u8>, String> {
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
+    let manifest = Path::new(manifest);
+    let relative = Path::new(image);
+    let mut parts = relative.components();
+    let asset_directory = match manifest.file_name().and_then(|name| name.to_str()) {
+        Some("index.html") => "data",
+        Some("orbit.walkthroughs.json") => "walkthroughs",
+        _ => return Err("Invalid walkthrough report path.".into()),
+    };
+    if !manifest.is_absolute()
+        || parts.next() != Some(Component::Normal(asset_directory.as_ref()))
+        || !parts.all(|part| matches!(part, Component::Normal(_)))
+        || image.contains(['\\', ':'])
+    {
+        return Err("Invalid walkthrough image path.".into());
+    }
+    let unavailable = |_| "Screenshot file is unavailable.".to_string();
+    let folder = manifest
+        .parent()
+        .ok_or_else(|| "Invalid walkthrough report path.".to_string())?
+        .canonicalize()
+        .map_err(unavailable)?;
+    let file = folder.join(relative).canonicalize().map_err(unavailable)?;
+    if !file.starts_with(folder.join(asset_directory)) || !file.is_file() {
+        return Err("Screenshot file is unavailable.".into());
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(file)
+        .map_err(unavailable)?
+        .take(MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(unavailable)?;
+    let extension = relative
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let supported = match extension.as_str() {
+        "png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "jpg" | "jpeg" => bytes.starts_with(b"\xff\xd8\xff"),
+        "webp" => bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"),
+        _ => false,
+    };
+    if !supported || bytes.len() as u64 > MAX_BYTES {
+        return Err("Unsupported screenshot file.".into());
+    }
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod walkthrough_tests {
+    use super::*;
+
+    #[test]
+    fn reads_only_supported_images_inside_the_walkthrough_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let manifest = root.join("orbit.walkthroughs.json");
+        let manifest = manifest.to_str().unwrap();
+        fs::create_dir(root.join("walkthroughs")).unwrap();
+        let png = b"\x89PNG\r\n\x1a\n";
+        fs::write(root.join("walkthroughs/view.png"), png).unwrap();
+        fs::write(root.join("walkthroughs/invalid.png"), b"not an image").unwrap();
+        fs::write(root.join("outside.png"), png).unwrap();
+
+        assert_eq!(read_walkthrough_image(manifest, "walkthroughs/view.png").unwrap(), png);
+        assert!(read_walkthrough_image(manifest, "walkthroughs/invalid.png").is_err());
+        assert!(read_walkthrough_image(manifest, "walkthroughs/../outside.png").is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("outside.png"), root.join("walkthroughs/link.png")).unwrap();
+            assert!(read_walkthrough_image(manifest, "walkthroughs/link.png").is_err());
+        }
+    }
 }
 
 pub fn stat_file(path: &str) -> Result<FileStat, String> {

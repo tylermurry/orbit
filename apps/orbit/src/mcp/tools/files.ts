@@ -48,8 +48,8 @@ export function fileTools(): ToolDef[] {
       name: 'open_file',
       title: 'Open a contract file',
       description:
-        "Open an existing Orbit contract (*.orbit.json) by absolute path, replacing the currently open document. Refuses when there are unsaved changes unless discardUnsavedChanges: true. A file with validation errors opens read-only (repair with set_raw_json); invalid JSON opens in Raw JSON.",
-      inputSchema: S.obj({ path: S.nonEmpty('Absolute path to the .orbit.json file.'), discardUnsavedChanges: S.bool('Required (true) when the open document has unsaved changes.') }, ['path']),
+        "Open an existing Orbit contract by absolute path, replacing the currently open document. Refuses when there are unsaved changes unless discardUnsavedChanges: true. A file with validation errors opens read-only (repair with set_raw_json); invalid JSON opens in Raw JSON.",
+      inputSchema: S.obj({ path: S.nonEmpty('Absolute path to the contract file, e.g. /work/app/orbit.json.'), discardUnsavedChanges: S.bool('Required (true) when the open document has unsaved changes.') }, ['path']),
       annotations: ann(false, true, true),
     },
     async run(a, ctx) {
@@ -73,7 +73,7 @@ export function fileTools(): ToolDef[] {
       description: 'Create a new, valid, empty contract at an absolute path (the file must not exist yet) and open it. product.id defaults to a slug of the name. Refuses when there are unsaved changes unless discardUnsavedChanges: true.',
       inputSchema: S.obj(
         {
-          path: S.nonEmpty('Absolute path for the new file, e.g. /work/app/app.orbit.json.'),
+          path: S.nonEmpty('Absolute path for the new file. Use orbit.json by default, e.g. /work/app/orbit.json.'),
           product: S.obj({ id: S.nonEmpty('Stable product id (default: slug of name).'), name: S.nonEmpty('Product name.'), summary: S.nonEmpty('One-line summary.') }, ['name', 'summary']),
           discardUnsavedChanges: S.bool('Required (true) when the open document has unsaved changes.'),
         },

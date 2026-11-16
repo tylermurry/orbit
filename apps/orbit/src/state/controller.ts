@@ -3,6 +3,9 @@ import type { Diagnostic, OrbitContract } from '@orbit/contract';
 import type { FileStat, GitContext, GitRef, OrbitHost } from '../host/types';
 import { parseJUnit } from '../lib/junit';
 import type { JUnitCase } from '../lib/junit';
+import { parseWalkthroughs, WALKTHROUGH_FILENAME } from '../lib/walkthrough';
+import { parsePlaywrightBlob, parsePlaywrightWalkthroughs } from '../lib/playwrightWalkthrough';
+import type { Walkthrough } from '../lib/walkthrough';
 import { fileName } from '../lib/format';
 import { filePrefKey, loadPref, loadRecent, pushRecent, savePref } from '../lib/prefs';
 import { activePreset, computeComparison, defaultComparison, presetComparison, sameComparison } from './compare';
@@ -11,6 +14,7 @@ import { currentText, isDirty, structuredDirty } from './store';
 import type { Store } from './store';
 import type { AppState, Comparison, LifecyclePreset, ResultsFile } from './types';
 
+const DEFAULT_CONTRACT_FILENAME = 'orbit.json';
 let toastSeq = 1;
 
 /** Outcome of a non-interactive save (used by the AI tool runtime): never opens a prompt, never overwrites external changes. */
@@ -65,6 +69,22 @@ export function resultsPathOf(s: AppState): string | null {
   if (!rel || !base) return null;
   if (rel.startsWith('/') || /^[A-Za-z]:[\\/]/.test(rel)) return rel;
   return `${base.replace(/[\\/]+$/, '')}/${rel.replace(/^\.\//, '')}`;
+}
+
+export function walkthroughPathOf(s: AppState): string | null {
+  const results = resultsPathOf(s);
+  if (!results) return null;
+  const folder = /\.xml$/i.test(results) ? results.slice(0, Math.max(results.lastIndexOf('/'), results.lastIndexOf('\\'))) : results;
+  return `${folder.replace(/[\\/]+$/, '')}/${WALKTHROUGH_FILENAME}`;
+}
+
+export function walkthroughPathsOf(s: AppState): string[] {
+  const legacy = walkthroughPathOf(s);
+  if (!legacy) return [];
+  const folder = legacy.slice(0, -WALKTHROUGH_FILENAME.length);
+  const project = runFolderOf(s)?.replace(/[\\/]+$/, '');
+  const blobDirs = [...new Set([`${folder}blob-report`, ...(project ? [`${project}/blob-report`] : [])])];
+  return [...blobDirs, `${folder}e2e/index.html`, `${folder}playwright-report/index.html`, `${folder}index.html`, legacy];
 }
 
 export function createController(store: Store, host: OrbitHost): Controller {
@@ -235,14 +255,14 @@ export function createController(store: Store, host: OrbitHost): Controller {
     const s = getState();
     const r = resolveSaveText({ applyRaw: true, anyway: opts.anyway });
     if ('prompted' in r) return;
+    const suggested = fileName(s.filePath) || DEFAULT_CONTRACT_FILENAME;
     if ('nothing' in r) {
       // Save As of an unmodified invalid file: copy the exact text.
-      const p = await host.pickSaveFile(fileName(s.filePath) || 'product.orbit.json');
+      const p = await host.pickSaveFile(suggested);
       if (!p) return;
       await finishWrite(p, s.diskText, undefined, true);
       return;
     }
-    const suggested = s.filePath ? fileName(s.filePath) : `${s.contract?.product.id ?? 'product'}.orbit.json`;
     const p = await host.pickSaveFile(suggested);
     if (!p) return;
     await finishWrite(p, r.text, undefined, true);
@@ -331,7 +351,7 @@ export function createController(store: Store, host: OrbitHost): Controller {
   }
 
   async function createNew(input: { id: string; name: string; summary: string }) {
-    const p = await host.pickSaveFile(`${input.id}.orbit.json`);
+    const p = await host.pickSaveFile(DEFAULT_CONTRACT_FILENAME);
     if (!p) return false;
     const text = serializeContract(createEmptyContract({ id: input.id, name: input.name, summary: input.summary }));
     const res = await host.writeFileAtomic(p, text, null);
@@ -454,6 +474,72 @@ export function createController(store: Store, host: OrbitHost): Controller {
   // ── validation: the results file and the test command ──
   let resultsBusy = false;
   async function pollResults(force = false) {
+    await Promise.all([pollJUnit(force), pollWalkthroughs()]);
+  }
+
+  let walkthroughsBusy = false;
+  let walkthroughTests: OrbitContract['tests'] | undefined;
+  async function pollWalkthroughs() {
+    if (walkthroughsBusy) return;
+    const s = getState();
+    const paths = walkthroughPathsOf(s);
+    const definitions = s.contract?.tests;
+    if (!paths.length || !definitions) {
+      dispatch({ type: 'setWalkthroughs', report: null });
+      return;
+    }
+    walkthroughsBusy = true;
+    try {
+      for (const path of paths) {
+        try {
+          if (path.endsWith('/blob-report')) {
+            const blobs = (await host.listPlaywrightBlobs(path)).sort((a, b) => b.modifiedMs - a.modifiedMs || a.path.localeCompare(b.path));
+            if (!blobs.length) continue;
+            const sha = JSON.stringify(blobs);
+            const current = getState().walkthroughs;
+            if (current?.path === path && current.sha === sha && walkthroughTests === definitions) return;
+            const tests = new Map<string, Walkthrough>();
+            let complete = true;
+            for (const blob of blobs) {
+              try {
+                const recorded = await parsePlaywrightBlob(await host.readPlaywrightBlob(blob.path), definitions);
+                for (const [id, walkthrough] of recorded ?? []) {
+                  if (!tests.has(id)) tests.set(id, walkthrough);
+                }
+              } catch {
+                complete = false;
+              }
+            }
+            if (!tests.size) continue;
+            if (walkthroughPathsOf(getState()).includes(path) && getState().contract?.tests === definitions) {
+              walkthroughTests = complete ? definitions : undefined;
+              dispatch({ type: 'setWalkthroughs', report: { path, sha, tests } });
+            }
+            return;
+          }
+          const stat = await host.statFile(path);
+          if (!stat.exists) continue;
+          const current = getState().walkthroughs;
+          if (current?.path === path && current.sha === stat.sha256 && walkthroughTests === definitions) return;
+          const snap = await host.readFile(path);
+          const tests = path.endsWith('.html') ? await parsePlaywrightWalkthroughs(snap.text, definitions) : parseWalkthroughs(snap.text);
+          if (!tests) continue;
+          if (walkthroughPathsOf(getState()).includes(path) && getState().contract?.tests === definitions) {
+            walkthroughTests = definitions;
+            dispatch({ type: 'setWalkthroughs', report: { path, sha: snap.sha256, tests } });
+          }
+          return;
+        } catch {
+          // A partially written or unsupported report does not affect JUnit results.
+        }
+      }
+      if (walkthroughPathOf(getState()) === paths.at(-1)) dispatch({ type: 'setWalkthroughs', report: null });
+    } finally {
+      walkthroughsBusy = false;
+    }
+  }
+
+  async function pollJUnit(force: boolean) {
     if (resultsBusy) return;
     resultsBusy = true;
     try {

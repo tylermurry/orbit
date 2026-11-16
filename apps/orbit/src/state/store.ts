@@ -49,6 +49,7 @@ export function initialState(): AppState {
     compareResult: null,
     impactSelection: null,
     resultsFile: null,
+    walkthroughs: null,
     run: null,
     lastRun: null,
     terminalTab: 'claude',
@@ -97,7 +98,7 @@ export function currentText(s: AppState): string {
 
 // Matching is redone only when the contract's tests or the results file change.
 let matchMemo: { tests: TestDefinition[]; cases: JUnitCase[]; at: string; out: MatchedResults } | null = null;
-const NO_MATCH: MatchedResults = { results: new Map(), unmatchedCases: 0 };
+const NO_MATCH: MatchedResults = { results: new Map(), unmatchedCases: 0, unmatched: [] };
 
 /** The latest result per contract test, matched from the results file. */
 export function matchedResults(s: AppState): MatchedResults {
@@ -151,6 +152,7 @@ export type Action =
   | { type: 'setCompareResult'; result: CompareResult | null }
   | { type: 'selectChange'; key: string | null }
   | { type: 'setResultsFile'; file: ResultsFile | null }
+  | { type: 'setWalkthroughs'; report: AppState['walkthroughs'] }
   | { type: 'runStarted'; run: RunState }
   | { type: 'runOutput'; runId: string; text: string }
   | { type: 'runFinished'; runId: string; outcome: NonNullable<AppState['lastRun']> }
@@ -279,6 +281,8 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, impactSelection: a.key };
     case 'setResultsFile':
       return { ...s, resultsFile: a.file };
+    case 'setWalkthroughs':
+      return s.walkthroughs === a.report ? s : { ...s, walkthroughs: a.report };
     case 'runStarted':
       return { ...s, run: a.run };
     case 'runOutput': {

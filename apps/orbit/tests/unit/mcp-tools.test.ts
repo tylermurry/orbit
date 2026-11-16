@@ -214,6 +214,41 @@ describe('reading', () => {
     expect((await ok('list_tests', { status: 'passing' })).total).toBe(1);
   });
 
+  it('lists unmapped contract and JUnit tests and supports registration followed by mapping', async () => {
+    const { ok, store, contract } = await boot();
+    const { test: registered } = await ok('create_test', { name: 'Registered without result', location: 'src/no-result.test.ts' });
+    expect((await ok('list_unmapped_tests')).tests).toContainEqual({ source: 'contract', ...registered });
+    expect((await ok('list_unmapped_tests')).testResults.state).not.toBe('ok');
+
+    const file = 'src/a.test.ts';
+    const cases = ['Mapped [test.tasky.views.today-overdue]', 'Reported [runner.new-test]', 'Reported [runner.new-test]', 'Title #1 :: example']
+      .map((name) => ({ file, name, status: 'passed' as const }));
+    store.dispatch({ type: 'setResultsFile', file: { path: 'junit.xml', state: 'ok', at: NOW.toISOString(), cases } });
+    const before = contract();
+    const { tests, total, testResults } = await ok('list_unmapped_tests');
+    expect(contract()).toBe(before);
+    expect(testResults.state).toBe('ok');
+    expect(tests).not.toContainEqual(expect.objectContaining({ id: 'test.tasky.views.today-overdue' }));
+    const discovered = tests.filter((row: any) => row.source === 'junit');
+    expect(discovered.map((row: any) => row.registration)).toEqual([
+      { id: 'runner.new-test', name: 'Reported', location: `${file} › Reported [runner.new-test]` },
+      { name: 'Title #1 :: example', location: `${file} › Title #1 :: example` },
+    ]);
+    expect(await ok('list_unmapped_tests', { limit: 1, offset: total - 2 })).toMatchObject({ tests: [discovered[0]], nextOffset: total - 1 });
+    expect(await ok('list_unmapped_tests', { limit: 1, offset: total - 1 })).toMatchObject({ tests: [discovered[1]], nextOffset: null });
+
+    const testIds = [registered.id];
+    for (const row of discovered) {
+      const { test } = await ok('create_test', row.registration);
+      testIds.push(test.id);
+    }
+    const afterRegistration = await ok('list_unmapped_tests');
+    expect(afterRegistration.tests.filter((row: any) => row.source === 'junit')).toEqual([]);
+    expect(afterRegistration.tests.map((row: any) => row.id)).toEqual(expect.arrayContaining(testIds));
+    await ok('map_tests', { behaviorId: BEHAVIOR, testIds });
+    expect((await ok('list_unmapped_tests')).tests.some((row: any) => testIds.includes(row.id))).toBe(false);
+  });
+
   it('get_diagnostics reports the text the user sees', async () => {
     const { ok, store, fail } = await boot();
     expect(await ok('get_diagnostics')).toMatchObject({ source: 'working', errors: 0 });

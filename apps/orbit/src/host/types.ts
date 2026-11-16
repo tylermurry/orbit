@@ -110,11 +110,14 @@ export interface OrbitHost {
   // ── dialogs ──
   /** Returns absolute path or null if cancelled. Filter *.json. */
   pickOpenFile(): Promise<string | null>;
-  /** Returns absolute path or null if cancelled. defaultName e.g. 'product.orbit.json'. Native dialog handles overwrite confirmation. */
+  /** Returns absolute path or null if cancelled. defaultName e.g. 'orbit.json'. Native dialog handles overwrite confirmation. */
   pickSaveFile(defaultName: string): Promise<string | null>;
 
   // ── files ──
   readFile(path: string): Promise<FileSnapshot>;
+  readPlaywrightBlob(path: string): Promise<ArrayBuffer>;
+  listPlaywrightBlobs(dir: string): Promise<{ path: string; modifiedMs: number; size: number }[]>;
+  readWalkthroughImage(manifest: string, image: string): Promise<ArrayBuffer>;
   statFile(path: string): Promise<FileStat>;
   /** Absolute paths of every `*.xml` file under a directory (recursive, sorted); [] when it is missing or not a directory. */
   listXmlFiles(dir: string): Promise<string[]>;

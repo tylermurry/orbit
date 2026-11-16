@@ -15,7 +15,7 @@ const item = (page: Page, name: string) => page.getByRole('treeitem', { name: ne
 test.describe('AI tool runtime (window.__orbitMcp)', () => {
   test('exposes the tool list and rejects unknown tools', async ({ page }) => {
     await launch(page);
-    await expect(page.getByTestId('file-name')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Switch project (Tasky)' })).toBeVisible();
     const names = await page.evaluate(() => window.__orbitMcp!.listTools().map((t) => t.name));
     expect(names).toEqual(expect.arrayContaining(['get_status', 'create_entity', 'apply_edits', 'compare', 'save_file']));
     const err = await page.evaluate(() => window.__orbitMcp!.callTool('nope', {}).then(() => 'resolved', (e: Error) => e.message));

@@ -6,18 +6,27 @@ const WORK = { id: 'list-work', name: 'Work' };
 test.describe('task create, edit, complete, delete', () => {
   test('creates a task in the selected list [test.tasky.tasks.create]', async ({ page }) => {
     await open(page, { lists: [WORK] });
-    await go(page, 'Work');
-    await page.getByRole('button', { name: 'New task' }).click();
     const dialog = page.getByRole('dialog', { name: 'New task' });
-    await expect(dialog.getByLabel('List')).toHaveValue('list-work');
-    await dialog.getByLabel('Title').fill('Write quarterly report');
-    await dialog.getByLabel('Notes').fill('Include revenue');
-    await dialog.getByLabel('Due date').fill('2026-06-20');
-    await dialog.getByRole('button', { name: 'Add task' }).click();
-    await expect(dialog).toBeHidden();
-    await expect(rowTitles(page)).toHaveText(['Write quarterly report']);
-    await go(page, 'Inbox');
-    await expect(page.getByRole('heading', { name: 'Inbox is empty' })).toBeVisible();
+    await test.step('User opens New task from the Work list', async (step) => {
+      await go(page, 'Work');
+      await page.getByRole('button', { name: 'New task' }).click();
+      await expect(dialog.getByLabel('List'), 'The new task form selects Work by default.').toHaveValue('list-work');
+      await step.attach('orbit:walkthrough', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    });
+    await test.step('User enters a title, notes, and a due date, then adds the task', async (step) => {
+      await dialog.getByLabel('Title').fill('Write quarterly report');
+      await dialog.getByLabel('Notes').fill('Include revenue');
+      await dialog.getByLabel('Due date').fill('2026-06-20');
+      await dialog.getByRole('button', { name: 'Add task' }).click();
+      await expect(dialog, 'The new task form closes.').toBeHidden();
+      await expect(rowTitles(page), '“Write quarterly report” appears in Work.').toHaveText(['Write quarterly report']);
+      await step.attach('orbit:walkthrough', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    });
+    await test.step('User opens Inbox', async (step) => {
+      await go(page, 'Inbox');
+      await expect(page.getByRole('heading', { name: 'Inbox is empty' }), 'Inbox is still empty.').toBeVisible();
+      await step.attach('orbit:walkthrough', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    });
   });
 
   test('defaults new tasks to Inbox outside a custom list [test.tasky.tasks.default-inbox]', async ({ page }) => {
@@ -53,22 +62,36 @@ test.describe('task create, edit, complete, delete', () => {
 
   test('edits title, notes, due date and list [test.tasky.tasks.edit]', async ({ page }) => {
     await open(page, { lists: [WORK], tasks: [{ id: 't1', title: 'Draft memo' }] });
-    await page.getByRole('button', { name: "Edit 'Draft memo'" }).click();
     const dialog = page.getByRole('dialog', { name: 'Edit task' });
-    await expect(dialog.getByLabel('Title')).toHaveValue('Draft memo');
-    await dialog.getByLabel('Title').fill('Final memo');
-    await dialog.getByLabel('Notes').fill('Send to the team');
-    await dialog.getByLabel('Due date').fill('2026-06-30');
-    await dialog.getByLabel('List').selectOption({ label: 'Work' });
-    await dialog.getByRole('button', { name: 'Save changes' }).click();
-    await expect(dialog).toBeHidden();
-    await expect(rowTitles(page)).toHaveCount(0); // moved out of Inbox
-    await go(page, 'Work');
-    await expect(rowTitles(page)).toHaveText(['Final memo']);
-    await page.getByRole('button', { name: "Edit 'Final memo'" }).click();
-    await expect(page.getByLabel('Notes')).toHaveValue('Send to the team');
-    await expect(page.getByLabel('Due date')).toHaveValue('2026-06-30');
-    await expect(page.getByRole('dialog').getByLabel('List')).toHaveValue('list-work');
+    await test.step('User opens “Draft memo” and edits its title, notes, due date, and list', async (step) => {
+      await page.getByRole('button', { name: "Edit 'Draft memo'" }).click();
+      await expect(dialog.getByLabel('Title')).toHaveValue('Draft memo');
+      await dialog.getByLabel('Title').fill('Final memo');
+      await dialog.getByLabel('Notes').fill('Send to the team');
+      await dialog.getByLabel('Due date').fill('2026-06-30');
+      await dialog.getByLabel('List').selectOption({ label: 'Work' });
+      await expect(dialog.getByLabel('Title'), 'The form shows the new title, “Final memo.”').toHaveValue('Final memo');
+      await expect(dialog.getByLabel('Notes'), 'The notes say “Send to the team.”').toHaveValue('Send to the team');
+      await expect(dialog.getByLabel('Due date'), 'The due date is June 30, 2026.').toHaveValue('2026-06-30');
+      await expect(dialog.getByLabel('List'), 'Work is selected.').toHaveValue('list-work');
+      await step.attach('Edit task form', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    });
+    await test.step('User saves the task and opens Work', async (step) => {
+      await dialog.getByRole('button', { name: 'Save changes' }).click();
+      await expect(dialog, 'The Edit task dialog closes.').toBeHidden();
+      await expect(rowTitles(page), 'The task is no longer in Inbox.').toHaveCount(0);
+      await go(page, 'Work');
+      await expect(rowTitles(page), '“Final memo” appears in Work.').toHaveText(['Final memo']);
+      await step.attach('Task in Work', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    });
+    await test.step('User reopens “Final memo”', async (step) => {
+      await page.getByRole('button', { name: "Edit 'Final memo'" }).click();
+      await expect(dialog.getByLabel('Title'), 'The title is still “Final memo.”').toHaveValue('Final memo');
+      await expect(dialog.getByLabel('Notes'), 'The saved notes still say “Send to the team.”').toHaveValue('Send to the team');
+      await expect(dialog.getByLabel('Due date'), 'The saved due date is still June 30, 2026.').toHaveValue('2026-06-30');
+      await expect(dialog.getByLabel('List'), 'The saved list is still Work.').toHaveValue('list-work');
+      await step.attach('Saved task details', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    });
   });
 
   test('edit dialog traps focus, closes on Escape and returns focus [test.tasky.tasks.dialog-accessibility]', async ({ page }) => {

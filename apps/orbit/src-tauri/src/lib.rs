@@ -6,6 +6,7 @@ pub mod mcp;
 pub mod runner;
 pub mod skills;
 pub mod terminal;
+mod file_menu;
 
 use files::{Expected, FileSnapshot, FileStat, WriteResult};
 use git::{GitContext, GitFileAtRevision, GitRef};
@@ -30,6 +31,21 @@ where
 #[tauri::command]
 async fn read_file(path: String) -> Result<FileSnapshot, String> {
     blocking(move || files::read_file(&path)).await
+}
+
+#[tauri::command]
+async fn read_playwright_blob(path: String) -> Result<tauri::ipc::Response, String> {
+    blocking(move || files::read_playwright_blob(&path)).await.map(tauri::ipc::Response::new)
+}
+
+#[tauri::command]
+async fn list_playwright_blobs(dir: String) -> Result<Vec<files::PlaywrightBlob>, String> {
+    blocking(move || files::list_playwright_blobs(&dir)).await
+}
+
+#[tauri::command]
+async fn read_walkthrough_image(manifest: String, image: String) -> Result<tauri::ipc::Response, String> {
+    blocking(move || files::read_walkthrough_image(&manifest, &image)).await.map(tauri::ipc::Response::new)
 }
 
 #[tauri::command]
@@ -166,6 +182,12 @@ fn term_close(terms: State<'_, Arc<Terminals>>, id: u32) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .menu(file_menu::build)
+        .on_menu_event(|app, event| {
+            if let Some(action) = file_menu::action(event.id().as_ref()) {
+                let _ = app.emit_to("main", file_menu::EVENT, action);
+            }
+        })
         .setup(|app| {
             let mcp = McpManager::new(app.handle());
             app.manage(mcp.clone());
@@ -176,10 +198,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             read_file,
+            read_playwright_blob,
+            list_playwright_blobs,
+            read_walkthrough_image,
             stat_file,
             list_xml_files,
             write_file_atomic,
             initial_file,
+            file_menu::update_file_menu,
             open_in_editor,
             git_context,
             git_list_refs,

@@ -32,7 +32,7 @@ test('a full tour produces no console errors or React warnings', async ({ page }
   await page.getByRole('button', { name: /Diagnostics/ }).click();
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+1');
-  await page.getByRole('button', { name: 'More actions', exact: true }).click();
+  await page.getByRole('button', { name: 'File', exact: true }).click();
   await page.keyboard.press('Escape');
   expect(problems).toEqual([]);
 });

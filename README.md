@@ -66,6 +66,8 @@ npm run tasky                                   # Tasky at http://localhost:5174
 In Orbit: **Open contract…** → `examples/tasky.orbit.json`. Try the Product and Engineering trees, select an entity,
 edit behaviors, open **Tests**, click **Validate**, toggle **Raw JSON**, and pick an **Impact** view.
 
+**Create new contract** suggests `orbit.json` when you choose where to save the project.
+
 ## Test and verify
 
 ```bash
@@ -153,6 +155,31 @@ to a contract test by a `[<test id>]` tag in the test's name when present (Tasky
 - **Planned:** an added test in the Plan comparison.
 - A behavior is **Passing** only when all its real tests pass, and **Failing** when any fails.
 
+### Test walkthroughs
+
+Expand a behavior and select the name of a recorded test. Use **Previous** and **Next**, or the left and right arrow keys. The Tasky example records the create and edit task flows when you run `npm run validate -w @orbit/tasky`.
+
+Describe the user action in a standard Playwright `test.step()` title. Orbit lists the assertions recorded in that step under **Expectations**. Playwright's optional assertion message supplies the display text, for example `expect(task, 'The task appears in Work.').toBeVisible()`. Unnamed assertions display Playwright's generated matcher title. To include a screenshot, attach it after the step's assertions with `await step.attach('Form after saving', { body: await page.screenshot(), contentType: 'image/png' })`.
+
+Use Playwright's built-in **Blob** and **JUnit** reporters. For example, configure `['junit', { outputFile: 'reports/e2e.junit.xml' }]` and `['blob', { outputDir: 'reports/blob-report' }]`, and point Orbit at `reports/`. Orbit also looks in Playwright's default `blob-report/` directory under the validation working directory. It matches passing tests by their file and title in `orbit.json` and also recognizes existing Orbit ID tags. Existing HTML reports still work with their original `Expected:` convention.
+
+Other runners can write the same `orbit.walkthroughs.json` file in that folder. The `tests` keys are the test IDs from `orbit.json`. Each step has an optional `description` and an optional `image` pointing to a PNG, JPEG, or WebP under `walkthroughs/`.
+
+```json
+{
+  "version": 1,
+  "tests": {
+    "test.tasks.create": {
+      "steps": [
+        { "description": "Open the new-task form." },
+        { "image": "walkthroughs/form.png" },
+        { "description": "The new task appears in Work.", "image": "walkthroughs/work.png" }
+      ]
+    }
+  }
+}
+```
+
 Orbit asks you to approve the exact command before it first runs it, and again whenever it changes (the command comes
 from the contract file, which could come from someone else's branch). The command runs in its own process group, and
 **Cancel** stops it and everything it started.
@@ -160,7 +187,7 @@ from the contract file, which could come from someone else's branch). The comman
 ## Plan and sync a change
 
 1. Open your project in Orbit and enable its MCP connection in Claude Code.
-2. Use **Install Skills** when creating a project or **… → Install/Update Skills** for an existing one. Orbit installs
+2. Use **Install Skills** when creating a project or **File → Install/Update Skills** for an existing one. Orbit installs
    the two commands in the project's `.claude/skills/` folder. You can commit them to share the installed versions.
 3. Run `/orbit-plan` with the work description, spec, or issue. Review `orbit.plan.json` in the **Plan** view
    and iterate on it with `/orbit-plan` until it's right. The baseline stays fixed until you explicitly replace the plan.

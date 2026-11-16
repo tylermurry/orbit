@@ -18,7 +18,7 @@ test.describe('AC-01 no file: open / create', () => {
     await dlg.getByLabel('Product summary').fill('Plans the shop floor');
     await dlg.getByRole('button', { name: /Choose location/ }).click();
 
-    await expect(page.getByTestId('file-name')).toContainText('shop-floor.orbit.json');
+    await expect(page).toHaveTitle('Shop Floor — shop-floor.orbit.json — Orbit');
     await expect(page.getByText('No capabilities yet.')).toBeVisible();
     const parsed = parseContract((await fileText(page, newPath))!);
     expect(parsed.ok).toBe(true);
@@ -34,7 +34,7 @@ test.describe('AC-01 no file: open / create', () => {
     await expect(page.getByRole('button', { name: 'Open contract…' })).toBeVisible();
     await page.getByRole('button', { name: 'Open contract…' }).click();
     await expect(page.getByTestId('entity-detail')).toBeVisible();
-    await expect(page.getByTestId('file-name')).toContainText('tasky.orbit.json');
+    await expect(page.getByRole('button', { name: 'Switch project (Tasky)' })).toBeVisible();
   });
 
   test('a file with unsaved changes asks before another file replaces it', async ({ page }) => {
@@ -49,7 +49,41 @@ test.describe('AC-01 no file: open / create', () => {
     await expect(page.getByLabel('Entity name')).toHaveValue('Dirty Name');
     await page.getByRole('button', { name: 'Open contract' }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'Discard changes' }).click();
-    await expect(page.getByRole('button', { name: /Product settings for Other/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Switch project (Other)' })).toBeVisible();
+  });
+
+  test('switches between recent projects from the product-name menu', async ({ page }) => {
+    const current = '/work/tasky/orbit.json';
+    const other = '/work/other/orbit.json';
+    await page.addInitScript((path) => localStorage.setItem('orbit.recent', JSON.stringify([path])), other);
+    await launch(page, { path: current, files: { [other]: TASKY.replace('"Tasky"', '"Other Project"') } });
+    const tasky = page.getByRole('button', { name: 'Switch project (Tasky)' });
+    await expect(tasky).toHaveText('Tasky');
+    await tasky.click();
+    const menu = page.getByRole('menu');
+    await expect(menu.getByRole('menuitem').first()).toHaveText('Product Settings');
+    await expect.poll(async () => {
+      const toolbar = await page.getByRole('banner', { includeHidden: true }).boundingBox();
+      const popup = await menu.boundingBox();
+      return !!toolbar && !!popup && Math.abs(popup.x - toolbar.x) < 1 && Math.abs(popup.y - toolbar.y - toolbar.height) < 1;
+    }).toBe(true);
+    await expect(menu.getByRole('menuitemradio', { name: /Tasky/ })).toHaveAttribute('aria-checked', 'true');
+    await menu.getByRole('menuitemradio', { name: /Other Project/ }).click();
+    await expect(page).toHaveTitle('Other Project — orbit.json — Orbit');
+
+    const entity = page.getByLabel('Entity name');
+    await entity.fill('Unsaved name');
+    await entity.press('Enter');
+    const otherProject = page.getByRole('button', { name: 'Switch project (Other Project)' });
+    await otherProject.click();
+    await menu.getByRole('menuitemradio', { name: /Tasky/ }).click();
+    const prompt = page.getByRole('alertdialog', { name: 'Discard unsaved changes?' });
+    await prompt.getByRole('button', { name: 'Cancel' }).click();
+    await expect(entity).toHaveValue('Unsaved name');
+    await otherProject.click();
+    await menu.getByRole('menuitemradio', { name: /Tasky/ }).click();
+    await prompt.getByRole('button', { name: 'Discard changes' }).click();
+    await expect(tasky).toBeVisible();
   });
 });
 
@@ -60,7 +94,7 @@ test.describe('shell polish', () => {
     await page.getByLabel('Entity name').fill('Renamed Capability');
     await page.getByLabel('Entity name').press('Enter');
     await expect(page).toHaveTitle('● Tasky — tasky.orbit.json — Orbit');
-    await expect(page.getByTestId('file-name').getByRole('img', { name: 'Unsaved changes' })).toBeVisible();
+    await expect(page.getByTestId('unsaved-label')).toBeVisible();
 
     // structured undo / redo via keyboard (focus outside text fields)
     await page.getByRole('tree').focus();
@@ -71,7 +105,8 @@ test.describe('shell polish', () => {
     await expect(page.getByLabel('Entity name')).toHaveValue('Renamed Capability');
     await page.keyboard.press('Control+z');
 
-    await page.getByRole('button', { name: /Product settings for Tasky/ }).click();
+    await page.getByRole('button', { name: 'Switch project (Tasky)' }).click();
+    await page.getByRole('menuitem', { name: 'Product Settings' }).click();
     const dlg = page.getByRole('dialog', { name: 'Product settings' });
     await dlg.getByLabel('Product name').fill('Tasky Pro');
     await dlg.getByLabel('Product summary').fill('A summary');
@@ -82,8 +117,9 @@ test.describe('shell polish', () => {
     await page.keyboard.press('?');
     await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'More actions' }).click();
-    await page.getByRole('menuitem', { name: 'Recent files' }).hover();
+    await expect(page.getByRole('button', { name: 'More actions' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'File', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Recent Files' }).hover();
     await expect(page.getByRole('menuitem', { name: /tasky.orbit.json/ })).toBeVisible();
   });
 });

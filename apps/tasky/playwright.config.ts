@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
+
+const outputDir = fileURLToPath(new URL('./test-results/', import.meta.url));
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -6,7 +9,13 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  reporter: [['list']],
+  outputDir: `${outputDir}/playwright`,
+  reporter: [
+    ['list'],
+    ['junit', { outputFile: process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE ?? `${outputDir}/e2e.junit.xml` }],
+    ['html', { outputFolder: `${outputDir}/e2e`, open: 'never' }],
+    ['blob', { outputDir: `${outputDir}/blob-report` }],
+  ],
   use: {
     baseURL: 'http://localhost:5174',
     timezoneId: 'America/New_York',

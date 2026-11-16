@@ -60,6 +60,15 @@ export function createTauriHost(): OrbitHost {
     },
 
     readFile: (path) => call<FileSnapshot>('read_file', { path }),
+    async readPlaywrightBlob(path) {
+      const bytes = await call<ArrayBuffer | number[]>('read_playwright_blob', { path });
+      return Array.isArray(bytes) ? Uint8Array.from(bytes).buffer : bytes;
+    },
+    listPlaywrightBlobs: (dir) => call('list_playwright_blobs', { dir }),
+    async readWalkthroughImage(manifest, image) {
+      const bytes = await call<ArrayBuffer | number[]>('read_walkthrough_image', { manifest, image });
+      return Array.isArray(bytes) ? Uint8Array.from(bytes).buffer : bytes;
+    },
     statFile: (path) => call<FileStat>('stat_file', { path }),
     listXmlFiles: (dir) => call<string[]>('list_xml_files', { dir }),
 

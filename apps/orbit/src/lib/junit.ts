@@ -79,9 +79,16 @@ export function splitLocation(location: string): { file: string; title: string }
 const sameFile = (a: string, b: string) => !!a && !!b && (a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`));
 const sameTitle = (a: string, b: string) => !!a && !!b && (a === b || a.endsWith(` › ${b}`) || b.endsWith(` › ${a}`));
 
-function caseMatches(t: TestDefinition, c: JUnitCase): boolean {
+function caseLocation(c: JUnitCase): string {
+  const title = c.name.trim() || 'Unnamed test';
+  return c.file.trim() ? `${c.file.trim()} › ${title}` : title;
+}
+
+export function caseMatches(t: TestDefinition, c: JUnitCase): boolean {
   const tags = tagsOf(c.name);
   if (tags.length) return tags.includes(t.id);
+  // Locations copied from a report preserve literal punctuation in titles and class names.
+  if (t.location === caseLocation(c)) return true;
   const loc = splitLocation(t.location);
   const name = norm(c.name);
   if (loc.file) {
@@ -91,6 +98,13 @@ function caseMatches(t: TestDefinition, c: JUnitCase): boolean {
     return !file && sameTitle(loc.title, name);
   }
   return sameTitle(loc.title, name) || norm(t.name) === name;
+}
+
+/** Arguments for registering this result as a test definition. Preserve the runner's explicit id tag. */
+export function caseRegistration(c: JUnitCase): Omit<TestDefinition, 'id' | 'placeholder'> & { id?: string } {
+  const id = tagsOf(c.name)[0];
+  const name = c.name.replace(/\s*\[[^\]\s]+\]/g, '').trim() || c.name.trim() || 'Unnamed test';
+  return { name, location: caseLocation(c), ...(id ? { id } : {}) };
 }
 
 /** Combine cases for one test (e.g. one per browser): failed beats passed beats skipped. */
@@ -105,6 +119,7 @@ export interface MatchedResults {
   results: Map<string, TestResult>;
   /** Test cases in the file that match no contract test. */
   unmatchedCases: number;
+  unmatched: JUnitCase[];
 }
 
 /** Match results to contract tests. `at` is when the run happened (the results file's modification time). */
@@ -117,5 +132,6 @@ export function matchResults(tests: TestDefinition[], cases: JUnitCase[], at: st
     hits.forEach((c) => used.add(c));
     if (hits.length) results.set(t.id, combine(hits, at));
   }
-  return { results, unmatchedCases: cases.filter((c) => !used.has(c)).length };
+  const unmatched = cases.filter((c) => !used.has(c));
+  return { results, unmatchedCases: unmatched.length, unmatched };
 }

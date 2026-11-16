@@ -79,6 +79,7 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 | `search` | read | Substring search over entities (name/id), behaviors (name/expected) and tests. |
 | `get_assurance` | read | Verification assurance for an entity subtree or the whole product against the inspected commit. |
 | `list_tests` | read | Test definitions with the behaviors they verify and their status (passing / failing / unconfirmed). |
+| `list_unmapped_tests` | read | Tests with no behavior mapping, including unregistered tests discovered in the latest JUnit results. |
 | `get_diagnostics` | read | Validation errors/warnings (codes, paths, line/column) for what the user sees. |
 | `open_file` | write | Open a contract by absolute path (guards unsaved changes). |
 | `create_contract` | write | Create and open a new empty contract at a path that does not exist yet. |
@@ -157,6 +158,12 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 `set_validation { command: "npm test", results: "reports" }` -> `save_file` -> the person approves the
 command once (Validate) -> `run_tests` (or run the command in a terminal; Orbit reads the results file
 whenever it changes) -> `get_assurance` (counts) / `list_tests { status: "failing" }`.
+
+**Find and assign unmapped tests**
+
+Ask the agent “Use Orbit to pull tests that are not assigned to behaviors.” `list_unmapped_tests` reads the working contract and the latest available JUnit results. Pass `nextOffset` back as `offset` to read the next page. When JUnit results are unavailable, the tool still lists unmapped contract tests.
+
+Use a contract row’s `id` directly. For a JUnit row, pass its `registration` object to `create_test` and use the returned test ID. Then call `map_tests` for an existing behavior or pass the IDs as `testIds` to `create_behavior`. Call `save_file` to persist the edits.
 
 **Plan a feature, then track it against the plan**
 

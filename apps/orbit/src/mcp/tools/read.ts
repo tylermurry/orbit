@@ -1,5 +1,6 @@
 import { ancestorsOf, behaviorAssurance, behaviorIndex, entityAssurance, focusedRelations, parseContract, serializeContract, testAssurance } from '@orbit/contract';
 import type { AssuranceSummary, BehaviorAssurance, EntityKind, OrbitContract, TestAssurance } from '@orbit/contract';
+import { caseMatches, caseRegistration } from '../../lib/junit';
 import { buildTree, REL_INFO } from '../../lib/model';
 import type { TreeNode } from '../../lib/model';
 import { activePreset, baseBranchFor, revKey, revLabel } from '../../state/compare';
@@ -300,6 +301,35 @@ export function readTools(): ToolDef[] {
         if (a.status) rows = rows.filter((r) => r.status === a.status);
         const limit = (a.limit as number | undefined) ?? 200;
         return { data: { total: rows.length, truncated: rows.length > limit, tests: rows.slice(0, limit), testResults: resultsInfo(s) } };
+      },
+    ),
+
+    def(
+      'list_unmapped_tests',
+      'List tests without behavior mappings',
+      'Find tests that are not assigned to any behavior in the working contract, including unregistered cases from the latest JUnit results. Contract entries have an id for map_tests or create_behavior. For JUnit entries, pass the registration object to create_test first. This tool does not run tests or edit the contract.',
+      S.obj({
+        limit: S.int('Page size (default 200).', { minimum: 1, maximum: 1000 }),
+        offset: S.int('Start at this row, using nextOffset from the previous page.', { minimum: 0 }),
+      }),
+      (a, ctx) => {
+        const c = requireContract(ctx);
+        const s = st(ctx);
+        const mappedIds = new Set(c.entities.flatMap((e) => e.behaviors.flatMap((b) => b.testIds)));
+        const registered = c.tests.filter((t) => !mappedIds.has(t.id)).map((t) => ({ source: 'contract', ...t }));
+        const placeholders = c.tests.filter((t) => t.placeholder);
+        const reported = new Map<string, { source: 'junit'; registration: ReturnType<typeof caseRegistration> }>();
+        for (const testCase of matchedResults(s).unmatched) {
+          // Planned definitions are already represented by their contract ids and mappings.
+          if (placeholders.some((t) => caseMatches(t, testCase))) continue;
+          const registration = caseRegistration(testCase);
+          const key = registration.id ? `id:${registration.id}` : JSON.stringify([testCase.file.trim(), testCase.name.trim()]);
+          if (!reported.has(key)) reported.set(key, { source: 'junit', registration });
+        }
+        const rows = [...registered, ...reported.values()];
+        const offset = (a.offset as number | undefined) ?? 0;
+        const end = offset + ((a.limit as number | undefined) ?? 200);
+        return { data: { total: rows.length, tests: rows.slice(offset, end), nextOffset: end < rows.length ? end : null, testResults: resultsInfo(s) } };
       },
     ),
 
