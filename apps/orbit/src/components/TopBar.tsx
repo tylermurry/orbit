@@ -1,13 +1,12 @@
-import { Button, IconButton, Text, Tooltip } from '@radix-ui/themes';
-import { useAppState, useCtrl, useDispatch } from '../state/context';
+import { Button, Text, Tooltip } from '@radix-ui/themes';
+import * as ToggleGroup from '@radix-ui/react-toggle-group';
+import { useAppState, useCtrl } from '../state/context';
 import { activePreset, presetComparison } from '../state/compare';
 import { isDirty } from '../state/store';
 import type { AppState, LifecyclePreset, ViewId } from '../state/types';
 import { AiButton } from './AiAccess';
-import { TerminalIcon, setTerminalOpen } from './TerminalPanel';
 import { useProjectSkills } from './ProjectSkills';
 import { ValidateButton } from './Validation';
-import { useSplit } from '../lib/useSplit';
 import { FileMenu } from './FileMenu';
 import { ProjectSwitcher } from './ProjectSwitcher';
 
@@ -22,14 +21,20 @@ export function OrbitMark({ size = 22 }: { size?: number }) {
   );
 }
 
-export function TopBar() {
+function WorkspaceLayoutIcon({ split = false }: { split?: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.25" aria-hidden="true">
+      <rect x="2" y="2" width="12" height="12" rx="1.75" />
+      {split && <path d="M8 2v12" />}
+    </svg>
+  );
+}
+
+export function TopBar({ split, canSplit, onLayoutChange }: { split: boolean; canSplit: boolean; onLayoutChange: (split: boolean) => void }) {
   const s = useAppState();
-  const d = useDispatch();
   const dirty = isDirty(s);
   const hasFile = !!s.filePath && (!!s.contract || s.loadedInvalid);
-  const terminalOpen = s.terminalOpen;
   const skills = useProjectSkills();
-  const split = useSplit();
 
   const left = (
     <div className="topbar-left">
@@ -69,12 +74,33 @@ export function TopBar() {
         </Text>
       )}
       {hasFile && <ValidateButton />}
-      <Tooltip content={terminalOpen ? 'Hide terminal (Ctrl+`)' : 'Claude Code terminal (Ctrl+`)'}>
-        <IconButton variant={terminalOpen ? 'soft' : 'surface'} color="gray" size="2" aria-label="Toggle terminal" aria-pressed={terminalOpen} onClick={() => setTerminalOpen(d, !terminalOpen)}>
-          <TerminalIcon />
-        </IconButton>
-      </Tooltip>
-      <AiButton />
+      <div className="topbar-layout-actions">
+        {canSplit && (
+          <ToggleGroup.Root
+            type="single"
+            role="radiogroup"
+            orientation="horizontal"
+            aria-label="Workspace layout"
+            className="workspace-layout-toggle"
+            value={split ? 'split' : 'combined'}
+            onValueChange={(value) => {
+              if (value) onLayoutChange(value === 'split');
+            }}
+          >
+            <Tooltip content="Split view">
+              <ToggleGroup.Item value="split" aria-label="Split view">
+                <WorkspaceLayoutIcon split />
+              </ToggleGroup.Item>
+            </Tooltip>
+            <Tooltip content="Combined view">
+              <ToggleGroup.Item value="combined" aria-label="Combined view">
+                <WorkspaceLayoutIcon />
+              </ToggleGroup.Item>
+            </Tooltip>
+          </ToggleGroup.Root>
+        )}
+        <AiButton />
+      </div>
       {hasFile && skills?.primary && (
         <Button size="2" onClick={skills.runPrimary}>
           {skills.primary}
@@ -83,33 +109,16 @@ export function TopBar() {
     </div>
   );
 
-  if (split) {
-    // Halves line up with the panes below: the Impact switcher sits over the Impact pane.
-    return (
-      <header className="topbar split" role="banner">
-        <div className="topbar-half">
-          {left}
-          {capabilities}
-        </div>
-        <div className="topbar-half right">
-          <ImpactSelector s={s} split />
-          {right}
-        </div>
-      </header>
-    );
-  }
   return (
-    <header className="topbar" role="banner">
-      {left}
-      <div className="topbar-center">
-        {hasFile && (
-          <>
-            {capabilities}
-            <ImpactSelector s={s} />
-          </>
-        )}
+    <header className={split ? 'topbar split' : 'topbar'} role="banner">
+      <div className="topbar-half">
+        {left}
+        {hasFile && capabilities}
       </div>
-      {right}
+      <div className="topbar-half right">
+        {hasFile && <ImpactSelector s={s} split={split} />}
+        {right}
+      </div>
     </header>
   );
 }

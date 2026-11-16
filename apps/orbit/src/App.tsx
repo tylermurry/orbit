@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Flex } from '@radix-ui/themes';
 import { Banners } from './components/Shell';
 import { TerminalPanel, setTerminalOpen } from './components/TerminalPanel';
@@ -9,6 +9,7 @@ import { TopBar, registerNavHandlers, requestView } from './components/TopBar';
 import { Toasts } from './components/common';
 import { ReviewSheet } from './components/ReviewSheet';
 import { fileName } from './lib/format';
+import { loadPref, savePref } from './lib/prefs';
 import { setWindowTitle } from './lib/windowTitle';
 import { useAppState, useCtrl, useDispatch, useHost, useStore } from './state/context';
 import { isDirty, currentText } from './state/store';
@@ -17,9 +18,10 @@ import { EmptyState } from './views/EmptyState';
 import { ExplorerView } from './views/ExplorerView';
 import { ImpactView } from './views/ImpactView';
 import { RawEditor } from './views/RawEditor';
-import { useSplit } from './lib/useSplit';
 import { WorkspaceSplit } from './components/WorkspaceSplit';
 import type { MemoryHost } from './host/memoryHost';
+
+const SPLIT_VIEW_KEY = 'orbit.layout.splitView';
 
 export function App() {
   const s = useAppState();
@@ -28,9 +30,18 @@ export function App() {
   const host = useHost();
   const store = useStore();
   const dirty = isDirty(s);
-  const split = useSplit();
+  const [splitView, setSplitView] = useState(() => loadPref<unknown>(SPLIT_VIEW_KEY, false) === true);
+  const canSplit = !!s.filePath && !!s.contract && !s.rawMode && !!s.git?.available;
+  const split = canSplit && splitView;
   const splitRef = useRef(split);
   splitRef.current = split;
+
+  function changeLayout(nextSplit: boolean) {
+    if (!canSplit || nextSplit === splitView) return;
+    setSplitView(nextSplit);
+    savePref(SPLIT_VIEW_KEY, nextSplit);
+    if (!nextSplit && s.view !== 'impact') ctrl.setCompare(null);
+  }
 
   // navigation handlers that respect unapplied raw edits
   useEffect(() => {
@@ -135,7 +146,7 @@ export function App() {
   return (
     <ProjectSkills>
       <Flex direction="column" className="app">
-        <TopBar />
+        <TopBar split={split} canSplit={canSplit} onLayoutChange={changeLayout} />
         <Banners />
         <div className="app-body">{body}</div>
         <TerminalPanel />

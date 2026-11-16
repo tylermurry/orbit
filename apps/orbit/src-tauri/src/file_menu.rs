@@ -1,8 +1,10 @@
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Wry};
 
 const FILE: &str = "orbit-file";
 const RECENT: &str = "orbit-file-recent";
+const VIEW: &str = "orbit-file-view";
+const TERMINAL: &str = "orbit-file:claude-terminal";
 const ACTION_PREFIX: &str = "orbit-file:";
 pub const EVENT: &str = "orbit:file-menu";
 
@@ -20,6 +22,13 @@ fn item(
     MenuItem::with_id(app, format!("{ACTION_PREFIX}{id}"), text, enabled, accelerator)
 }
 
+fn find_submenu(menu: &Menu<Wry>, title: &str) -> tauri::Result<Option<(usize, Submenu<Wry>)>> {
+    Ok(menu.items()?.iter().enumerate().find_map(|(index, item)| {
+        let submenu = item.as_submenu()?;
+        (submenu.text().ok()?.replace('&', "") == title).then(|| (index, submenu.clone()))
+    }))
+}
+
 pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::default(app)?;
     let file = Submenu::with_id(app, FILE, "File", true)?;
@@ -28,12 +37,6 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     // On Windows and Linux, Ctrl shortcuts stay in the webview so the embedded terminal
     // can receive them while it has focus.
     let shortcut = |key| cfg!(target_os = "macos").then_some(key);
-    let items = menu.items()?;
-    let existing = items.iter().enumerate().find_map(|(index, item)| {
-        let submenu = item.as_submenu()?;
-        (submenu.text().ok()?.replace('&', "") == "File").then_some((index, submenu))
-    });
-
     file.append_items(&[
         &item(app, "new", "New…", true, None)?,
         &item(app, "open", "Open…", true, shortcut("Cmd+O"))?,
@@ -47,17 +50,38 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         &item(app, "skills", "Install/Update Skills…", false, None)?,
         &item(app, "shortcuts", "Keyboard Shortcuts", true, None)?,
     ])?;
-    if let Some((index, original)) = existing {
+    if let Some((index, original)) = find_submenu(&menu, "File")? {
         file.append(&PredefinedMenuItem::separator(app)?)?;
         for entry in original.items()? {
             original.remove(&entry)?;
             file.append(&entry)?;
         }
-        menu.remove(original)?;
+        menu.remove(&original)?;
         menu.insert(&file, index)?;
     } else {
         menu.prepend(&file)?;
     }
+
+    let view = if let Some((_, view)) = find_submenu(&menu, "View")? {
+        view.append(&PredefinedMenuItem::separator(app)?)?;
+        view
+    } else {
+        let view = Submenu::with_id(app, VIEW, "View", true)?;
+        if let Some((index, _)) = find_submenu(&menu, "Window")? {
+            menu.insert(&view, index)?;
+        } else {
+            menu.append(&view)?;
+        }
+        view
+    };
+    view.append(&CheckMenuItem::with_id(
+        app,
+        TERMINAL,
+        "Claude Terminal",
+        true,
+        false,
+        None::<&str>,
+    )?)?;
     Ok(menu)
 }
 
@@ -68,6 +92,7 @@ pub struct FileMenuState {
     dirty: bool,
     has_contract: bool,
     skills_available: bool,
+    terminal_open: bool,
     recent: Vec<String>,
 }
 
@@ -77,7 +102,16 @@ pub fn update_file_menu(app: AppHandle, state: FileMenuState) -> Result<(), Stri
 }
 
 fn update(app: &AppHandle, state: FileMenuState) -> tauri::Result<()> {
-    let Some(file) = app.menu().and_then(|menu| menu.get(FILE)) else {
+    let Some(menu) = app.menu() else {
+        return Ok(());
+    };
+    if let Some(terminal) = find_submenu(&menu, "View")?.and_then(|(_, view)| view.get(TERMINAL)) {
+        terminal
+            .as_check_menuitem_unchecked()
+            .set_checked(state.terminal_open)?;
+    }
+
+    let Some(file) = menu.get(FILE) else {
         return Ok(());
     };
     let file = file.as_submenu_unchecked();

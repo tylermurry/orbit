@@ -318,13 +318,3 @@ export function TerminalPanel() {
     </section>
   );
 }
-
-/** Small "terminal" glyph (Radix icons has none). */
-export function TerminalIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-      <rect x="1.5" y="2.5" width="12" height="10" rx="1.5" stroke="currentColor" />
-      <path d="M4 6l2 1.5L4 9M7.5 9.5h3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}

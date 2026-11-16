@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Flex, ScrollArea, Text, TextField, Tooltip } from '@radix-ui/themes';
-import { ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, PlusIcon, Cross2Icon, ChatBubbleIcon, DoubleArrowDownIcon, DoubleArrowUpIcon } from '@radix-ui/react-icons';
+import { Button, Flex, IconButton, ScrollArea, Text, TextField, Tooltip } from '@radix-ui/themes';
+import { ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, PlusIcon, Cross2Icon, ChatBubbleIcon } from '@radix-ui/react-icons';
 import type { AssuranceSummary, EntityKind } from '@orbit/contract';
 import { KIND_PLURAL, searchTree } from '../lib/model';
 import type { FilterResult } from '../lib/model';
@@ -19,6 +19,14 @@ interface Row {
   posinset: number;
   setsize: number;
   parentKey: string | null;
+}
+
+function TreeExpansionIcon({ expand }: { expand: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={expand ? 'M4.5 6 L9 1.5 L13.5 6 M4.5 12 L9 16.5 L13.5 12' : 'M4.5 1.5 L9 6 L13.5 1.5 M4.5 16.5 L9 12 L13.5 16.5'} />
+    </svg>
+  );
 }
 
 function Highlight({ text, q }: { text: string; q: string }) {
@@ -382,14 +390,14 @@ export function Tree({
         {parentIds.length > 0 && !sr && !filter && (
           <>
             <Tooltip content="Expand all">
-              <Button size="2" variant="soft" color="gray" onClick={() => setAll(true)} aria-label="Expand all">
-                <DoubleArrowDownIcon aria-hidden />
-              </Button>
+              <IconButton size="2" variant="ghost" color="gray" className="tree-expansion-button" onClick={() => setAll(true)} aria-label="Expand all">
+                <TreeExpansionIcon expand />
+              </IconButton>
             </Tooltip>
             <Tooltip content="Collapse all">
-              <Button size="2" variant="soft" color="gray" onClick={() => setAll(false)} aria-label="Collapse all">
-                <DoubleArrowUpIcon aria-hidden />
-              </Button>
+              <IconButton size="2" variant="ghost" color="gray" className="tree-expansion-button" onClick={() => setAll(false)} aria-label="Collapse all">
+                <TreeExpansionIcon expand={false} />
+              </IconButton>
             </Tooltip>
           </>
         )}
