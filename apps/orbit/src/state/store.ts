@@ -6,7 +6,7 @@ import { applyViewFilter, buildTree } from '../lib/model';
 import { loadPref } from '../lib/prefs';
 import type { JUnitCase, MatchedResults } from '../lib/junit';
 import type { PlanFile } from './plan';
-import type { AppState, CompareResult, Comparison, Prompt, ResultsFile, ReviewState, RunState, ViewFilter, ViewId } from './types';
+import type { AppState, CompareResult, Comparison, EngineeringTab, Prompt, ResultsFile, ReviewState, RunState, ViewFilter, ViewId } from './types';
 
 const canonCache = new WeakMap<OrbitContract, string>();
 export function canon(c: OrbitContract | null): string {
@@ -38,6 +38,8 @@ export function initialState(): AppState {
     planFile: null,
     view: 'product',
     explorerView: 'product',
+    engineeringTab: 'systems',
+    architectureFocusId: null,
     rawMode: false,
     selected: { capability: null, system: null },
     focusBehaviorId: null,
@@ -138,6 +140,9 @@ export type Action =
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'setView'; view: ViewId }
+  | { type: 'setEngineeringTab'; tab: EngineeringTab }
+  | { type: 'setArchitectureFocus'; id: string | null }
+  | { type: 'showArchitecture'; id: string }
   | { type: 'selectEntity'; id: string; kind: EntityKind; behaviorId?: string | null }
   | { type: 'focusBehaviors'; id: string; kind: EntityKind; behaviorIds: string[] }
   | { type: 'clearFocusBehavior' }
@@ -221,13 +226,19 @@ export function reducer(s: AppState, a: Action): AppState {
     }
     case 'setView':
       return { ...s, view: a.view, explorerView: a.view === 'impact' ? s.explorerView : a.view };
+    case 'setEngineeringTab':
+      return { ...s, engineeringTab: a.tab };
+    case 'setArchitectureFocus':
+      return { ...s, architectureFocusId: a.id };
+    case 'showArchitecture':
+      return { ...s, view: 'engineering', explorerView: 'engineering', engineeringTab: 'architecture', architectureFocusId: a.id };
     case 'selectEntity': {
       const view: ViewId = a.kind === 'capability' ? 'product' : 'engineering';
-      return { ...s, view, explorerView: view, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: a.behaviorId ?? null, focusBehaviorIds: [], rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
+      return { ...s, view, explorerView: view, engineeringTab: view === 'engineering' ? 'systems' : s.engineeringTab, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: a.behaviorId ?? null, focusBehaviorIds: [], rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
     }
     case 'focusBehaviors': {
       const view: ViewId = a.kind === 'capability' ? 'product' : 'engineering';
-      return { ...s, view, explorerView: view, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: null, focusBehaviorIds: a.behaviorIds, rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
+      return { ...s, view, explorerView: view, engineeringTab: view === 'engineering' ? 'systems' : s.engineeringTab, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: null, focusBehaviorIds: a.behaviorIds, rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };
     }
     case 'clearFocusBehavior':
       return s.focusBehaviorId || s.focusBehaviorIds.length ? { ...s, focusBehaviorId: null, focusBehaviorIds: [] } : s;

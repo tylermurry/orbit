@@ -9,11 +9,11 @@ import { Badge } from '@radix-ui/themes';
 import type { EntityKind } from '@orbit/contract';
 import { ChangePill } from './common';
 
-/** Which view an entity lives in: capabilities → Product, systems → Engineering. */
+/** Which view an entity lives in: capabilities → Product, systems → System. */
 export function AreaBadge({ kind }: { kind: EntityKind }) {
   return (
     <Badge color={kind === 'capability' ? 'indigo' : 'cyan'} variant="soft" radius="full">
-      {kind === 'capability' ? 'Product' : 'Engineering'}
+      {kind === 'capability' ? 'Product' : 'System'}
     </Badge>
   );
 }
@@ -189,7 +189,7 @@ export function EntityChangeDetail({ diff, item, labels, proposed, onShowIn, can
       {consumers}
       {status !== 'removed' && canShowIn(entity.id) && (
         <Flex gap="2" mt="4">
-          <Button onClick={() => onShowIn(entity.id)}>Show in {entity.kind === 'capability' ? 'Product' : 'Engineering'}</Button>
+          <Button onClick={() => onShowIn(entity.id)}>Show in {entity.kind === 'capability' ? 'Product' : 'System'}</Button>
         </Flex>
       )}
     </div>

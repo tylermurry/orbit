@@ -190,7 +190,7 @@ const SHORTCUTS: [string, string][] = [
   ['Mod+O', 'Open contract'],
   ['Mod+S', 'Save'],
   ['Shift+Mod+S', 'Save As'],
-  ['Mod+1 / 2 / 3', 'Product / Engineering / Impact'],
+  ['Mod+1 / 2 / 3', 'Product / System / Impact'],
   ['Mod+F', 'Search the tree'],
   ['Mod+Z', 'Undo structured edit'],
   ['Shift+Mod+Z', 'Redo (also Ctrl+Y)'],

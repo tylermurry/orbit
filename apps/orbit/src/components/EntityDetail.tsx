@@ -41,11 +41,16 @@ export function EntityDetail({ entity, contract, readOnly }: { entity: Entity; c
       )}
       <Flex justify="between" align="center" mb="2" gap="3">
         <KindBadge kind={entity.kind} />
-        {!readOnly && (
-          <Button size="1" variant="ghost" color="red" onClick={() => setDeleting(true)} aria-label={`Delete ${entity.name}`}>
-            <TrashIcon aria-hidden /> Delete
-          </Button>
-        )}
+        <Flex gap="3" align="center">
+          {entity.kind === 'system' && (
+            <Button size="1" variant="ghost" onClick={() => d({ type: 'showArchitecture', id: entity.id })}>Show in Overview</Button>
+          )}
+          {!readOnly && (
+            <Button size="1" variant="ghost" color="red" onClick={() => setDeleting(true)} aria-label={`Delete ${entity.name}`}>
+              <TrashIcon aria-hidden /> Delete
+            </Button>
+          )}
+        </Flex>
       </Flex>
       <InlineText value={entity.name} label="Entity name" disabled={readOnly} singleLine placeholder="Untitled" validate={(v) => v.trim().length > 0} onCommit={(v) => set({ name: v })} className="doc-title" />
 

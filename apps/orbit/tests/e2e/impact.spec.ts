@@ -145,7 +145,7 @@ test.describe('AC-10 embedded change context + AC-11 impact', () => {
     await expect(affected.getByTestId('behavior-impact')).toContainText('(changed)');
   });
 
-  test('Engineering view shows the shared-system change and its consumers; clearing the comparison removes ghosts', async ({ page }) => {
+  test('System view shows the shared-system change and its consumers; clearing the comparison removes ghosts', async ({ page }) => {
     await page.keyboard.press('Control+2');
     await expect(item(page, 'Local Date Evaluation')).toHaveAttribute('data-status', 'modified');
     await expect(item(page, 'Task Filtering and Sorting')).toHaveAttribute('data-status', 'affected');
@@ -179,8 +179,8 @@ test.describe('AC-10 embedded change context + AC-11 impact', () => {
     await expect(consumers.getByTestId('impact-chain')).toHaveCount(3);
     await expect(consumers).toContainText('not observed breakage');
 
-    // jump into Engineering with the comparison still active
-    await page.getByRole('button', { name: 'Show in Engineering' }).click();
+    // jump into System with the comparison still active
+    await page.getByRole('button', { name: 'Show in System' }).click();
     await expect(page.getByTestId('entity-detail').getByLabel('Entity name')).toHaveValue('Local Date Evaluation');
     await expect(page.getByRole('contentinfo', { name: 'Status' })).toContainText('Showing View actual');
     await expect(item(page, 'Task Filtering and Sorting')).toHaveAttribute('data-status', 'affected');

@@ -8,10 +8,10 @@ import { relativeTime } from '../lib/format';
 import { wordDiff } from '../lib/format';
 import { useApp, useDispatch } from '../state/context';
 
-export function KindBadge({ kind }: { kind: EntityKind }) {
+export function KindBadge({ kind, label = KIND_LABEL[kind] }: { kind: EntityKind; label?: string }) {
   return (
     <Badge color={kind === 'capability' ? 'indigo' : 'cyan'} variant="soft" radius="full">
-      {KIND_LABEL[kind]}
+      {label}
     </Badge>
   );
 }

@@ -16,6 +16,7 @@ import { isDirty, currentText } from './state/store';
 import type { ViewId } from './state/types';
 import { EmptyState } from './views/EmptyState';
 import { ExplorerView } from './views/ExplorerView';
+import { EngineeringView } from './views/EngineeringView';
 import { ImpactView } from './views/ImpactView';
 import { RawEditor } from './views/RawEditor';
 import { WorkspaceSplit } from './components/WorkspaceSplit';
@@ -114,7 +115,7 @@ export function App() {
         // route through the nav handler registered above
         requestView(v);
       } else if (mod && k === 'f' && hasFile) {
-        const el = document.querySelector<HTMLInputElement>('[data-tree-search]');
+        const el = document.querySelector<HTMLInputElement>('[data-tree-search]:not([hidden] *)');
         if (el) {
           e.preventDefault();
           el.focus();
@@ -138,9 +139,9 @@ export function App() {
   const body = useMemo(() => {
     if (!hasDoc) return <EmptyState />;
     if (s.rawMode || !s.contract) return <RawEditor />;
-    if (split) return <WorkspaceSplit left={<ExplorerView kind={s.explorerView === 'product' ? 'capability' : 'system'} />} right={<ImpactView />} />;
+    if (split) return <WorkspaceSplit left={s.explorerView === 'product' ? <ExplorerView kind="capability" /> : <EngineeringView />} right={<ImpactView />} />;
     if (s.view === 'impact') return <ImpactView />;
-    return <ExplorerView kind={s.view === 'product' ? 'capability' : 'system'} />;
+    return s.view === 'product' ? <ExplorerView kind="capability" /> : <EngineeringView />;
   }, [hasDoc, s.rawMode, s.contract, s.view, s.explorerView, split]);
 
   return (

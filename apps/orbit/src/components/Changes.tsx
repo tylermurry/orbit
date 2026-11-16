@@ -142,7 +142,7 @@ function show(v: unknown): string {
   return JSON.stringify(v);
 }
 
-/** onShowIn jumps to the entity in Product/Engineering; canShowIn says whether it exists in the working copy. */
+/** onShowIn jumps to the entity in Product/System; canShowIn says whether it exists in the working copy. */
 export function ChangeDetail({ diff, change, onShowIn, canShowIn, label, proposed, compact }: { diff: SemanticDiff; label?: string; proposed?: boolean; change: Change; onShowIn?: (entityId: string) => void; canShowIn?: (entityId: string) => boolean; /** Nested under an entity: hide id, consumers and Show-in buttons. */ compact?: boolean }) {
   const { entities, nameOf } = useMemo(() => diffLookups(diff), [diff]);
   const k = KIND_SYMBOL[change.kind];
@@ -352,7 +352,7 @@ export function ChangeDetail({ diff, change, onShowIn, canShowIn, label, propose
             Show in Product
           </Button>
           <Button variant={targetEntity.kind === 'system' ? 'solid' : 'soft'} disabled={targetEntity.kind !== 'system'} onClick={() => onShowIn(targetEntityId)}>
-            Show in Engineering
+            Show in System
           </Button>
         </Flex>
       )}

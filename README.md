@@ -8,7 +8,7 @@ that verify each behavior. Orbit gives you three perspectives on that file:
 | View | For | What you see |
 |---|---|---|
 | **Product** | product owners | capability tree, behaviors, assurance rollups, focused relationship graph |
-| **Engineering** | engineering leads | the same for internal systems |
+| **System** | engineering leads | system tree, behaviors, assurance, and a zoomable Overview |
 | **Impact** | everyone | what changed (Plan, Plan vs. Actual, Actual), the *potential* downstream impact, and whether each changed behavior is tested and passing |
 
 **Validate** runs the product's whole test suite in the terminal's Validate tab with one command you confirm (default `npm run build`), then reads the JUnit XML
@@ -63,7 +63,7 @@ npm run orbit:build                             # release build + installer bund
 npm run tasky                                   # Tasky at http://localhost:5174
 ```
 
-In Orbit: **Open contract…** → `examples/tasky.orbit.json`. Try the Product and Engineering trees, select an entity,
+In Orbit: **Open contract…** → `examples/tasky.orbit.json`. Try the Product and System trees, select an entity,
 edit behaviors, open **Tests**, click **Validate**, toggle **Raw JSON**, and pick an **Impact** view.
 
 **Create new contract** suggests `orbit.json` when you choose where to save the project.

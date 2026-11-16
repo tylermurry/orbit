@@ -5,6 +5,7 @@ import type { WalkthroughReport } from '../lib/walkthrough';
 import type { PlanFile } from './plan';
 
 export type ViewId = 'product' | 'engineering' | 'impact';
+export type EngineeringTab = 'systems' | 'architecture';
 
 /** `baseline` = merge-base of HEAD and the base branch (resolved on every comparison). */
 export type RevSel = { type: 'working' } | { type: 'unsaved' } | { type: 'ref'; name: string } | { type: 'sha'; sha: string } | { type: 'baseline'; branch: string } | { type: 'pinned'; sha: string } | { type: 'plan' };
@@ -111,6 +112,8 @@ export interface AppState {
   view: ViewId;
   /** The capabilities view last shown (the left pane of the wide split). */
   explorerView: Exclude<ViewId, 'impact'>;
+  engineeringTab: EngineeringTab;
+  architectureFocusId: string | null;
   rawMode: boolean;
   selected: Record<EntityKind, string | null>;
   focusBehaviorId: string | null;

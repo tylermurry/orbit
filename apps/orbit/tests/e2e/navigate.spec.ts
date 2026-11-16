@@ -4,7 +4,7 @@ import { FILE, launch } from './helpers';
 const item = (page: import('@playwright/test').Page, name: string) => page.getByRole('treeitem', { name: new RegExp(`^${name}`) });
 
 test.describe('AC-02 open and navigate', () => {
-  test('capability tree in Product, system tree in Engineering, with details, behaviors, tests and relationships', async ({ page }) => {
+  test('capability tree in Product, system tree in System, with details, behaviors, tests and relationships', async ({ page }) => {
     await launch(page, { path: FILE });
     const caps = page.getByRole('tree', { name: 'Capabilities' });
     await expect(caps.getByRole('treeitem')).toHaveCount(9); // 3 roots + 6 children are all visible (roots expanded by default)
@@ -29,8 +29,8 @@ test.describe('AC-02 open and navigate', () => {
     await expect(page.getByTestId('rel-out')).toContainText('depends on');
     await expect(page.getByTestId('rel-out')).toContainText('Create and Edit Tasks');
 
-    // Engineering view
-    await page.getByRole('radio', { name: 'Engineering' }).click();
+    // System view
+    await page.getByRole('radio', { name: 'System' }).click();
     const sys = page.getByRole('tree', { name: 'Systems' });
     await expect(sys.getByRole('treeitem')).toHaveCount(6);
     await item(page, 'Task Repository').click();
@@ -49,7 +49,7 @@ test.describe('AC-02 open and navigate', () => {
     await expect(graph.locator('[data-rel-type="uses"]')).toHaveCount(1);
     await expect(page.getByLabel('Graph legend')).toContainText('dashed');
 
-    // clicking a connected node of the other kind switches to Engineering and selects it
+    // clicking a connected node of the other kind switches to System and selects it
     await graph.getByRole('button', { name: /Task Filtering and Sorting, system/ }).click();
     await expect(page.getByRole('tree', { name: 'Systems' })).toBeVisible();
     await expect(page.getByTestId('entity-detail').getByLabel('Entity name')).toHaveValue('Task Filtering and Sorting');

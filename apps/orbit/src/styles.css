@@ -138,6 +138,79 @@ body { overflow: hidden; }
 
 /* explorer */
 .explorer { display: flex; min-height: 0; }
+.engineering-view, .engineering-tab-content { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.engineering-tabs { --tab-height: 44px; flex: 0 0 auto; padding-inline: 12px; }
+.engineering-tab-content, .engineering-tab-content > * { flex: 1; min-height: 0; }
+.engineering-tab-content[hidden] { display: none; }
+
+.architecture-view { display: flex; flex-direction: column; min-width: 0; }
+.architecture-toolbar {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px;
+  padding: 7px 14px; border-bottom: 1px solid var(--gray-a5); background: var(--color-background);
+}
+.architecture-breadcrumb, .architecture-crumb { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.architecture-crumb > span, .architecture-hint { font-size: var(--font-size-1); color: var(--gray-11); }
+.architecture-crumb > [aria-current] { color: var(--gray-12); font-weight: 500; overflow-wrap: anywhere; }
+.architecture-workspace { display: flex; flex: 1; min-height: 0; }
+.architecture-stage {
+  position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; cursor: grab; touch-action: none;
+  background: radial-gradient(var(--gray-a6) 0.75px, transparent 0.75px) 0 0 / 18px 18px var(--color-background);
+}
+.architecture-stage:active { cursor: grabbing; }
+.architecture-graph { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; }
+.architecture-group.system rect { fill: var(--cyan-a2); stroke: var(--cyan-a5); }
+.architecture-group.capability rect { fill: var(--accent-a2); stroke: var(--accent-a5); }
+.architecture-group text { font-weight: 500; fill: var(--gray-11); }
+.architecture-node, .architecture-edge { cursor: pointer; }
+.architecture-node text { fill: var(--gray-12); pointer-events: none; font-weight: 500; }
+.architecture-node rect { stroke-width: 1.5; }
+.architecture-node.system { --architecture-node-highlight: var(--cyan-10); }
+.architecture-node.system rect { fill: var(--cyan-2); stroke: var(--cyan-8); }
+.architecture-node.capability rect { fill: var(--accent-2); stroke: var(--accent-8); }
+.architecture-node:hover rect, .architecture-node:focus-visible rect, .architecture-node.selected rect {
+  stroke: var(--architecture-node-highlight, var(--accent-10)); stroke-width: 2;
+}
+.architecture-edge path { fill: none; }
+.architecture-edge-hit { stroke: transparent; stroke-width: 16; }
+.architecture-edge-line { stroke: var(--gray-10); stroke-width: 1.5; pointer-events: none; }
+.architecture-edge-label {
+  font-size: 11px; fill: var(--gray-11); stroke: var(--color-background); stroke-width: 3px;
+  stroke-linejoin: round; paint-order: stroke;
+}
+.architecture-arrow { fill: var(--gray-10); }
+.architecture-edge:hover .architecture-edge-line, .architecture-edge:focus-visible .architecture-edge-line, .architecture-edge.selected .architecture-edge-line {
+  stroke: var(--accent-10); stroke-width: 2.5;
+}
+.architecture-graph .muted { opacity: 0.32; }
+.architecture-graph .muted:hover, .architecture-graph .muted:focus-visible { opacity: 1; }
+.architecture-empty { margin: 20px; color: var(--gray-11); font-size: var(--font-size-2); }
+.architecture-splitter {
+  position: relative; z-index: 2; flex: 0 0 8px; margin-inline: -4px;
+  cursor: col-resize; touch-action: none;
+}
+.architecture-splitter:hover, .architecture-splitter:active, .architecture-splitter:focus-visible {
+  background: linear-gradient(var(--accent-a8), var(--accent-a8)) center / 3px 100% no-repeat;
+}
+.architecture-inspector {
+  display: flex; flex-direction: column; flex: 0 0 min(340px, 36%); min-width: 0;
+  box-sizing: border-box;
+  background: var(--color-panel-solid); border-left: 1px solid var(--gray-a6);
+  font-size: var(--font-size-2); overflow-wrap: anywhere;
+}
+.architecture-inspector-heading, .architecture-inspector-actions { display: flex; align-items: center; gap: 10px; }
+.architecture-inspector-heading {
+  justify-content: space-between; min-height: 44px; padding: 10px 14px; border-bottom: 1px solid var(--gray-a5);
+}
+.architecture-inspector-heading > button { flex-shrink: 0; }
+.architecture-inspector-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 10px 14px; }
+.architecture-inspector-actions { flex-wrap: wrap; margin-top: 6px; }
+.architecture-inspector-actions > button { max-width: 100%; white-space: normal; height: auto; min-height: var(--space-5); }
+.architecture-inspector p { margin: 4px 0 8px; color: var(--gray-11); }
+.architecture-node-description { white-space: pre-wrap; }
+.architecture-relationships { margin: 0; padding: 0; list-style: none; }
+.architecture-relationships li + li { margin-top: 12px; }
+.architecture-relationship-title { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; }
+.architecture-relationship-title .rt-Badge { max-width: 100%; height: auto; min-height: var(--space-4); white-space: normal; }
 .tree-pane { flex: none; min-width: 0; background: var(--gray-2); border-right: 1px solid var(--gray-a5); display: flex; flex-direction: column; min-height: 0; }
 .tree-pane-inner { height: 100%; min-height: 0; }
 .tree-pane-inner .tree-expansion-button { flex: none; width: 28px; height: 32px; margin: 0; padding: 0; color: var(--gray-11); }

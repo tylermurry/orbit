@@ -79,7 +79,7 @@ export function ImpactView() {
             <Callout.Icon>
               <InfoCircledIcon />
             </Callout.Icon>
-            <Callout.Text>Nothing is wrong with your contract. Product and Engineering views, editing, Raw JSON, tests and saving all work without Git.</Callout.Text>
+            <Callout.Text>Nothing is wrong with your contract. Product and System views, editing, Raw JSON, tests and saving all work without Git.</Callout.Text>
           </Callout.Root>
         </div>
       </main>
@@ -210,7 +210,7 @@ export function ImpactView() {
                               {e && <AreaBadge kind={e.kind} />}
                               {e && (
                                 <Button size="1" variant="ghost" ml="auto" onClick={() => showIn(e.id)}>
-                                  Show in {e.kind === 'capability' ? 'Product' : 'Engineering'}
+                                  Show in {e.kind === 'capability' ? 'Product' : 'System'}
                                 </Button>
                               )}
                             </Flex>
