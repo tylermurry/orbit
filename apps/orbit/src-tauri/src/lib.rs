@@ -179,6 +179,33 @@ fn term_close(terms: State<'_, Arc<Terminals>>, id: u32) {
     terms.close(id)
 }
 
+struct NativeBackdrop(Option<&'static str>);
+
+#[tauri::command]
+fn get_native_backdrop(backdrop: State<'_, NativeBackdrop>) -> Option<&'static str> {
+    backdrop.0
+}
+
+fn apply_native_backdrop(app: &AppHandle) -> Option<&'static str> {
+    #[cfg(target_os = "macos")]
+    return app.get_webview_window("main").and_then(|window| {
+        window_vibrancy::apply_liquid_glass(&window, window_vibrancy::LiquidGlassOptions::default())
+            .is_ok()
+            .then_some("liquid-glass")
+    });
+    #[cfg(target_os = "windows")]
+    return app.get_webview_window("main").and_then(|window| {
+        window_vibrancy::apply_mica(&window, None)
+            .is_ok()
+            .then_some("mica")
+    });
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
+        None
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -189,6 +216,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            app.manage(NativeBackdrop(apply_native_backdrop(app.handle())));
             let mcp = McpManager::new(app.handle());
             app.manage(mcp.clone());
             app.manage(Runner::new());
@@ -205,6 +233,7 @@ pub fn run() {
             list_xml_files,
             write_file_atomic,
             initial_file,
+            get_native_backdrop,
             file_menu::update_file_menu,
             open_in_editor,
             git_context,

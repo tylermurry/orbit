@@ -24,8 +24,19 @@ function useSystemAppearance(): 'light' | 'dark' {
   return dark ? 'dark' : 'light';
 }
 
+type NativeBackdrop = 'liquid-glass' | 'mica' | null;
+
 function Root({ host }: { host: OrbitHost | null }) {
   const appearance = useSystemAppearance();
+  const [nativeBackdrop, setNativeBackdrop] = React.useState<NativeBackdrop>(null);
+  React.useEffect(() => {
+    if (host?.kind !== 'tauri') return;
+    let active = true;
+    void import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke<NativeBackdrop>('get_native_backdrop'))
+      .then((backdrop) => { if (active) setNativeBackdrop(backdrop); }, () => undefined);
+    return () => { active = false; };
+  }, [host]);
   const value = React.useMemo(() => {
     if (!host) return null;
     const store = createStore();
@@ -34,7 +45,7 @@ function Root({ host }: { host: OrbitHost | null }) {
   }, [host]);
   React.useEffect(() => value?.mcp.start(), [value]);
   return (
-    <Theme accentColor="indigo" grayColor="slate" radius="medium" scaling="95%" appearance={appearance} hasBackground>
+    <Theme accentColor="indigo" grayColor="slate" radius="medium" scaling="95%" appearance={appearance} hasBackground={!nativeBackdrop} data-native-backdrop={nativeBackdrop ?? undefined}>
       {value ? (
         <AppProvider value={value}>
           <McpProvider runtime={value.mcp}>
