@@ -1,0 +1,11 @@
+name: dbg
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - working-directory: .rr
+        run: timeout 120 cargo test -- --nocapture --test-threads=1 cancel_stops 2>&1 | tail -30; echo exit=$?; ps -ef | head -30
