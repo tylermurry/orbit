@@ -1005,7 +1005,12 @@ mod tests {
         assert!(out.starts_with("HTTP/1.1 413"), "{out}");
 
         handle.stop();
-        assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+        // Tests run in parallel and the OS may hand this ephemeral port to another test's server straight away,
+        // so "stopped" means this server's answer is gone, not that nothing listens on the port.
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            let out = post_raw(port, Some(TOKEN), r#"{"jsonrpc":"2.0","id":9,"method":"tools/list"}"#);
+            assert!(!out.contains("get_status"), "the stopped server still answered: {out}");
+        }
     }
 
     #[test]
