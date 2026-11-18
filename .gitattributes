@@ -1,0 +1,5 @@
+# Keep line endings identical on every OS (generated files and skill hashes are compared byte for byte).
+* text=auto eol=lf
+*.png binary
+*.icns binary
+*.ico binary
