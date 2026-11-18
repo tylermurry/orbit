@@ -21,15 +21,16 @@
       "kind": "capability",
       "parentId": "cap.task-management",
       "name": "Create and Edit Tasks",
-      "summary": "A task needs a title; notes a due date and the list it belongs to are optional. People can come back later and change any of those details in an accessible dialog without",
-      "description": "A task needs a title; notes a due date and the list it belongs to are optional. People can come back later and change any of those details in an accessible dialog without",
+      "summary": "Capture a task and change its title, notes, due date or list",
+      "description": "A task needs a title; notes, a due date and the list it belongs to are optional. People can come back later and change any of those details in an accessible dialog without losing their place in the list.",
       "behaviors": [
         {
           "id": "behavior.tasks.create",
           "name": "Create a task",
-          "expected": "Create a task",
+          "expected": "A task with a non-blank title can be created with optional notes and due date, and it appears in the list the person is viewing straight away.",
           "testIds": [
-            "test.tasky.tasks.create"
+            "test.tasky.tasks.create",
+            "test.tasky.task-repository.create"
           ]
         },
         {
@@ -106,8 +107,8 @@
       "kind": "capability",
       "parentId": "cap.task-organization",
       "name": "Custom Lists",
-      "summary": "A user groups related tasks into list (e.g. Work, Errands, etc). Inbox is a built-in list where all new tasks go by default if they aren’t assigned to another list.",
-      "description": "A user groups related tasks into list (e.g. Work, Errands, etc). Inbox is a built-in list where all new tasks go by default if they aren’t assigned to another list.",
+      "summary": "Create, rename and delete personal lists; Inbox is always there",
+      "description": "People can group related tasks into lists such as Work or Errands. Inbox is built in and cannot be renamed or deleted. Deleting a list never deletes its tasks.",
       "behaviors": [
         {
           "id": "behavior.lists.create-rename",
@@ -456,15 +457,6 @@
           ]
         }
       ]
-    },
-    {
-      "id": "cap.test-capabitlity",
-      "kind": "capability",
-      "parentId": "cap.task-discovery.inbox-all",
-      "name": "Test capabitlity",
-      "summary": "asdf",
-      "description": "",
-      "behaviors": []
     }
   ],
   "relationships": [

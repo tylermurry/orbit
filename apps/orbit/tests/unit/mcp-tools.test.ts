@@ -106,7 +106,7 @@ describe('reading', () => {
     expect(d.refsCount).toBeGreaterThan(0);
     expect(d.comparison).toBeNull();
     expect(d.testResults).toMatchObject({ configured: true, command: 'npm run validate -w @orbit/tasky', state: 'missing', lastRunAt: null, running: false });
-    expect(d.counts).toMatchObject({ capabilities: 10, systems: 6, tests: 44, placeholderTests: 0 });
+    expect(d.counts).toMatchObject({ capabilities: 9, systems: 6, tests: 44, placeholderTests: 0 });
     expect(d.externalChange).toBeNull();
   });
 
@@ -132,7 +132,7 @@ describe('reading', () => {
   it('list_entities returns tree order with depth, counts and filters', async () => {
     const { ok, fail } = await boot();
     const d = await ok('list_entities');
-    expect(d.total).toBe(16);
+    expect(d.total).toBe(15);
     expect(d.entities[0]).toMatchObject({ kind: 'capability', depth: 0, parentId: null });
     const idx = (id: string) => d.entities.findIndex((e: any) => e.id === id);
     expect(idx('cap.task-management')).toBeLessThan(idx('cap.task-management.create-edit'));
@@ -143,7 +143,7 @@ describe('reading', () => {
     expect(row.assurance).toMatchObject({ total: 4, withTests: 3, untested: 1 });
     expect((await ok('list_entities', { kind: 'system' })).entities.every((e: any) => e.kind === 'system')).toBe(true);
     const sub = await ok('list_entities', { parentId: 'cap.task-discovery' });
-    expect(sub.entities.map((e: any) => e.id).sort()).toEqual(['cap.task-discovery.inbox-all', 'cap.task-discovery.today-overdue', 'cap.test-capabitlity']);
+    expect(sub.entities.map((e: any) => e.id).sort()).toEqual(['cap.task-discovery.inbox-all', 'cap.task-discovery.today-overdue']);
     expect((await ok('list_entities', { query: 'overdue' })).entities.map((e: any) => e.id)).toContain('cap.task-discovery.today-overdue');
     expect((await ok('list_entities', { limit: 2 })).entities).toHaveLength(2);
     expect((await fail('list_entities', { parentId: 'cap.task-managment' })).suggestions).toContain('cap.task-management');

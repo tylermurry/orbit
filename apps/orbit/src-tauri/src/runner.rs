@@ -177,9 +177,22 @@ impl Runner {
         self.cancelled.lock().unwrap().push(run_id.to_string());
         #[cfg(windows)]
         let r = Command::new("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+        #[cfg(windows)]
+        return r.map(|s| s.success()).unwrap_or(false);
+        // Signal the child's own process group, and only when it really leads one: if the group were ever
+        // Orbit's own, signalling it would take Orbit down with the test command.
         #[cfg(not(windows))]
-        let r = Command::new("kill").args(["-TERM", &format!("-{pid}")]).stdout(Stdio::null()).stderr(Stdio::null()).status();
-        r.map(|s| s.success()).unwrap_or(false)
+        {
+            let pid = pid as libc::pid_t;
+            // SAFETY: plain syscalls on integers.
+            unsafe {
+                if libc::getpgid(pid) == pid {
+                    libc::kill(-pid, libc::SIGTERM) == 0
+                } else {
+                    libc::kill(pid, libc::SIGTERM) == 0
+                }
+            }
+        }
     }
 }
 

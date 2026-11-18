@@ -110,8 +110,10 @@ describe('examples/tasky.orbit.json', () => {
 
   it('is the source of the demo base snapshot (semantically identical apart from the test setup)', () => {
     const base = parseContract(readFileSync(join(root, 'examples/demo/01-base.orbit.json'), 'utf8')).contract as OrbitContract;
-    const { validation: _v, ...product } = contract;
+    // The demo snapshots predate flows and the test setup, so compare only the rest.
+    const { validation: _v, flows: _f, ...product } = contract;
     void _v;
+    void _f;
     const d = diffContracts(product, base);
     expect(d.changes).toEqual([]);
   });

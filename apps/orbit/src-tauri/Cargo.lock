@@ -2206,6 +2206,7 @@ name = "orbit"
 version = "1.0.0"
 dependencies = [
  "getrandom 0.3.4",
+ "libc",
  "portable-pty",
  "serde",
  "serde_json",
