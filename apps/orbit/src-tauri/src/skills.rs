@@ -18,6 +18,12 @@ const MCP_VERSION: u32 = 1;
 const PLAN_TEXT: &str = include_str!("../../../../skills/claude/orbit-plan/SKILL.md");
 const SYNC_TEXT: &str = include_str!("../../../../skills/claude/orbit-sync/SKILL.md");
 const IMPLEMENT_TEXT: &str = include_str!("../../../../skills/claude/orbit-implement/SKILL.md");
+/// Where Install/Update Skills reads the release from: the manifest on the repository's main branch.
+/// ORBIT_SKILLS_MANIFEST_URL overrides it. Unit tests never use the network.
+#[cfg(not(test))]
+const DEFAULT_MANIFEST_URL: Option<&str> = Some("https://raw.githubusercontent.com/tylermurry/orbit/main/skills/manifest.json");
+#[cfg(test)]
+const DEFAULT_MANIFEST_URL: Option<&str> = None;
 const STAMP: &str = ".orbit-install.json";
 static INSTALL: Mutex<()> = Mutex::new(());
 
@@ -103,7 +109,8 @@ fn bundled() -> Release {
 
 fn release() -> Release {
     let url = std::env::var("ORBIT_SKILLS_MANIFEST_URL").ok()
-        .or_else(|| option_env!("ORBIT_SKILLS_MANIFEST_URL").map(str::to_owned));
+        .or_else(|| option_env!("ORBIT_SKILLS_MANIFEST_URL").map(str::to_owned))
+        .or_else(|| DEFAULT_MANIFEST_URL.map(str::to_owned));
     let mut release = bundled();
     if let Some(url) = url {
         match load_manifest(&url) {

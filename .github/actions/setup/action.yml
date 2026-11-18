@@ -1,0 +1,15 @@
+name: Set up the workspace
+description: Node 24 and an install from the lockfile.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 24
+        cache: npm
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+    - name: Build the contract package (the app imports its output)
+      shell: bash
+      run: npm run build -w @orbit/contract

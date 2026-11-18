@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "mcpVersion": 1,
+  "files": {
+    "orbit-plan": {
+      "url": "https://raw.githubusercontent.com/tylermurry/orbit/main/skills/claude/orbit-plan/SKILL.md",
+      "sha256": "12a8381696bce7c1f9fae4b5453b5653c6ded482d1271a216e8317c747038b57"
+    },
+    "orbit-sync": {
+      "url": "https://raw.githubusercontent.com/tylermurry/orbit/main/skills/claude/orbit-sync/SKILL.md",
+      "sha256": "4e14cac0c2ca16864d83f1b61996d21737c4e3d8ec4f3f5b6a5084f38704af47"
+    },
+    "orbit-implement": {
+      "url": "https://raw.githubusercontent.com/tylermurry/orbit/main/skills/claude/orbit-implement/SKILL.md",
+      "sha256": "9415506e1150c73b53dccf44d2932347dab9c70af20fc390462b1fe94128607f"
+    }
+  }
+}

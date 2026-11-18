@@ -204,16 +204,18 @@ and is intended for the ordinary PR merge flow.
 
 ### Publish skill updates
 
-The desktop build bundles both skills. To enable remote update checks in distributed builds, publish those skill files
-at an immutable HTTPS URL and generate their manifest with:
+Install / Update Skills reads its release from the `main` branch of
+[tylermurry/orbit](https://github.com/tylermurry/orbit): the app fetches `skills/manifest.json` (and the skill files it
+lists, each checked against its SHA-256) from `raw.githubusercontent.com`. If that is unreachable it uses the skills
+bundled in the app. After changing anything under `skills/claude/`, regenerate the manifest and commit it with the change:
 
 ```sh
-node scripts/skills-manifest.mjs 2 https://example.com/skills/v2/ > manifest.json
+node scripts/skills-manifest.mjs
 ```
 
-Publish the manifest at the project's official HTTPS URL and set `ORBIT_SKILLS_MANIFEST_URL` when building
-Orbit. The desktop app uses `curl` to check and download releases. A running app can also read that environment variable
-for local testing. Increase the release number for each release and update the MCP version if the tools change incompatibly.
+The release number goes up by one only when a skill's text changed, and CI fails when the manifest is stale
+(`node scripts/skills-manifest.mjs --check`). Set `ORBIT_SKILLS_MANIFEST_URL` to read a different manifest (for example a
+fork or local testing). Update the MCP version in the manifest script and `skills.rs` if the tools change incompatibly.
 
 ## AI access (MCP)
 

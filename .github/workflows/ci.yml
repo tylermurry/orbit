@@ -1,0 +1,29 @@
+# Typecheck, lint and tests on pull requests. Pushes to main run the same check inside release.yml before releasing.
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Linux build dependencies (the Rust tests link the Tauri webview)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/orbit/src-tauri -> target
+      - uses: ./.github/actions/setup
+      - run: node scripts/skills-manifest.mjs --check
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm test --prefix tests
