@@ -8,4 +8,11 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - working-directory: .rr
-        run: timeout 120 cargo test -- --nocapture --test-threads=1 cancel_stops 2>&1 | tail -30; echo exit=$?; ps -ef | head -30
+        run: |
+          cargo test --no-run 2>/dev/null
+          bin=$(ls target/debug/deps/rr-* | grep -v '\.d$' | head -1)
+          echo "SHELL=$SHELL"
+          set +e
+          echo "--- with SHELL"; timeout 60 $bin --nocapture cancel_stops; echo "status=$?"
+          echo "--- without SHELL"; env -u SHELL timeout 60 $bin --nocapture cancel_stops; echo "status=$?"
+          echo "--- kill syntax"; sleep 30 & p=$!; setsid sleep 30 & sleep 0.3; which kill; kill -TERM -$p; echo "kill status=$?"
