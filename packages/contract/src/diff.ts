@@ -15,11 +15,16 @@ import type {
   SemanticDiff,
 } from './types.js';
 
-const CATEGORIES: ChangeCategory[] = ['product', 'entity', 'behavior', 'relationship', 'test'];
+const CATEGORIES: ChangeCategory[] = ['product', 'entity', 'behavior', 'relationship', 'test', 'flow'];
 
 type Rec = Record<string, unknown>;
 
-const same = (a: unknown, b: unknown): boolean => (a ?? undefined) === (b ?? undefined);
+const same = (a: unknown, b: unknown): boolean => {
+  const x = a ?? undefined;
+  const y = b ?? undefined;
+  if (x !== null && typeof x === 'object' && y !== null && typeof y === 'object') return JSON.stringify(x) === JSON.stringify(y);
+  return x === y;
+};
 
 function setDiff(before: string[], after: string[]): { added: string[]; removed: string[] } {
   const b = new Set(before);
@@ -156,6 +161,14 @@ export function diffContracts(base: OrbitContract | null, target: OrbitContract 
     fields: ['name', 'location', 'placeholder'],
     label: (t) => t.name,
     group: () => 'verification',
+    entityIds: () => [],
+  });
+
+  // Flows (narrative only: never marks entities as changed). Step order is meaningful, so a reorder is a change.
+  collection('flow', mapById(base?.flows), mapById(target?.flows), {
+    fields: ['name', 'summary', 'trigger', 'capabilityId', 'steps'],
+    label: (f) => f.name,
+    group: () => 'guarantee',
     entityIds: () => [],
   });
 

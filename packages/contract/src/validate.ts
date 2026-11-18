@@ -5,7 +5,7 @@ import schemaJson from '../schema/orbit.schema.json' with { type: 'json' };
 // Precompiled (Ajv standalone) validator — no runtime `new Function`, so it works under a strict CSP.
 // Regenerate with `npm run gen -w @orbit/contract` after editing schema/orbit.schema.json.
 import validateSchema from './generated/schemaValidator.js';
-import type { Diagnostic, OrbitContract, ParseResult } from './types.js';
+import type { Diagnostic, Flow, OrbitContract, ParseResult, Relationship } from './types.js';
 
 /** The JSON Schema object (schema/orbit.schema.json). */
 export const schema: object = schemaJson;
@@ -48,6 +48,7 @@ const COLLECTION_LABEL: Record<string, string> = {
   entities: 'Entity',
   relationships: 'Relationship',
   tests: 'Test',
+  flows: 'Flow',
 };
 
 /** Describe the object that owns the value at `segments` (nearest identifiable ancestor), e.g. "Entity 'cap.x'". */
@@ -59,6 +60,9 @@ function labelFor(root: unknown, segments: string[]): string {
   }
   if (segments[0] === 'entities' && segments[2] === 'behaviors' && segments.length >= 4) {
     candidates.push({ len: 4, kind: 'Behavior' });
+  }
+  if (segments[0] === 'flows' && segments[2] === 'steps' && segments.length >= 4) {
+    candidates.push({ len: 4, kind: 'Flow step' });
   }
   const best = candidates[candidates.length - 1];
   if (!best) return 'Contract';
@@ -84,7 +88,7 @@ const snippet = (v: unknown): string => {
 
 // ───────────────────────── Schema errors → diagnostics ─────────────────────────
 
-const ID_FIELDS = new Set(['id', 'testId', 'sourceId', 'targetId', 'parentId']);
+const ID_FIELDS = new Set(['id', 'testId', 'sourceId', 'targetId', 'parentId', 'capabilityId', 'relationshipId']);
 
 interface SchemaIssue {
   diagnostic: Diagnostic;
@@ -283,6 +287,47 @@ function analyzeSemantics(c: OrbitContract): SemanticResult {
       });
     });
   });
+
+  // Flows ------------------------------------------------------------------
+  const warn = (code: string, message: string, path: string, relatedIds?: string[]) =>
+    diagnostics.push({ severity: 'warning', code, message, path, ...(relatedIds ? { relatedIds } : {}) });
+  const relById = new Map<string, Relationship>();
+  for (const r of c.relationships) if (!relById.has(r.id)) relById.set(r.id, r);
+  const flows = c.flows ?? [];
+  const firstFlow = new Map<string, number>();
+  flows.forEach((f, i) => {
+    const base = `/flows/${i}`;
+    if (firstFlow.has(f.id)) {
+      err('id.duplicate', `Duplicate flow id '${f.id}' (also used at /flows/${firstFlow.get(f.id)}). Flow ids must be unique; rename one.`, `${base}/id`, [f.id]);
+      drop.add(base);
+    } else firstFlow.set(f.id, i);
+    const cap = byId.get(f.capabilityId);
+    if (!cap || cap.entity.kind !== 'capability') {
+      err('ref.flow.capability', `Flow '${f.id}' has capabilityId '${f.capabilityId}' which is ${cap ? `a ${cap.entity.kind}, not a capability` : 'not an entity'}. Use the id of the capability the flow explains.`, `${base}/capabilityId`, [f.id, f.capabilityId]);
+    }
+    if (f.steps.length === 0) warn('flow.empty', `Flow '${f.id}' has no steps. Add steps or remove the flow.`, `${base}/steps`, [f.id]);
+    const seenSteps = new Set<string>();
+    const participants = new Set<string>([f.capabilityId]);
+    f.steps.forEach((s, j) => {
+      const sp = `${base}/steps/${j}`;
+      if (seenSteps.has(s.id)) {
+        err('id.duplicate', `Duplicate step id '${s.id}' in flow '${f.id}'. Step ids must be unique within a flow; rename one.`, `${sp}/id`, [f.id, s.id]);
+      }
+      seenSteps.add(s.id);
+      const r = relById.get(s.relationshipId);
+      if (!r) {
+        err('ref.flow.step.relationship', `Step '${s.id}' of flow '${f.id}' references relationship '${s.relationshipId}' which does not exist. Use an existing relationship id (add the relationship first if needed).`, `${sp}/relationshipId`, [f.id, s.id, s.relationshipId]);
+        return;
+      }
+      const sender = s.reply ? r.targetId : r.sourceId;
+      if (!participants.has(sender)) {
+        const nm = byId.get(sender)?.entity.name ?? sender;
+        warn('flow.step.unreached', `Step '${s.id}' of flow '${f.id}' is sent by '${nm}', which has not taken part in the flow yet. Reorder the steps so something reaches it first.`, sp, [f.id, s.id, sender]);
+      }
+      participants.add(r.sourceId);
+      participants.add(r.targetId);
+    });
+  });
   return { diagnostics, drop };
 }
 
@@ -294,6 +339,8 @@ export function validateSemantics(contract: OrbitContract): Diagnostic[] {
 // ───────────────────────── Pipeline shared by parseContract / validateContract ─────────────────────────
 
 const ARRAYS = ['entities', 'relationships', 'tests'] as const;
+/** Collections whose items are dropped from the display contract when they have hard schema errors. */
+const DROPPABLE = ['entities', 'relationships', 'tests', 'flows'] as const;
 
 interface Analysis {
   diagnostics: Diagnostic[];
@@ -336,12 +383,12 @@ function analyze(value: unknown): Analysis {
     if (!iss.hard) continue;
     const s = iss.segments;
     if (s[0] === 'entities' && s[2] === 'behaviors' && s.length >= 4) hardKeys.add(toPointer(s.slice(0, 4)));
-    else if (ARRAYS.includes(s[0] as (typeof ARRAYS)[number]) && s.length >= 2) hardKeys.add(toPointer(s.slice(0, 2)));
+    else if (DROPPABLE.includes(s[0] as (typeof DROPPABLE)[number]) && s.length >= 2) hardKeys.add(toPointer(s.slice(0, 2)));
   }
   let dropped = hardKeys.size;
   const entityOrig: number[] = [];
   const behaviorOrig: number[][] = [];
-  const orig: Record<'relationships' | 'tests', number[]> = { relationships: [], tests: [] };
+  const orig: Record<'relationships' | 'tests' | 'flows', number[]> = { relationships: [], tests: [], flows: [] };
   const keep = <T>(coll: string, items: unknown[], origOut: number[]): T[] => {
     const out: T[] = [];
     items.forEach((it, i) => {
@@ -368,6 +415,7 @@ function analyze(value: unknown): Analysis {
     entities,
     relationships: keep('relationships', root.relationships as unknown[], orig.relationships),
     tests: keep('tests', root.tests as unknown[], orig.tests),
+    ...(Array.isArray(root.flows) ? { flows: keep<Flow>('flows', root.flows as unknown[], orig.flows) } : {}),
     ...(validationOf(root.validation) ?? {}),
   };
 
@@ -378,7 +426,7 @@ function analyze(value: unknown): Analysis {
       const ei = Number(s[1]);
       s[1] = String(entityOrig[ei]);
       if (s[2] === 'behaviors' && s[3] !== undefined) s[3] = String(behaviorOrig[ei]![Number(s[3])]);
-    } else if (s[0] === 'relationships' || s[0] === 'tests') {
+    } else if (s[0] === 'relationships' || s[0] === 'tests' || s[0] === 'flows') {
       if (s[1] !== undefined) s[1] = String(orig[s[0]][Number(s[1])]);
     }
     return toPointer(s);
@@ -397,6 +445,7 @@ function analyze(value: unknown): Analysis {
       .map(({ e, i }) => ({ ...e, behaviors: e.behaviors.filter((_, j) => !gone(`/entities/${i}/behaviors/${j}`)) })),
     relationships: stage1.relationships.filter((_, i) => !gone(`/relationships/${i}`)),
     tests: stage1.tests.filter((_, i) => !gone(`/tests/${i}`)),
+    ...(stage1.flows ? { flows: stage1.flows.filter((_, i) => !gone(`/flows/${i}`)) } : {}),
   };
   // Behaviors of a dropped duplicate entity vanish with it; count only what was explicitly dropped above.
   return { diagnostics, contract, partial: dropped > 0 };
@@ -533,6 +582,18 @@ export function serializeContract(c: OrbitContract): string {
     })),
     relationships: c.relationships.map((r) => omitUndefined({ id: r.id, type: r.type, sourceId: r.sourceId, targetId: r.targetId, description: r.description })),
     tests: c.tests.map((t) => omitUndefined({ id: t.id, name: t.name, location: t.location, placeholder: t.placeholder })),
+    ...(c.flows && c.flows.length > 0
+      ? {
+          flows: c.flows.map((f) => ({
+            id: f.id,
+            name: f.name,
+            summary: f.summary,
+            capabilityId: f.capabilityId,
+            trigger: f.trigger,
+            steps: f.steps.map((s) => omitUndefined({ id: s.id, relationshipId: s.relationshipId, reply: s.reply === true ? true : undefined, label: s.label, description: s.description })),
+          })),
+        }
+      : {}),
     ...(c.validation ? { validation: { command: c.validation.command, results: c.validation.results } } : {}),
   };
   return JSON.stringify(canonical, null, 2) + '\n';

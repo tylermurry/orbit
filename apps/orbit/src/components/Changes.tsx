@@ -14,8 +14,9 @@ export const CATEGORY_LABEL: Record<ChangeCategory, string> = {
   behavior: 'Behaviors',
   relationship: 'Relationships',
   test: 'Tests',
+  flow: 'Flows',
 };
-export const CATEGORY_ORDER: ChangeCategory[] = ['product', 'entity', 'behavior', 'relationship', 'test'];
+export const CATEGORY_ORDER: ChangeCategory[] = ['product', 'entity', 'behavior', 'relationship', 'test', 'flow'];
 export const KIND_SYMBOL: Record<ChangeKind, { symbol: string; label: string; cls: string }> = {
   added: { symbol: '＋', label: 'Added', cls: 'added' },
   modified: { symbol: '●', label: 'Modified', cls: 'modified' },

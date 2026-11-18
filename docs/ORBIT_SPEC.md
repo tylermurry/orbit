@@ -60,6 +60,10 @@ The **product contract** is one authoritative JSON document, portable between pr
 - **Engineering view:** system hierarchy, behavior contracts, aggregate verification, focused relations.
 - **Impact view:** semantic diff between two contract snapshots and derived *potential* downstream impact.
 
+### Flows
+
+A **flow** is a named, ordered walk along relationships that already exist, drawn as a sequence diagram with a stepper. It answers *what happens, in what order* when a user exercises a capability, where the Topology map answers *what depends on what*. A flow belongs to one capability (`capabilityId`), starts with a `trigger` (User → capability), and has `steps`; each step names a `relationshipId` and a plain-language `description`. A forward step runs source → target; a step with `reply: true` runs target → source. Flows never create relationships. Unlike every other array, **step order is meaningful**. Flows are optional (`flows` may be absent) and are not part of impact traversal.
+
 ### Relationship semantics and traversal
 
 Use source → target orientation:
@@ -147,6 +151,7 @@ Illustrative complete shape:
 - Product: required stable `id`, nonblank `name`, nonblank `summary`; optional `description`.
 - Entity: required `id`, `kind`, nullable `parentId`, `name`, `summary`, `description`, `behaviors` (possibly empty). `kind` is one of `capability`, `system`. Empty descriptions allowed; nonblank names/summaries required.
 - Behavior: `id`, `name`, `expected`, `testIds` (possibly empty). IDs unique globally across all behaviors. Nonblank expected outcome.
+- Flow (optional top-level `flows`): `id` (prefix `flow.`, unique), `name`, `summary`, `capabilityId` (must be a capability), `trigger`, `steps` (ordered). Step: `id` (unique within the flow), `relationshipId` (must exist), optional `reply: true`, optional short `label` (drawn on the arrow; defaults to the relationship verb or "replies"), `description`. Warnings: `flow.empty`, `flow.step.unreached` (the step's sender has not yet taken part). Deleting a relationship removes the steps that use it; deleting an entity removes its flows.
 - Relationship: `id`, one of the three types, `sourceId`, `targetId`, optional `description`. IDs unique. Prevent self-edges; permit directed cycles.
 - Test definition: `id`, `name`, `location` (a human-readable source path, test identifier, or URL; not required to exist locally). IDs unique. One test may verify multiple behaviors.
 - Evidence: `id`, `testId`, `status` (`passed`, `failed`, `skipped`, `error`), RFC3339 `executedAt`, and optional full 40-hex `commit` SHA. IDs unique. Evidence entries may contain an optional `details` string. Unknown commit is represented by omitting the property, not by inventing one.

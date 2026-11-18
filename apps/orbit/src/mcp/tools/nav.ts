@@ -108,12 +108,14 @@ export function navTools(): ToolDef[] {
       name: 'navigate',
       title: 'Navigate the UI',
       description:
-        "Move the human's view so they can follow along. view: 'product' (capabilities), 'engineering' (systems) or 'impact' (comparison). entityId selects that entity (the view follows its kind; its ancestors are expanded) and behaviorId additionally focuses a behavior. openRaw: true opens the Raw JSON editor. Does not change the document.",
+        "Move the human's view so they can follow along. view: 'product' (capabilities), 'engineering' (systems), 'flows' (sequence-diagram walkthroughs) or 'impact' (comparison). entityId selects that entity (the view follows its kind; its ancestors are expanded) and behaviorId additionally focuses a behavior. openRaw: true opens the Raw JSON editor. flowId (with optional step) opens System > Flows on that flow. Does not change the document.",
       inputSchema: S.obj({
-        view: S.oneOf(['product', 'engineering', 'impact'], 'Which view to show.'),
+        view: S.oneOf(['product', 'engineering', 'flows', 'impact'], 'Which view to show.'),
         entityId: S.nonEmpty('Entity to select.'),
         behaviorId: S.nonEmpty('Behavior to focus (its owner entity is selected automatically).'),
         openRaw: S.bool('Open the Raw JSON editor.'),
+        flowId: S.nonEmpty("Show this flow on System > Flows."),
+        step: S.int('With flowId: step to show (0 = the trigger, 1 = first step). Default 0.', { minimum: 0 }),
       }),
       annotations: ann(false),
     },
@@ -129,6 +131,16 @@ export function navTools(): ToolDef[] {
       const leavingRaw = s0.rawMode && s0.rawDraft !== null && s0.rawDraft !== currentText(s0);
       if (leavingRaw) throw new ToolError("The user has unapplied edits in the Raw JSON editor; navigating away would hide them. Nothing was changed.", { suggestions: ['set_raw_json with apply: true to apply a draft, or navigate with openRaw: true to stay in the editor.'] });
       if (!c) throw new ToolError('The open file is not valid JSON; only the Raw JSON editor is available.', { suggestions: ['navigate with openRaw: true, then repair with set_raw_json.'] });
+
+      if (a.flowId) {
+        const f = (c.flows ?? []).find((x) => x.id === a.flowId);
+        if (!f) throw notFound('Flow', a.flowId as string, (c.flows ?? []).map((x) => ({ id: x.id, name: x.name })));
+        const step = (a.step as number | undefined) ?? 0;
+        if (step > f.steps.length) throw new ToolError(`Flow '${f.id}' has ${f.steps.length} step(s); step ${step} does not exist (0 is the trigger).`, { suggestions: [`Use a step between 0 and ${f.steps.length}.`] });
+        d({ type: 'setRawMode', on: false });
+        d({ type: 'showFlow', id: f.id, step });
+        return { data: { view: 'flows', flowId: f.id, step } };
+      }
 
       let entityId = a.entityId as string | undefined;
       const behaviorId = a.behaviorId as string | undefined;
@@ -154,7 +166,7 @@ export function navTools(): ToolDef[] {
         ctx.ctrl.ensureDefaultCompare();
       } else if (a.view) {
         d({ type: 'setRawMode', on: false });
-        d({ type: 'setView', view: a.view as 'product' | 'engineering' });
+        d({ type: 'setView', view: a.view as 'product' | 'engineering' | 'flows' });
       } else if (!entityId && s0.rawMode) {
         d({ type: 'setRawMode', on: false });
       }

@@ -76,6 +76,8 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 | `get_contract` | read | Canonical contract JSON; `source: 'working'` (default, with unsaved edits) or `'disk'`. |
 | `list_entities` | read | Tree-ordered capabilities/systems with depth, behavior counts, subtree assurance and diff status; filters `kind`, `parentId`, `query`. |
 | `get_entity` | read | One entity in full: ancestors, children, behaviors with each test's status and latest result, subtree assurance, relationships (with the other entity's name/kind). |
+| `list_flows` | read | Flows with capability, trigger and step count; filter by `capabilityId` or `query`. |
+| `get_flow` | read | One flow with every step resolved to from/to names, verb and relationship id. |
 | `search` | read | Substring search over entities (name/id), behaviors (name/expected) and tests. |
 | `get_assurance` | read | Verification assurance for an entity subtree or the whole product against the inspected commit. |
 | `list_tests` | read | Test definitions with the behaviors they verify and their status (passing / failing / unconfirmed). |
@@ -105,12 +107,15 @@ the person's view or comparison. All write/edit tools accept `dryRun: true` to p
 | `create_relationship` | write | Add `dependsOn` / `uses` / `implementedBy` source -> target; refuses self-edges, no-ops on duplicates. |
 | `update_relationship` | write | Change type, endpoints or description. |
 | `delete_relationship` | write | Delete a relationship. |
+| `create_flow` | write | Add a flow: an ordered walk along existing relationships (`steps`, each optionally a `reply`) explaining how a capability works. |
+| `update_flow` | write | Change a flow; `steps` replaces the whole ordered list. |
+| `delete_flow` | write | Delete a flow (relationships are untouched). |
 | `apply_edits` | write | Several edit operations as ONE atomic, single-undo change. |
 | `undo` | write | Undo the last edit (shared stack with the person). |
 | `redo` | write | Redo the last undone edit. |
 | `get_raw_json` | read | The Raw JSON editor's text (draft if unapplied). |
 | `set_raw_json` | write | Validate (`apply: false`) or apply (`apply: true`) complete contract text; invalid text is never applied. |
-| `navigate` | navigate | Switch view, select entity/behavior, open raw editor, library or diagnostics. |
+| `navigate` | navigate | Switch view, select entity/behavior, open a flow (`flowId`, optional `step`), open raw editor, library or diagnostics. |
 | `filter_view` | navigate | Narrow the product/engineering trees to chosen entities and behaviors, with a yellow banner describing the filter (the person closes it with X). The AI picks the relevant ids. |
 | `clear_filter` | navigate | Remove the view filter. |
 | `list_git_refs` | read | Branches, tags and HEAD of the contract's repository. |
@@ -170,7 +175,8 @@ Use a contract row’s `id` directly. For a JUnit row, pass its `registration` o
 1. On a feature branch, run `/orbit-plan` with the supplied scope. The skill calls `create_plan` or
    `revise_plan`, then `view_changes { view: "plan", show: true }`. No approval is needed.
 2. Iterate with `revise_plan { fileHash, operations }` until the owner is happy with the Plan view.
-3. After implementation, run `/orbit-sync`. Use `view_changes { view: "plan-vs-actual" }` to compare the plan with Actual.
+3. Run `/orbit-implement` to draft a detailed implementation plan from the Orbit plan and build it once approved.
+4. After implementation, run `/orbit-sync`. Use `view_changes { view: "plan-vs-actual" }` to compare the plan with Actual.
    For custom comparisons, `compare` accepts `baseline` and `plan`.
 
 **Review a feature branch before merging**

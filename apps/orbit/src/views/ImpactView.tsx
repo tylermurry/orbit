@@ -3,7 +3,8 @@ import { Button, Callout, Flex, Heading, Spinner, Text } from '@radix-ui/themes'
 import { ExclamationTriangleIcon, InfoCircledIcon } from '@radix-ui/react-icons';
 import type { Diagnostic } from '@orbit/contract';
 import { diffLookups } from '../components/Changes';
-import { AreaBadge, ChangedEntityList, EntityChangeDetail, changedEntities, entityIdFromKey } from '../components/ImpactEntities';
+import { FlowChangePreview } from '../components/FlowChangePreview';
+import { AreaBadge, ChangedEntityList, EntityChangeDetail, changedEntities, changedFlows, entityIdFromKey, flowIdFromKey } from '../components/ImpactEntities';
 import { ImpactChain } from '../components/ImpactChain';
 import { ChangePill, Legend } from '../components/common';
 import { sideLabel } from '../state/compare';
@@ -54,12 +55,16 @@ export function ImpactView() {
   const result = s.compareResult;
   const diff = result?.status === 'ready' ? result.diff : null;
   const items = useMemo(() => (diff ? changedEntities(diff) : []), [diff]);
+  const flows = useMemo(() => (diff ? changedFlows(diff) : []), [diff]);
+  const selectedFlow = flows.find((f) => f.change.id === flowIdFromKey(s.impactSelection))?.change ?? null;
   const selectedId = entityIdFromKey(s.impactSelection);
   const selected = items.find((i) => i.entity.id === selectedId) ?? null;
 
   useEffect(() => {
-    if (diff && !selected && items.length) d({ type: 'selectChange', key: `entity:${items[0].entity.id}` });
-  }, [diff, selected, items, d]);
+    if (!diff || selected || selectedFlow) return;
+    if (items.length) d({ type: 'selectChange', key: `entity:${items[0].entity.id}` });
+    else if (flows.length) d({ type: 'selectChange', key: `flow:${flows[0].change.id}` });
+  }, [diff, selected, selectedFlow, items, flows, d]);
 
   if (!git?.available) {
     return (
@@ -147,7 +152,7 @@ export function ImpactView() {
       tabs = (
         <div className="impact-tabs switcher" role="tablist" aria-label="Impact lists">
           <button type="button" role="tab" aria-selected={pane === 'changes'} className={`switcher-item${pane === 'changes' ? ' on' : ''}`} onClick={() => setPane('changes')}>
-            Changes ({items.length})
+            Changes ({items.length + flows.length})
           </button>
           <button type="button" role="tab" aria-selected={pane === 'affected'} className={`switcher-item${pane === 'affected' ? ' on' : ''}`} onClick={() => setPane('affected')} data-testid="tab-affected">
             Potentially affected ({df.potentiallyAffected.length})
@@ -189,7 +194,7 @@ export function ImpactView() {
               <aside className="tree-pane impact-left" style={{ width: listWidth }} aria-label="Impact list">
                 <div className="impact-scroll">
                   {pane === 'changes' ? (
-                    <ChangedEntityList items={items} selectedKey={s.impactSelection} onSelect={(k) => d({ type: 'selectChange', key: k })} labels={result.planLabels} planned={target.sel.type === 'plan'} />
+                    <ChangedEntityList items={items} flows={flows} selectedKey={s.impactSelection} onSelect={(k) => d({ type: 'selectChange', key: k })} labels={result.planLabels} planned={target.sel.type === 'plan'} />
                   ) : df.potentiallyAffected.length === 0 ? (
                     <div className="empty-inline">
                       <Text size="2" color="gray">
@@ -223,6 +228,11 @@ export function ImpactView() {
                 </div>
               </aside>
               <Splitter width={listWidth} min={240} max={900} label="Resize change list" onChange={setListWidth} onCommit={(w) => savePref(LIST_WIDTH_KEY, w)} />
+              {selectedFlow && pane === 'changes' ? (
+                <div className="impact-right flow-impact" aria-label="Change details">
+                  <FlowChangePreview key={selectedFlow.id} diff={df} change={selectedFlow} />
+                </div>
+              ) : (
               <div className="detail impact-right" aria-label="Change details">
                 <div className="detail-inner">
                   {selected && pane === 'changes' ? (
@@ -236,6 +246,7 @@ export function ImpactView() {
                   )}
                 </div>
               </div>
+              )}
             </div>
           </>
         )}

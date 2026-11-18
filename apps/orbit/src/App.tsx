@@ -17,6 +17,7 @@ import type { ViewId } from './state/types';
 import { EmptyState } from './views/EmptyState';
 import { ExplorerView } from './views/ExplorerView';
 import { EngineeringView } from './views/EngineeringView';
+import { FlowsView } from './views/FlowsView';
 import { ImpactView } from './views/ImpactView';
 import { RawEditor } from './views/RawEditor';
 import { WorkspaceSplit } from './components/WorkspaceSplit';
@@ -139,9 +140,10 @@ export function App() {
   const body = useMemo(() => {
     if (!hasDoc) return <EmptyState />;
     if (s.rawMode || !s.contract) return <RawEditor />;
-    if (split) return <WorkspaceSplit left={s.explorerView === 'product' ? <ExplorerView kind="capability" /> : <EngineeringView />} right={<ImpactView />} />;
+    const explorer = (v: ViewId) => (v === 'product' ? <ExplorerView kind="capability" /> : v === 'flows' ? <FlowsView /> : <EngineeringView />);
+    if (split) return <WorkspaceSplit left={explorer(s.explorerView)} right={<ImpactView />} />;
     if (s.view === 'impact') return <ImpactView />;
-    return s.view === 'product' ? <ExplorerView kind="capability" /> : <EngineeringView />;
+    return explorer(s.view);
   }, [hasDoc, s.rawMode, s.contract, s.view, s.explorerView, split]);
 
   return (

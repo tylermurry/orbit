@@ -41,6 +41,13 @@
         "$ref": "#/$defs/test"
       }
     },
+    "flows": {
+      "type": "array",
+      "description": "Optional named walkthroughs of how a capability works: an ordered walk along existing relationships. Unlike other arrays, the order of steps within a flow is meaningful.",
+      "items": {
+        "$ref": "#/$defs/flow"
+      }
+    },
     "validation": {
       "$ref": "#/$defs/validation"
     }
@@ -252,6 +259,98 @@
         "placeholder": {
           "const": true,
           "description": "Present (true) when the test is planned but not implemented yet, e.g. proposed alongside a behavior. Omit once the test exists. A placeholder never counts as test coverage."
+        }
+      }
+    },
+    "flow": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A named, ordered walk along existing relationships that explains how a capability works, drawn as a sequence diagram.",
+      "required": [
+        "id",
+        "name",
+        "summary",
+        "capabilityId",
+        "trigger",
+        "steps"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Stable flow id, unique among flows. Prefix 'flow.'."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Display name, e.g. 'Create a task'."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "One-line summary."
+        },
+        "capabilityId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Id of the capability this flow explains (must be a capability)."
+        },
+        "trigger": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "What the user does to start the flow; drawn as User -> capability."
+        },
+        "steps": {
+          "type": "array",
+          "description": "Ordered steps. Order is meaningful.",
+          "items": {
+            "$ref": "#/$defs/flowStep"
+          }
+        }
+      }
+    },
+    "flowStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One step of a flow: travels along an existing relationship.",
+      "required": [
+        "id",
+        "relationshipId",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Step id, unique within its flow."
+        },
+        "relationshipId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Id of an existing relationship. A forward step runs source -> target."
+        },
+        "reply": {
+          "const": true,
+          "description": "Present (true) when the step is a reply travelling target -> source along the same relationship. Omit otherwise."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Optional short text drawn on the arrow, e.g. 'Save task'. Defaults to the relationship's verb ('uses', 'is implemented by', ...) or 'replies'."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "What happens in this step, in plain language."
         }
       }
     },

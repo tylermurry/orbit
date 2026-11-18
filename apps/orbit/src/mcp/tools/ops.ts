@@ -1,8 +1,8 @@
 // Pure edit operations on a contract. Each operation takes the current contract and validated arguments and returns
 // a new (immutable) contract plus a human summary. Operations throw ToolError for reference/rule violations.
 // They are used both by the individual write tools and by apply_edits (one accumulator, one undo step).
-import { allIds, behaviorIndex, generateId, referencesTo, removeEntity, removeTest, wouldCreateCycle } from '@orbit/contract';
-import type { Behavior, Entity, EntityKind, OrbitContract, Relationship, RelationshipType, TestDefinition } from '@orbit/contract';
+import { allIds, behaviorIndex, generateId, referencesTo, removeEntity, removeRelationship, removeTest, validateSemantics, wouldCreateCycle } from '@orbit/contract';
+import type { Behavior, Entity, EntityKind, Flow, FlowStep, OrbitContract, Relationship, RelationshipType, TestDefinition } from '@orbit/contract';
 import { RELATIONSHIP_TYPES } from '@orbit/contract';
 import { REL_INFO } from '../../lib/model';
 import { behaviorCandidates, clip, closest, entityCandidates, notFound, relationshipCandidates, testCandidates } from './helpers';
@@ -89,6 +89,85 @@ function checkParent(c: OrbitContract, kind: EntityKind, parentId: string, selfI
     });
   }
   return p;
+}
+
+/** Warnings naming flows that lost steps (or were deleted) between two versions of the contract. */
+function flowLossWarnings(before: OrbitContract, after: OrbitContract): string[] {
+  const out: string[] = [];
+  const now = new Map((after.flows ?? []).map((f) => [f.id, f]));
+  for (const f of before.flows ?? []) {
+    const n = now.get(f.id);
+    if (!n) out.push(`Flow ${q(f.name)} ('${f.id}') was deleted with it.`);
+    else if (n.steps.length < f.steps.length) out.push(`Flow ${q(f.name)} ('${f.id}') lost ${f.steps.length - n.steps.length} step(s); check it still reads correctly.`);
+  }
+  return out;
+}
+
+interface FlowStepInput {
+  relationshipId: string;
+  description: string;
+  reply?: boolean;
+  label?: string;
+  id?: string;
+}
+
+const STEPS_SCHEMA: JsonSchema = {
+  type: 'array',
+  description: 'Ordered steps. Each travels along an existing relationship; reply: true sends it back target -> source.',
+  items: S.obj(
+    { relationshipId: S.nonEmpty('Id of an existing relationship.'), description: S.nonEmpty('What happens in this step, in plain language.'), reply: S.bool('true = a reply travelling target -> source (dashed arrow). Omit or false for a normal forward step.'), label: S.nonEmpty('Short text drawn on the arrow, e.g. "Save task" (a few words). Defaults to the relationship verb or "replies".'), id: S.nonEmpty('Optional step id, unique within the flow. Auto-generated (step-1, step-2, ...) when omitted.') },
+    ['relationshipId', 'description'],
+  ),
+};
+
+function getFlow(c: OrbitContract, id: string): Flow {
+  const f = (c.flows ?? []).find((x) => x.id === id);
+  if (!f) throw notFound('Flow', id, (c.flows ?? []).map((x) => ({ id: x.id, name: x.name })));
+  return f;
+}
+
+function requireCapability(c: OrbitContract, id: string): Entity {
+  const e = getEntity(c, id);
+  if (e.kind !== 'capability') {
+    const caps = c.entities.filter((x) => x.kind === 'capability').map((x) => ({ id: x.id, name: x.name }));
+    throw new ToolError(`'${id}' is a ${e.kind}; a flow explains a capability.`, { suggestions: closest(e.name, caps).map((x) => x.id), data: { closestCapabilities: closest(e.name, caps) } });
+  }
+  return e;
+}
+
+function buildSteps(c: OrbitContract, input: FlowStepInput[]): FlowStep[] {
+  const used = new Set<string>();
+  const steps = input.map((s, i): FlowStep => {
+    const rel = c.relationships.find((r) => r.id === s.relationshipId);
+    if (!rel) {
+      const near = closest(s.relationshipId, relationshipCandidates(c));
+      throw new ToolError(`Step ${i + 1}: relationship '${s.relationshipId}' was not found.${near.length ? ` Did you mean: ${near.map((x) => `'${x.id}' (${x.name})`).join(', ')}?` : ''} Flows only walk existing relationships; add it with create_relationship first.`, {
+        suggestions: near.map((x) => x.id),
+        data: { stepIndex: i, closestMatches: near },
+      });
+    }
+    const id = s.id ? trim(s.id) : '';
+    if (id) {
+      if (used.has(id)) throw new ToolError(`Step ${i + 1}: duplicate step id '${id}'. Step ids must be unique within a flow.`);
+      used.add(id);
+    }
+    return { id, relationshipId: rel.id, ...(s.reply === true ? { reply: true as const } : {}), ...(s.label && s.label.trim() ? { label: trim(s.label) } : {}), description: trim(s.description) };
+  });
+  let n = 1;
+  for (const s of steps) {
+    if (s.id) continue;
+    while (used.has(`step-${n}`)) n++;
+    s.id = `step-${n}`;
+    used.add(s.id);
+  }
+  return steps;
+}
+
+/** Warnings (never errors) a flow raises, e.g. a step sent by someone who has not taken part yet. */
+function flowWarnings(c: OrbitContract, flowId: string): string[] {
+  return validateSemantics(c)
+    .filter((d) => d.severity === 'warning' && d.code.startsWith('flow.') && d.relatedIds?.[0] === flowId)
+    .map((d) => d.message);
 }
 
 const idProp = (what: string) => S.nonEmpty(`Optional stable id for the new ${what}. Omit to auto-generate from the name. Ids can never change afterwards.`);
@@ -203,9 +282,11 @@ export const OPS: OpDef[] = [
       } catch (err) {
         throw new ToolError((err as Error).message, { suggestions: ["Delete or move the children first, or use children: 'reparent' to move them up to the parent."], data: { children: kids } });
       }
+      const warnings = flowLossWarnings(c, next);
       return {
         contract: next,
         summary: `Deleted ${e.kind} ${q(e.name)}`,
+        warnings,
         result: { deleted: { id: e.id, name: e.name, kind: e.kind }, implications, deletedBehaviors: e.behaviors.map((b) => b.id), removedRelationships: rels, reparentedChildren: kids.map((id) => ({ id, newParentId: e.parentId })) },
       };
     },
@@ -484,7 +565,72 @@ export const OPS: OpDef[] = [
       const r = c.relationships.find((x) => x.id === a.id);
       if (!r) throw notFound('Relationship', a.id, relationshipCandidates(c));
       const nm = (id: string) => c.entities.find((e) => e.id === id)?.name ?? id;
-      return { contract: { ...c, relationships: c.relationships.filter((x) => x.id !== r.id) }, summary: `Deleted relationship: ${nm(r.sourceId)} ${REL_INFO[r.type].verb} ${nm(r.targetId)}`, result: { deleted: r } };
+      const next = removeRelationship(c, r.id);
+      return { contract: next, summary: `Deleted relationship: ${nm(r.sourceId)} ${REL_INFO[r.type].verb} ${nm(r.targetId)}`, warnings: flowLossWarnings(c, next), result: { deleted: r } };
+    },
+  }),
+  // ───────────────────────────── flows ─────────────────────────────
+
+  op<{ name: string; summary: string; capabilityId: string; trigger: string; steps: FlowStepInput[]; id?: string }>({
+    name: 'create_flow',
+    title: 'Create flow',
+    description:
+      "Add a flow: a named, ORDERED walk along EXISTING relationships that explains how a capability works, drawn as a sequence diagram (User -> capability, then one arrow per step). capabilityId must be a capability; trigger is what the user does to start it. Each step names a relationshipId (add the relationship first with create_relationship if it is missing), says what happens, and may be a reply: true (dashed arrow back, target -> source); an optional short label per step is drawn on the arrow instead of the relationship verb. A forward step runs source -> target. A step whose sender has not appeared yet in the flow produces a warning. Id defaults to 'flow.<name-slug>'.",
+    schema: S.obj(
+      { name: S.nonEmpty('Flow name, e.g. "Create a task".'), summary: S.nonEmpty('One-line summary.'), capabilityId: S.nonEmpty('The capability this flow explains.'), trigger: S.nonEmpty('What the user does to start it, e.g. "Types a title and presses Add".'), steps: STEPS_SCHEMA, id: idProp('flow') },
+      ['name', 'summary', 'capabilityId', 'trigger', 'steps'],
+    ),
+    destructive: false,
+    idempotent: false,
+    run(c, a) {
+      const cap = requireCapability(c, a.capabilityId);
+      const ids = allIds(c);
+      const name = trim(a.name);
+      const id = a.id ? trim(a.id) : generateId('flow', ids.flows, name);
+      if (ids.flows.has(id)) throw new ToolError(`A flow with id '${id}' already exists.`, { suggestions: ['Omit id to auto-generate one, or use update_flow.'] });
+      const flow: Flow = { id, name, summary: trim(a.summary), capabilityId: cap.id, trigger: trim(a.trigger), steps: buildSteps(c, a.steps) };
+      const next = { ...c, flows: [...(c.flows ?? []), flow] };
+      return { contract: next, summary: `Created flow ${q(name)}`, result: { flow }, warnings: flowWarnings(next, flow.id), reveal: [cap.id] };
+    },
+  }),
+
+  op<{ id: string; name?: string; summary?: string; capabilityId?: string; trigger?: string; steps?: FlowStepInput[] }>({
+    name: 'update_flow',
+    title: 'Update flow',
+    description: 'Change a flow. Only passed fields change; steps REPLACES the whole ordered list (pass every step you want to keep). Step ids you omit are regenerated as step-1, step-2, ... The id is permanent.',
+    schema: S.obj(
+      { id: S.nonEmpty('Flow id.'), name: S.nonEmpty('New name.'), summary: S.nonEmpty('New summary.'), capabilityId: S.nonEmpty('New owning capability.'), trigger: S.nonEmpty('New trigger.'), steps: STEPS_SCHEMA },
+      ['id'],
+    ),
+    destructive: false,
+    idempotent: true,
+    run(c, a) {
+      const f = getFlow(c, a.id);
+      needAny(a, ['name', 'summary', 'capabilityId', 'trigger', 'steps'], `flow '${a.id}'`);
+      const cap = a.capabilityId !== undefined ? requireCapability(c, a.capabilityId) : undefined;
+      const flow: Flow = {
+        ...f,
+        ...(a.name !== undefined ? { name: trim(a.name) } : {}),
+        ...(a.summary !== undefined ? { summary: trim(a.summary) } : {}),
+        ...(cap ? { capabilityId: cap.id } : {}),
+        ...(a.trigger !== undefined ? { trigger: trim(a.trigger) } : {}),
+        ...(a.steps !== undefined ? { steps: buildSteps(c, a.steps) } : {}),
+      };
+      const next = { ...c, flows: (c.flows ?? []).map((x) => (x.id === f.id ? flow : x)) };
+      return { contract: next, summary: `Updated flow ${q(flow.name)}`, result: { flow }, warnings: flowWarnings(next, flow.id) };
+    },
+  }),
+
+  op<{ id: string }>({
+    name: 'delete_flow',
+    title: 'Delete flow',
+    description: 'Delete a flow. Relationships and entities are untouched. Undoable.',
+    schema: S.obj({ id: S.nonEmpty('Flow id.') }, ['id']),
+    destructive: true,
+    idempotent: true,
+    run(c, a) {
+      const f = getFlow(c, a.id);
+      return { contract: { ...c, flows: (c.flows ?? []).filter((x) => x.id !== f.id) }, summary: `Deleted flow ${q(f.name)}`, result: { deleted: { id: f.id, name: f.name } } };
     },
   }),
 ];

@@ -101,13 +101,13 @@ export function ProjectSkills({ children }: { children: ReactNode }) {
         <Dialog.Content maxWidth="440px">
           <Dialog.Title>{primary ?? 'Orbit skills'}</Dialog.Title>
           <Dialog.Description size="2" color="gray" mb="3">
-            Manage /orbit-plan and /orbit-sync in this project’s .claude/skills folder.
+            Manage /orbit-plan, /orbit-implement and /orbit-sync in this project’s .claude/skills folder.
           </Dialog.Description>
           {!checked && <Text as="p" size="2">Checking skills…</Text>}
           {checked?.error && <Text as="p" size="2" color="red">{checked.error}</Text>}
           {status?.notice && <Text as="p" size="2" color="amber">{status.notice}</Text>}
           {status?.action === 'current' && <Text as="p" size="2">Skills are up to date.</Text>}
-          {customized.length > 0 && <Text as="p" size="2">Replace the local edits in {customized.join(' and ')}?</Text>}
+          {customized.length > 0 && <Text as="p" size="2">Replace the local edits in {customized.join(', ')}?</Text>}
           <Flex gap="2" mt="4" justify="end">
             <Button variant="soft" color="gray" disabled={busy} onClick={() => setManagerPath(null)}>{canInstall ? 'Cancel' : 'Close'}</Button>
             {path && (checked?.error || status?.notice) && <Button variant="soft" disabled={busy} onClick={() => { setCheck(undefined); void refresh(path); }}>Retry</Button>}

@@ -46,11 +46,13 @@ test('Architecture rolls up dependencies and reveals their exact endpoints in Sy
   const rolledUp = map.getByRole('button', { name: /Task Discovery connects to Presentation Logic/ });
   await rolledUp.focus();
   await page.keyboard.press('Enter');
-  await expect(inspector).toContainText('uses Local Date Evaluation');
-  await expect(inspector).toContainText('is implemented by Task Filtering and Sorting');
-  const dateRelationship = inspector.getByRole('listitem').filter({ hasText: 'uses Local Date Evaluation' });
-  await expect(dateRelationship.locator('.rt-Badge[data-accent-color="indigo"]')).toHaveText('Today and Overdue');
-  await expect(dateRelationship.locator('.rt-Badge[data-accent-color="cyan"]')).toHaveText('Local Date Evaluation');
+  const scoped = inspector.locator('.architecture-relationships > li');
+  await expect(scoped).toHaveCount(2);
+  const usesLink = scoped.filter({ has: page.locator('.architecture-relationship-title', { hasText: 'uses' }) });
+  await expect(usesLink.locator('.architecture-relationship-title .rt-Badge[data-accent-color="indigo"]')).toHaveText('Task Discovery');
+  await expect(usesLink.locator('.architecture-relationship-title .rt-Badge[data-accent-color="cyan"]')).toHaveText('Presentation Logic');
+  await expect(scoped.locator('.architecture-relationship-title').filter({ hasText: 'is implemented by' })).toHaveCount(1);
+  await expect(usesLink.getByRole('button', { name: /Show \d+ underlying links?/ })).toBeVisible();
   expect(await map.boundingBox()).toEqual(mapBounds);
   await page.getByRole('button', { name: 'Close architecture selection' }).click();
   await expect(inspector).toContainText('Select a node or a relationship');
@@ -120,4 +122,22 @@ test('wheel zoom can pause between levels, reverse, or finish the same drill-dow
   for (let i = 0; i < 5; i++) await page.mouse.wheel(0, 100);
   await expect(presentation).toBeVisible();
   await expect(breadcrumb.locator('[aria-current="page"]')).toHaveCount(0);
+});
+
+test('Showing underlying links drills into the system and highlights the exact links', async ({ page }) => {
+  await launch(page, { text: TASKY, git: true });
+  await page.getByRole('radio', { name: 'System' }).click();
+  await page.getByRole('tablist', { name: 'System views' }).getByRole('tab', { name: 'Overview' }).click();
+  const map = page.getByRole('group', { name: 'Architecture dependency map' });
+  const inspector = page.getByRole('complementary', { name: 'Architecture selection' });
+  await map.getByRole('button', { name: /Task Discovery connects to Presentation Logic/ }).click();
+  const usesLink = inspector.locator('.architecture-relationships > li')
+    .filter({ has: page.locator('.architecture-relationship-title', { hasText: 'uses' }) });
+  await usesLink.getByRole('button', { name: /underlying link/ }).click();
+  const breadcrumb = page.getByRole('navigation', { name: 'Architecture hierarchy' });
+  await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText('Presentation Logic');
+  const exact = inspector.locator('.architecture-relationships > li').filter({ hasText: 'Local Date Evaluation' });
+  await expect(exact.locator('.rt-Badge[data-accent-color="indigo"]')).toHaveText('Today and Overdue');
+  await expect(inspector.locator('.architecture-relationship-title').filter({ hasText: 'is implemented by' })).toHaveCount(0);
+  await expect(map.locator('.architecture-edge.selected').first()).toBeVisible();
 });

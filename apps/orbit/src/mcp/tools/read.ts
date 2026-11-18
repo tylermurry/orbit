@@ -1,5 +1,6 @@
-import { ancestorsOf, behaviorAssurance, behaviorIndex, entityAssurance, focusedRelations, parseContract, serializeContract, testAssurance } from '@orbit/contract';
+import { ancestorsOf, behaviorAssurance, behaviorIndex, entityAssurance, flowsThrough, focusedRelations, parseContract, serializeContract, testAssurance } from '@orbit/contract';
 import type { AssuranceSummary, BehaviorAssurance, EntityKind, OrbitContract, TestAssurance } from '@orbit/contract';
+import { flowScene } from '../../lib/flows';
 import { caseMatches, caseRegistration } from '../../lib/junit';
 import { buildTree, REL_INFO } from '../../lib/model';
 import type { TreeNode } from '../../lib/model';
@@ -108,6 +109,7 @@ export function readTools(): ToolDef[] {
                   behaviors: c.entities.reduce((n, e) => n + e.behaviors.length, 0),
                   relationships: c.relationships.length,
                   tests: c.tests.length,
+                  flows: (c.flows ?? []).length,
                   placeholderTests: c.tests.filter((t) => t.placeholder).length,
                 }
               : null,
@@ -218,7 +220,56 @@ export function readTools(): ToolDef[] {
             behaviors: e.behaviors.map((b) => describeBehavior(c, behaviorAssurance(c, b.id, actx)!, b)),
             subtreeAssurance: slimAssurance(entityAssurance(c, e.id, actx), true),
             relationships: { outgoing: rel.outgoing.map((r) => mapRel(r, 'outgoing')), incoming: rel.incoming.map((r) => mapRel(r, 'incoming')) },
+            flows: flowsThrough(c, e.id).map((f) => ({ id: f.id, name: f.name, summary: f.summary, owner: f.capabilityId === e.id })),
             ...(states?.[e.id] ? { diff: { status: states[e.id].status, reasons: states[e.id].reasons, changedDescendants: states[e.id].changedDescendants } } : {}),
+          },
+        };
+      },
+    ),
+
+    def(
+      'list_flows',
+      'List flows',
+      "List flows (named, ordered walkthroughs of how a capability works, drawn as sequence diagrams) with their capability, trigger and step count. Filters: capabilityId (only flows of that capability); query (substring of name, id or summary).",
+      S.obj({ capabilityId: S.nonEmpty('Only flows owned by this capability.'), query: S.nonEmpty('Substring filter on name/id/summary.') }),
+      (a, ctx) => {
+        const c = requireContract(ctx);
+        if (a.capabilityId && !c.entities.some((e) => e.id === a.capabilityId)) throw notFound('Entity', a.capabilityId as string, entityCandidates(c));
+        const q = typeof a.query === 'string' ? a.query.toLowerCase() : '';
+        const rows = (c.flows ?? [])
+          .filter((f) => (!a.capabilityId || f.capabilityId === a.capabilityId) && (!q || `${f.name} ${f.id} ${f.summary}`.toLowerCase().includes(q)))
+          .map((f) => ({ id: f.id, name: f.name, summary: f.summary, capability: entityRef(c, f.capabilityId), trigger: f.trigger, stepCount: f.steps.length }));
+        return { data: { total: rows.length, flows: rows } };
+      },
+    ),
+
+    def(
+      'get_flow',
+      'Get one flow in full',
+      "A flow with every step resolved: who sends to whom (entity names), the verb (or 'replies'), the relationship id and the step description. Step 0 is the trigger (User -> capability). A step whose relationship no longer exists has broken: true.",
+      S.obj({ id: S.nonEmpty('Flow id (e.g. flow.create-a-task).') }, ['id']),
+      (a, ctx) => {
+        const c = requireContract(ctx);
+        const f = (c.flows ?? []).find((x) => x.id === a.id);
+        if (!f) throw notFound('Flow', a.id as string, (c.flows ?? []).map((x) => ({ id: x.id, name: x.name })));
+        const scene = flowScene(c, f);
+        const lane = (id: string) => scene.lanes.find((l) => l.id === id)?.name ?? id;
+        return {
+          data: {
+            flow: { id: f.id, name: f.name, summary: f.summary, trigger: f.trigger, capability: entityRef(c, f.capabilityId) },
+            participants: scene.lanes.map((l) => ({ id: l.id, name: l.name, kind: l.kind })),
+            steps: scene.messages.map((m) => ({
+              index: m.index,
+              ...(m.stepId ? { id: m.stepId } : {}),
+              from: lane(m.from),
+              to: lane(m.to),
+              verb: m.verb,
+              reply: m.reply,
+              ...(m.relationship ? { relationshipId: m.relationship.id } : {}),
+              description: m.description,
+              sentence: m.sentence,
+              ...(m.broken ? { broken: true } : {}),
+            })),
           },
         };
       },

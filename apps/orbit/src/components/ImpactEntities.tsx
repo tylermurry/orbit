@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Button, Flex, Text } from '@radix-ui/themes';
 import { ancestorsOf, potentialImpact } from '@orbit/contract';
-import type { Entity, EntityChangeStatus, OrbitContract, Relationship, SemanticDiff } from '@orbit/contract';
+import type { Change, Entity, EntityChangeStatus, OrbitContract, Relationship, SemanticDiff } from '@orbit/contract';
 import { ChangeDetail, diffLookups } from './Changes';
 import { EntityDetail } from './EntityDetail';
 import { ImpactChain } from './ImpactChain';
@@ -33,6 +33,27 @@ export interface ChangedEntity {
   /** Contract the entity lives in (target, or base when removed). */
   contract: OrbitContract;
   crumbs: Entity[];
+}
+
+export const flowKey = (id: string) => `flow:${id}`;
+export const flowIdFromKey = (key: string | null) => (key?.startsWith('flow:') ? key.slice('flow:'.length) : null);
+
+export interface ChangedFlow {
+  change: Change;
+  /** Owning capability and its ancestors, root first. */
+  crumbs: Entity[];
+}
+
+/** Flows added, removed or modified between the two sides, with the capability path they live under. */
+export function changedFlows(diff: SemanticDiff): ChangedFlow[] {
+  return diff.changes
+    .filter((c) => c.category === 'flow')
+    .map((change) => {
+      const side = change.kind === 'removed' ? diff.base : diff.target;
+      const capId = side?.flows?.find((f) => f.id === change.id)?.capabilityId;
+      const cap = side?.entities.find((e) => e.id === capId);
+      return { change, crumbs: side && cap ? [...ancestorsOf(side, cap.id).reverse(), cap] : [] };
+    });
 }
 
 /** Directly changed capabilities and systems, in contract order, with their ancestor path. */
@@ -67,8 +88,8 @@ export function Crumbs({ crumbs }: { crumbs: Entity[] }) {
   );
 }
 
-export function ChangedEntityList({ items, selectedKey, onSelect, labels, planned }: { items: ChangedEntity[]; labels?: Record<string, string>; planned?: boolean; selectedKey: string | null; onSelect: (key: string) => void }) {
-  if (items.length === 0) {
+export function ChangedEntityList({ items, flows = [], selectedKey, onSelect, labels, planned }: { items: ChangedEntity[]; flows?: ChangedFlow[]; labels?: Record<string, string>; planned?: boolean; selectedKey: string | null; onSelect: (key: string) => void }) {
+  if (items.length === 0 && flows.length === 0) {
     return (
       <div className="empty-inline" data-testid="no-change-rows">
         <Text size="2" color="gray">
@@ -96,6 +117,29 @@ export function ChangedEntityList({ items, selectedKey, onSelect, labels, planne
                 )}
               </span>
               <AreaBadge kind={entity.kind} />
+            </button>
+          </li>
+        );
+      })}
+      {flows.map(({ change: c, crumbs }) => {
+        const key = flowKey(c.id);
+        return (
+          <li key={key}>
+            <button type="button" className={`change-row${selectedKey === key ? ' selected' : ''}`} onClick={() => onSelect(key)} aria-pressed={selectedKey === key} data-testid="change-row" data-change-key={key}>
+              <ChangePill status={c.kind} long label={pillLabel(c.kind, key, labels, planned)} />
+              <span className="change-label">
+                <span className="truncate" style={{ display: 'block' }}>
+                  {c.label}
+                </span>
+                {crumbs.length > 0 && (
+                  <span className="change-sub truncate" style={{ display: 'block' }}>
+                    <Crumbs crumbs={crumbs} />
+                  </span>
+                )}
+              </span>
+              <Badge color="purple" variant="soft" radius="full">
+                Flow
+              </Badge>
             </button>
           </li>
         );

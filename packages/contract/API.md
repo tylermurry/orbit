@@ -32,6 +32,7 @@ Semantic rules (codes):
 - `ref.relationship.source`, `ref.relationship.target` (unknown entity), `relationship.self` (source === target).
 - `ref.behavior.test` — behavior testId not in `tests` (**severity: error** — references must resolve).
 - `behavior.testIds.duplicate` (warning).
+- Flows (optional `flows`): `id.duplicate` (flow ids; step ids within a flow), `ref.flow.capability` (error: `capabilityId` missing or not a capability), `ref.flow.step.relationship` (error: unknown relationship), `flow.step.unreached` (warning: the step's sender has not yet taken part; participants start as the capability and grow with both ends of each earlier step), `flow.empty` (warning).
 - Timestamps: RFC3339 `executedAt` (`schema.format`), `commit` must match `^[0-9a-f]{40}$`.
 Messages must be actionable: name the id, the field, and what to do ("Entity 'cap.x' has parentId 'sys.y' which is a system; capabilities must have capability parents.").
 
@@ -39,7 +40,7 @@ Messages must be actionable: name the id, the field, and what to do ("Entity 'ca
 serializeContract(contract: OrbitContract): string
 ```
 Canonical output: 2-space indent, trailing newline, keys in schema order
-(`schemaVersion, product, entities, relationships, tests, validation?`; entity: `id, kind, parentId, name, summary, description, behaviors`;
+(`schemaVersion, product, entities, relationships, tests, flows?, validation?`; `flows` only when non-empty; flow: `id, name, summary, capabilityId, trigger, steps`; step: `id, relationshipId, reply?, label?, description` (`reply: true` only, never `false`); entity: `id, kind, parentId, name, summary, description, behaviors`;
 behavior: `id, name, expected, testIds`; relationship: `id, type, sourceId, targetId, description?`; test: `id, name, location, placeholder?` (`placeholder: true` = planned, not implemented; never counts as coverage);
 validation: `command, results`; product: `id, name, summary, description?`).
 Array order is preserved as given (never re-sorted — avoids churn).
@@ -59,6 +60,8 @@ ancestorsOf(contract, id): Entity[]          // nearest first; cycle-safe
 descendantIdsOf(contract, id): string[]      // same-kind subtree, excluding id; cycle-safe
 wouldCreateCycle(contract, entityId, newParentId: string | null): boolean
 focusedRelations(contract, entityId): { incoming: Relationship[]; outgoing: Relationship[] }
+flowsThrough(contract, entityId): Flow[]          // flows owned by the entity or passing through it
+flowsUsing(contract, relationshipId): Flow[]      // flows with a step along the relationship
 potentialImpact(relationships: Relationship[], changedEntityIds: Iterable<string>): ImpactPath[]
 ```
 `potentialImpact`: reverse BFS. From each changed id X, every relationship (any of the 3 types) with
@@ -92,7 +95,7 @@ diffContracts(base: OrbitContract | null, target: OrbitContract | null): Semanti
 - Compare by id; ignore array order, key order, formatting, `testIds` order (set compare).
 - Entities: fields `name, summary, description, kind, parentId`. Behaviors (indexed globally by id): fields
   `name, expected, testIds`, plus `owner` when the owning entity changed (report `ownerBefore/ownerAfter`; not add+remove).
-- Relationships: `type, sourceId, targetId, description`. Tests: `name, location, placeholder`. Product: `id, name, summary, description` (one change with id = product id, kind 'modified').
+- Relationships: `type, sourceId, targetId, description`. Tests: `name, location, placeholder`. Flows (category `flow`): `name, summary, trigger, capabilityId, steps` (steps compare by value, so a reorder is a modification; a flow change never marks entities as changed). Product: `id, name, summary, description` (one change with id = product id, kind 'modified').
 - `group`: entity/behavior(name/expected/owner)/relationship/product → 'guarantee'; test and behavior changes
   where only `testIds` changed → 'verification'.
 - `entityIds` / direct changes: entity changes → that entity; behavior add/remove/modify → owning entity (both owners on
@@ -108,9 +111,10 @@ diffContracts(base: OrbitContract | null, target: OrbitContract | null): Semanti
 
 ```ts
 generateId(prefix: string, existing: Iterable<string>, name?: string): string  // e.g. ('cap', ids, 'Custom Lists') → 'cap.custom-lists' (+ '-2' if taken)
-allIds(contract): { entities: Set<string>; behaviors: Set<string>; relationships: Set<string>; tests: Set<string> }
+allIds(contract): { entities: Set<string>; behaviors: Set<string>; relationships: Set<string>; tests: Set<string>; flows: Set<string> }
 referencesTo(contract, kind: 'entity' | 'behavior' | 'test', id: string): string[]   // human descriptions of what references it (for delete confirmations)
-removeEntity(contract, id, opts: { children: 'reparent-to-grandparent' | 'block' }): OrbitContract  // also removes its relationships; throws if children and 'block'
+removeEntity(contract, id, opts: { children: 'reparent-to-grandparent' | 'block' }): OrbitContract  // also removes its relationships, their flow steps, and flows it owns; throws if children and 'block'
+removeRelationship(contract, id): OrbitContract  // also drops every flow step that uses it; throws if unknown
 removeTest(contract, id, opts: { unmap: boolean }): OrbitContract
 ```
 (The UI may do other edits with plain immutable updates.)

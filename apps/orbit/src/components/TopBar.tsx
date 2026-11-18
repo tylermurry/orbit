@@ -63,6 +63,11 @@ export function TopBar({ split, canSplit, onLayoutChange }: { split: boolean; ca
           label: 'System',
           onSelect: () => requestView('engineering'),
         },
+        {
+          value: 'flows',
+          label: 'Flows',
+          onSelect: () => requestView('flows'),
+        },
       ]}
     />
   );

@@ -3,12 +3,13 @@
 **Orbit** is a local-first desktop app for modeling, visualizing, and comparing what a software product does.
 You open one JSON **product contract** that describes the product's user-facing **capabilities**, its internal
 **systems**, the **behaviors** each one guarantees, typed **relationships** between them, and the automated **tests**
-that verify each behavior. Orbit gives you three perspectives on that file:
+that verify each behavior. Orbit gives you these perspectives on that file:
 
 | View | For | What you see |
 |---|---|---|
 | **Product** | product owners | capability tree, behaviors, assurance rollups, focused relationship graph |
-| **System** | engineering leads | system tree, behaviors, assurance, and a zoomable Overview |
+| **System** | engineering leads | system tree, behaviors, assurance, and a zoomable **Topology** map (what depends on what) |
+| **Flows** | everyone | sequence-diagram walkthroughs of how a capability works (what happens, in what order), listed under their capabilities |
 | **Impact** | everyone | what changed (Plan, Plan vs. Actual, Actual), the *potential* downstream impact, and whether each changed behavior is tested and passing |
 
 **Validate** runs the product's whole test suite in the terminal's Validate tab with one command you confirm (default `npm run build`), then reads the JUnit XML
@@ -120,13 +121,14 @@ Open `<printed path>/tasky.orbit.json` in Orbit → under **Impact** choose **Ac
 
 In short:
 
-- The top level has `schemaVersion: 1` plus `product`, `entities`, `relationships`, `tests`, and an optional
-  `validation` (`command` + `results`) that says how to run the test suite.
+- The top level has `schemaVersion: 1` plus `product`, `entities`, `relationships`, `tests`, and optional
+  `flows` and `validation` (`command` + `results`) that says how to run the test suite.
 - Older contracts may contain `placeholder: true`. Orbit ignores these entries for Actual coverage. New planned tests belong in the plan file.
 - Entities are flat, with `parentId`. Each has `kind` `capability` or `system`, and parents must be the same kind.
 - Behaviors live inside their owning entity and have globally unique ids.
 - Relationships are `dependsOn`, `uses`, or `implementedBy`, read source → target.
-- IDs are stable and opaque. Array order carries no meaning.
+- Flows are optional named walkthroughs of a capability: an ordered list of steps, each along an existing relationship (a step may be a `reply`, travelling target → source). Flows add narrative to existing links and never invent new ones.
+- IDs are stable and opaque. Array order carries no meaning, except the order of steps within a flow.
 
 **For external tools and AI agents editing files directly:** edit the JSON with any tool, then validate:
 
@@ -188,10 +190,10 @@ from the contract file, which could come from someone else's branch). The comman
 
 1. Open your project in Orbit and enable its MCP connection in Claude Code.
 2. Use **Install Skills** when creating a project or **File → Install/Update Skills** for an existing one. Orbit installs
-   the two commands in the project's `.claude/skills/` folder. You can commit them to share the installed versions.
+   the commands in the project's `.claude/skills/` folder. You can commit them to share the installed versions.
 3. Run `/orbit-plan` with the work description, spec, or issue. Review `orbit.plan.json` in the **Plan** view
    and iterate on it with `/orbit-plan` until it's right. The baseline stays fixed until you explicitly replace the plan.
-4. Implement and commit your tickets. Run `/orbit-sync` to reconcile the saved Actual contract and mark the reviewed
+4. Run `/orbit-implement` to turn the plan into a detailed implementation plan; once you approve it, the agent builds it and offers to run `/orbit-sync`. Or implement and commit your tickets yourself. Run `/orbit-sync` to reconcile the saved Actual contract and mark the reviewed
    commit with `orbit/sync/<branch>`. **Plan vs. Actual** compares `orbit.plan.json` with Actual. **Actual** uses the pinned baseline.
 
 To require sync for PRs, copy [the workflow template](.github/workflow-templates/orbit-sync.yml) into the consuming

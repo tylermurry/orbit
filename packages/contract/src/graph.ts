@@ -1,4 +1,4 @@
-import type { Behavior, Entity, EntityKind, ImpactPath, ImpactStep, OrbitContract, Relationship } from './types.js';
+import type { Behavior, Entity, EntityKind, Flow, ImpactPath, ImpactStep, OrbitContract, Relationship } from './types.js';
 
 export function entityById(contract: OrbitContract): Map<string, Entity> {
   const m = new Map<string, Entity>();
@@ -115,4 +115,22 @@ export function potentialImpact(relationships: Relationship[], changedEntityIds:
     out.push({ entityId, path: info.path, changedEntityId: info.changedEntityId });
   }
   return out.sort((a, b) => a.path.length - b.path.length || a.entityId.localeCompare(b.entityId));
+}
+
+/** Flows owned by the entity or passing through it (as either end of a step's relationship). Contract order. */
+export function flowsThrough(contract: OrbitContract, entityId: string): Flow[] {
+  const rels = new Map(contract.relationships.map((r) => [r.id, r]));
+  return (contract.flows ?? []).filter(
+    (f) =>
+      f.capabilityId === entityId ||
+      f.steps.some((s) => {
+        const r = rels.get(s.relationshipId);
+        return r !== undefined && (r.sourceId === entityId || r.targetId === entityId);
+      }),
+  );
+}
+
+/** Flows with at least one step along the relationship. Contract order. */
+export function flowsUsing(contract: OrbitContract, relationshipId: string): Flow[] {
+  return (contract.flows ?? []).filter((f) => f.steps.some((s) => s.relationshipId === relationshipId));
 }

@@ -11,11 +11,13 @@ use std::sync::Mutex;
 
 const PLAN: &str = "orbit-plan";
 const SYNC: &str = "orbit-sync";
-const NAMES: [&str; 2] = [PLAN, SYNC];
-const BUNDLED_VERSION: u32 = 1;
+const IMPLEMENT: &str = "orbit-implement";
+const NAMES: [&str; 3] = [PLAN, SYNC, IMPLEMENT];
+const BUNDLED_VERSION: u32 = 2;
 const MCP_VERSION: u32 = 1;
 const PLAN_TEXT: &str = include_str!("../../../../skills/claude/orbit-plan/SKILL.md");
 const SYNC_TEXT: &str = include_str!("../../../../skills/claude/orbit-sync/SKILL.md");
+const IMPLEMENT_TEXT: &str = include_str!("../../../../skills/claude/orbit-implement/SKILL.md");
 const STAMP: &str = ".orbit-install.json";
 static INSTALL: Mutex<()> = Mutex::new(());
 
@@ -53,7 +55,11 @@ struct Release {
 }
 
 fn bundled_text(name: &str) -> &'static str {
-    if name == PLAN { PLAN_TEXT } else { SYNC_TEXT }
+    match name {
+        PLAN => PLAN_TEXT,
+        SYNC => SYNC_TEXT,
+        _ => IMPLEMENT_TEXT,
+    }
 }
 
 fn fetch(url: &str) -> Result<String, String> {
@@ -126,7 +132,7 @@ fn skill_root(contract: &str) -> Result<PathBuf, String> {
         .ok_or("Could not find the project root.")?;
     let claude = project.join(".claude");
     let root = claude.join("skills");
-    for directory in [&claude, &root, &root.join(PLAN), &root.join(SYNC)] {
+    for directory in [&claude, &root, &root.join(PLAN), &root.join(SYNC), &root.join(IMPLEMENT)] {
         match fs::symlink_metadata(directory) {
             Ok(meta) if !meta.is_dir() || meta.file_type().is_symlink() => {
                 return Err(format!("Expected a project directory at {}.", directory.display()));

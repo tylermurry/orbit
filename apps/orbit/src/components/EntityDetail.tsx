@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Button, Code, Flex, Text } from '@radix-ui/themes';
 import { TrashIcon } from '@radix-ui/react-icons';
-import { ancestorsOf, focusedRelations } from '@orbit/contract';
+import { ancestorsOf, focusedRelations, flowsThrough } from '@orbit/contract';
 import type { Entity, OrbitContract } from '@orbit/contract';
 import { useAssurance, useDispatch, useEdit } from '../state/context';
 import type { Bucket } from './AssuranceSection';
 import { BehaviorsSection } from './BehaviorsSection';
 import { EntityDeleteDialog } from './EntityDialogs';
 import { RelationshipsSection } from './RelationshipsSection';
+import { firstStepThrough } from '../lib/flows';
 import { InlineText, KindBadge, summaryFrom } from './common';
 
 export function EntityDetail({ entity, contract, readOnly }: { entity: Entity; contract: OrbitContract; readOnly: boolean }) {
@@ -18,6 +19,7 @@ export function EntityDetail({ entity, contract, readOnly }: { entity: Entity; c
   const [bucket, setBucket] = useState<Bucket>('all');
   const [deleting, setDeleting] = useState(false);
   const ancestors = useMemo(() => ancestorsOf(contract, entity.id).reverse(), [contract, entity.id]);
+  const flows = useMemo(() => flowsThrough(contract, entity.id), [contract, entity.id]);
   const noBehaviors = entity.behaviors.length === 0;
   const noRels = (() => {
     const { incoming, outgoing } = focusedRelations(contract, entity.id);
@@ -43,7 +45,7 @@ export function EntityDetail({ entity, contract, readOnly }: { entity: Entity; c
         <KindBadge kind={entity.kind} />
         <Flex gap="3" align="center">
           {entity.kind === 'system' && (
-            <Button size="1" variant="ghost" onClick={() => d({ type: 'showArchitecture', id: entity.id })}>Show in Overview</Button>
+            <Button size="1" variant="ghost" onClick={() => d({ type: 'showArchitecture', id: entity.id })}>Show in Topology</Button>
           )}
           {!readOnly && (
             <Button size="1" variant="ghost" color="red" onClick={() => setDeleting(true)} aria-label={`Delete ${entity.name}`}>
@@ -66,6 +68,18 @@ export function EntityDetail({ entity, contract, readOnly }: { entity: Entity; c
       <div className={noBehaviors && noRels ? 'empty-actions' : undefined}>
         {summary && <BehaviorsSection contract={contract} entity={entity} summary={summary} bucket={bucket} onBucket={setBucket} readOnly={readOnly} />}
         <RelationshipsSection contract={contract} entity={entity} readOnly={readOnly} />
+        {flows.length > 0 && (
+          <section className="detail-flows" aria-label="Flows">
+            <Text size="2" weight="bold">Flows</Text>
+            <ul role="list" className="detail-flows-list">
+              {flows.map((flow) => (
+                <li key={flow.id}>
+                  <Button size="1" variant="ghost" onClick={() => d({ type: 'showFlow', id: flow.id, step: firstStepThrough(contract, flow, entity.id) })}>{flow.name}</Button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
 
       {deleting && (

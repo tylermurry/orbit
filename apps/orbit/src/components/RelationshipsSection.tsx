@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Callout, Dialog, Flex, IconButton, SegmentedControl, Select, Text, TextField } from '@radix-ui/themes';
 import { ChevronDownIcon, ChevronRightIcon, ExclamationTriangleIcon, Pencil1Icon, PlusIcon, TrashIcon } from '@radix-ui/react-icons';
-import { allIds, focusedRelations, generateId } from '@orbit/contract';
+import { allIds, focusedRelations, generateId, removeRelationship } from '@orbit/contract';
 import type { Entity, OrbitContract, Relationship, RelationshipType } from '@orbit/contract';
 import { REL_INFO } from '../lib/model';
 import { useCtrl, useDispatch, useEdit } from '../state/context';
@@ -291,10 +291,7 @@ export function RelationshipsSection({ contract, entity, readOnly }: { contract:
           onConfirm={() => {
             if (!del) return;
             const id = del.id;
-            edit((c) => ({
-              ...c,
-              relationships: c.relationships.filter((r) => r.id !== id),
-            }));
+            edit((c) => removeRelationship(c, id));
             ctrl.toast('Relationship deleted', 'info');
             setDel(null);
           }}

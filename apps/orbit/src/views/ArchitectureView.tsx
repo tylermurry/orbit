@@ -1,11 +1,15 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent } from 'react';
-import { Button, IconButton } from '@radix-ui/themes';
+import { flowsThrough, flowsUsing } from '@orbit/contract';
+import type { Flow, Relationship } from '@orbit/contract';
+import { Button, IconButton, Link } from '@radix-ui/themes';
 import { Cross2Icon } from '@radix-ui/react-icons';
 import { ArchitectureGraph } from '../components/ArchitectureGraph';
 import type { ArchitectureSelection } from '../components/ArchitectureGraph';
+import type { ArchitectureEdge } from '../lib/architecture';
 import { KindBadge } from '../components/common';
 import { architectureScene, DEFAULT_CAMERA, indexArchitecture } from '../lib/architecture';
+import { firstStepThrough, firstStepUsing } from '../lib/flows';
 import { REL_INFO } from '../lib/model';
 import { loadPref, savePref } from '../lib/prefs';
 import { useApp, useDispatch } from '../state/context';
@@ -23,6 +27,7 @@ const INSPECTOR_WIDTH_KEY = 'orbit.layout.architectureInspectorWidth';
 export function ArchitectureView({ active }: { active: boolean }) {
   const contract = useApp((state) => state.contract)!;
   const requestedFocus = useApp((state) => state.architectureFocusId);
+  const highlight = useApp((state) => state.architectureHighlight);
   const dispatch = useDispatch();
   const index = useMemo(() => indexArchitecture(contract), [contract]);
   const scene = useMemo(() => architectureScene(index, requestedFocus), [index, requestedFocus]);
@@ -44,6 +49,7 @@ export function ArchitectureView({ active }: { active: boolean }) {
   const motion = useRef<ZoomTransition | null>(null);
   const animation = useRef<number | null>(null);
   const drag = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  const pendingHighlight = useRef<Set<string> | null>(null);
   const destinationId = transition?.destinationId ?? null;
   const transitioning = !!transition;
   const destination = useMemo(() => transitioning ? architectureScene(index, destinationId) : undefined,
@@ -75,13 +81,25 @@ export function ArchitectureView({ active }: { active: boolean }) {
   useEffect(() => {
     motion.current = null;
     setTransition(null);
-    setSelection(null);
+    const highlight = pendingHighlight.current;
+    pendingHighlight.current = null;
+    const ids = highlight ? scene.edges.filter((edge) => edge.relationships.some(({ id }) => highlight.has(id))).map(({ id }) => id) : [];
+    setSelection(ids.length ? { type: 'edges', ids, relationshipIds: [...highlight!] } : null);
     setCamera(DEFAULT_CAMERA);
     return () => {
       if (animation.current !== null) cancelAnimationFrame(animation.current);
       animation.current = null;
     };
   }, [requestedFocus]);
+
+  // "Show in Topology" from a flow: select those links on the map (runs after the focus reset above).
+  useEffect(() => {
+    if (!highlight) return;
+    const wanted = new Set(highlight);
+    dispatch({ type: 'clearArchitectureHighlight' });
+    const ids = scene.edges.filter((edge) => edge.relationships.some(({ id }) => wanted.has(id))).map(({ id }) => id);
+    setSelection(ids.length ? { type: 'edges', ids, relationshipIds: [...wanted] } : null);
+  }, [highlight]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateZoom(next: ZoomTransition) {
     motion.current = next;
@@ -103,6 +121,7 @@ export function ArchitectureView({ active }: { active: boolean }) {
         motion.current = null;
         animation.current = null;
         setTransition(null);
+        if (zoom.progress === 0) pendingHighlight.current = null;
         if (zoom.progress === 1) {
           setCamera(DEFAULT_CAMERA);
           dispatch({ type: 'setArchitectureFocus', id: zoom.destinationId });
@@ -140,6 +159,7 @@ export function ArchitectureView({ active }: { active: boolean }) {
     const zoomingIn = step > 0 && !!systemId;
     const zoomingOut = step < 0 && !!scene.focusId && camera.scale <= 1.03;
     if (zoomingIn || zoomingOut) {
+      pendingHighlight.current = null;
       updateZoom({ destinationId: zoomingIn ? systemId : parentId, progress: 0, target: Math.abs(step), automatic: false });
       setSelection(null);
       return;
@@ -176,7 +196,60 @@ export function ArchitectureView({ active }: { active: boolean }) {
 
   const selectedNode = selection?.type === 'node' ? scene.nodes.get(selection.id)?.entity : undefined;
   const selectedDescription = selectedNode?.description || selectedNode?.summary;
-  const selectedEdge = selection?.type === 'edge' ? scene.edges.find(({ id }) => id === selection.id) : undefined;
+  const selectedEdges = selection?.type === 'edge'
+    ? scene.edges.filter(({ id }) => id === selection.id)
+    : selection?.type === 'edges' ? scene.edges.filter(({ id }) => selection.ids.includes(id)) : [];
+  const selectedLinks = useMemo(() => {
+    const only = selection?.type === 'edges' ? new Set(selection.relationshipIds) : null;
+    return selectedEdges.flatMap((edge) => {
+      const source = scene.nodes.get(edge.sourceId)?.entity;
+      const target = scene.nodes.get(edge.targetId)?.entity;
+      if (!source || !target) return [];
+      const byType = new Map<Relationship['type'], Relationship[]>();
+      for (const relationship of edge.relationships) {
+        if (only && !only.has(relationship.id)) continue;
+        byType.set(relationship.type, [...(byType.get(relationship.type) ?? []), relationship]);
+      }
+      const drillId = drillTarget(edge);
+      return [...byType].map(([type, relationships]) => ({ key: `${edge.id}:${type}`, source, target, type, relationships, drillId }));
+    });
+  }, [selectedEdges, selection, scene, index]);
+
+  const selectedFlows = useMemo(() => {
+    const out = new Map<string, { flow: Flow; step: number }>();
+    if (selectedNode) {
+      for (const flow of flowsThrough(contract, selectedNode.id)) out.set(flow.id, { flow, step: firstStepThrough(contract, flow, selectedNode.id) });
+    } else {
+      const only = selection?.type === 'edges' ? new Set(selection.relationshipIds) : null;
+      for (const edge of selectedEdges) {
+        for (const r of edge.relationships) {
+          if (only && !only.has(r.id)) continue;
+          for (const flow of flowsUsing(contract, r.id)) if (!out.has(flow.id)) out.set(flow.id, { flow, step: firstStepUsing(flow, r.id) });
+        }
+      }
+    }
+    return [...out.values()];
+  }, [contract, selectedNode, selectedEdges, selection]);
+
+  function drillTarget(edge: ArchitectureEdge) {
+    const rolledUp = edge.relationships.some((r) => r.sourceId !== edge.sourceId || r.targetId !== edge.targetId);
+    if (!rolledUp) return undefined;
+    const openable = [edge.targetId, edge.sourceId]
+      .map((id) => scene.nodes.get(id)?.entity)
+      .filter((entity) => entity?.kind === 'system' && entity.id !== scene.focusId);
+    return (openable.find((entity) => index.parents.has(entity!.id)) ?? openable[0])?.id;
+  }
+
+  function openEdge(id: string) {
+    const edge = scene.edges.find((candidate) => candidate.id === id);
+    const systemId = edge && drillTarget(edge);
+    if (systemId) showUnderlying(systemId, edge.relationships);
+  }
+
+  function showUnderlying(systemId: string, relationships: Relationship[]) {
+    open(systemId);
+    pendingHighlight.current = new Set(relationships.map(({ id }) => id));
+  }
 
   return (
     <section className="architecture-view" aria-label="Architecture">
@@ -185,7 +258,7 @@ export function ArchitectureView({ active }: { active: boolean }) {
           <Button size="1" variant="ghost" disabled={!trail.length && camera === DEFAULT_CAMERA} onClick={() => {
             if (trail.length) open(null);
             else setCamera(DEFAULT_CAMERA);
-          }}>Overview</Button>
+          }}>Topology</Button>
           {trail.map((id, i) => (
             <span key={id} className="architecture-crumb">
               <span aria-hidden="true">›</span>
@@ -195,13 +268,13 @@ export function ArchitectureView({ active }: { active: boolean }) {
             </span>
           ))}
         </nav>
-        <span className="architecture-hint">Scroll to zoom · Double-click a system to open</span>
+        <span className="architecture-hint">Scroll to zoom · Double-click a system or link to open</span>
       </div>
       <div className="architecture-workspace" ref={workspace}>
         <div className="architecture-stage" ref={stage} onPointerDown={startPan} onPointerMove={pan} onLostPointerCapture={() => { drag.current = null; }}>
           {scene.nodes.size > 0 && size.width > 0 && (
             <ArchitectureGraph scene={scene} destination={destination} progress={transition?.progress ?? 0} size={size} camera={camera}
-              selection={selection} parents={index.parents} onSelect={setSelection} onOpen={open} />
+              selection={selection} parents={index.parents} onSelect={setSelection} onOpen={open} onOpenEdge={openEdge} />
           )}
           {scene.nodes.size === 0 && <p className="architecture-empty">Add a system to start mapping your architecture.</p>}
         </div>
@@ -247,13 +320,13 @@ export function ArchitectureView({ active }: { active: boolean }) {
           style={workspaceWidth ? { flexBasis: inspectorWidth } : undefined}
         >
           <div className="architecture-inspector-heading">
-            <strong>{selectedNode?.name ?? (selectedEdge ? 'Relationships' : 'Details')}</strong>
-            {(selectedNode || selectedEdge) && (
+            <strong>{selectedNode?.name ?? (selectedEdges.length ? 'Relationships' : 'Details')}</strong>
+            {(selectedNode || selectedEdges.length > 0) && (
               <IconButton variant="ghost" size="1" color="gray" onClick={() => setSelection(null)} aria-label="Close architecture selection"><Cross2Icon /></IconButton>
             )}
           </div>
           <div className="architecture-inspector-content">
-            {!selectedNode && !selectedEdge && <p>Select a node or a relationship to see its details.</p>}
+            {!selectedNode && !selectedEdges.length && <p>Select a node or a relationship to see its details.</p>}
             {selectedNode && (
               <>
                 {selectedDescription && <p className="architecture-node-description">{selectedDescription}</p>}
@@ -267,24 +340,39 @@ export function ArchitectureView({ active }: { active: boolean }) {
                 </div>
               </>
             )}
-            {selectedEdge && (
+            {selectedLinks.length > 0 && (
               <ul className="architecture-relationships" role="list">
-                {selectedEdge.relationships.map((relationship) => {
-                  const source = index.entities.get(relationship.sourceId);
-                  const target = index.entities.get(relationship.targetId);
-                  if (!source || !target) return null;
-                  return (
-                    <li key={relationship.id}>
-                      <div className="architecture-relationship-title">
-                        <KindBadge kind={source.kind} label={source.name} />{' '}
-                        <span>{REL_INFO[relationship.type].verb}</span>{' '}
-                        <KindBadge kind={target.kind} label={target.name} />
-                      </div>
-                      {relationship.description && <p>{relationship.description}</p>}
-                    </li>
-                  );
-                })}
+                {selectedLinks.map(({ key, source, target, type, relationships, drillId }) => (
+                  <li key={key}>
+                    <div className="architecture-relationship-title">
+                      <KindBadge kind={source.kind} label={source.name} />{' '}
+                      <span>{REL_INFO[type].verb}</span>{' '}
+                      <KindBadge kind={target.kind} label={target.name} />
+                    </div>
+                    {drillId ? (
+                      <Link size="1" asChild className="architecture-relationship-drill">
+                        <button type="button" onClick={() => showUnderlying(drillId, relationships)}>
+                          Show {relationships.length} underlying {relationships.length === 1 ? 'link' : 'links'}
+                        </button>
+                      </Link>
+                    ) : relationships.map((relationship) => relationship.description && <p key={relationship.id}>{relationship.description}</p>)}
+                  </li>
+                ))}
               </ul>
+            )}
+            {selectedFlows.length > 0 && (
+              <div className="architecture-flows">
+                <strong>Flows</strong>
+                <ul role="list">
+                  {selectedFlows.map(({ flow, step }) => (
+                    <li key={flow.id}>
+                      <Link size="1" asChild>
+                        <button type="button" onClick={() => dispatch({ type: 'showFlow', id: flow.id, step })}>{flow.name}</button>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
         </aside>

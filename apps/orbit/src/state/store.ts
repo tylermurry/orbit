@@ -40,6 +40,9 @@ export function initialState(): AppState {
     explorerView: 'product',
     engineeringTab: 'systems',
     architectureFocusId: null,
+    flowId: null,
+    flowStep: 0,
+    architectureHighlight: null,
     rawMode: false,
     selected: { capability: null, system: null },
     focusBehaviorId: null,
@@ -143,6 +146,10 @@ export type Action =
   | { type: 'setEngineeringTab'; tab: EngineeringTab }
   | { type: 'setArchitectureFocus'; id: string | null }
   | { type: 'showArchitecture'; id: string }
+  | { type: 'showFlow'; id: string; step?: number }
+  | { type: 'setFlowStep'; step: number }
+  | { type: 'showInTopology'; relationshipIds: string[] }
+  | { type: 'clearArchitectureHighlight' }
   | { type: 'selectEntity'; id: string; kind: EntityKind; behaviorId?: string | null }
   | { type: 'focusBehaviors'; id: string; kind: EntityKind; behaviorIds: string[] }
   | { type: 'clearFocusBehavior' }
@@ -199,6 +206,8 @@ export function reducer(s: AppState, a: Action): AppState {
         rawDraft: null,
         undo: [],
         redo: [],
+        flowId: base.flowId && contract?.flows?.some((f) => f.id === base.flowId) ? base.flowId : null,
+        flowStep: base.flowId && contract?.flows?.some((f) => f.id === base.flowId) ? base.flowStep : 0,
         externalChange: null,
         git: a.git,
         refs: a.refs,
@@ -232,6 +241,14 @@ export function reducer(s: AppState, a: Action): AppState {
       return { ...s, architectureFocusId: a.id };
     case 'showArchitecture':
       return { ...s, view: 'engineering', explorerView: 'engineering', engineeringTab: 'architecture', architectureFocusId: a.id };
+    case 'showFlow':
+      return { ...s, view: 'flows', explorerView: 'flows', flowId: a.id, flowStep: Math.max(0, a.step ?? 0), rawMode: false };
+    case 'setFlowStep':
+      return s.flowStep === a.step ? s : { ...s, flowStep: Math.max(0, a.step) };
+    case 'showInTopology':
+      return { ...s, view: 'engineering', explorerView: 'engineering', engineeringTab: 'architecture', architectureFocusId: null, architectureHighlight: a.relationshipIds, rawMode: false };
+    case 'clearArchitectureHighlight':
+      return s.architectureHighlight ? { ...s, architectureHighlight: null } : s;
     case 'selectEntity': {
       const view: ViewId = a.kind === 'capability' ? 'product' : 'engineering';
       return { ...s, view, explorerView: view, engineeringTab: view === 'engineering' ? 'systems' : s.engineeringTab, selected: { ...s.selected, [a.kind]: a.id }, focusBehaviorId: a.behaviorId ?? null, focusBehaviorIds: [], rawMode: false, viewFilter: filterKeeping(s, a.id, a.kind) };

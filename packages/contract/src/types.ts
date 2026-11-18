@@ -48,6 +48,32 @@ export interface TestDefinition {
   placeholder?: true;
 }
 
+export interface FlowStep {
+  /** Unique within its flow. */
+  id: string;
+  /** Must reference an existing relationship. */
+  relationshipId: string;
+  /** Travels target -> source along the relationship. Omitted (never false) otherwise. */
+  reply?: true;
+  /** Short text drawn on the arrow; defaults to the relationship's verb (or 'replies'). */
+  label?: string;
+  /** What happens in this step, in plain language. */
+  description: string;
+}
+
+/** A named walk along existing relationships that explains how a capability works. Step order is meaningful. */
+export interface Flow {
+  /** Unique among flows, prefix "flow.". */
+  id: string;
+  name: string;
+  summary: string;
+  /** The capability this flow explains; must be an entity of kind 'capability'. */
+  capabilityId: string;
+  /** What the user does to start it; drawn as User -> capability. */
+  trigger: string;
+  steps: FlowStep[];
+}
+
 /** How the product is validated: one command that runs the whole suite and the JUnit XML file it writes. */
 export interface ValidationConfig {
   command: string;
@@ -61,6 +87,7 @@ export interface OrbitContract {
   entities: Entity[];
   relationships: Relationship[];
   tests: TestDefinition[];
+  flows?: Flow[];
   validation?: ValidationConfig;
 }
 
@@ -186,7 +213,7 @@ export interface ImpactPath {
 // ───────────────────────── Semantic diff ─────────────────────────
 
 export type ChangeKind = 'added' | 'removed' | 'modified';
-export type ChangeCategory = 'product' | 'entity' | 'behavior' | 'relationship' | 'test';
+export type ChangeCategory = 'product' | 'entity' | 'behavior' | 'relationship' | 'test' | 'flow';
 /** 'guarantee' = product meaning changed; 'verification' = test definitions / test mappings only. */
 export type ChangeGroup = 'guarantee' | 'verification';
 

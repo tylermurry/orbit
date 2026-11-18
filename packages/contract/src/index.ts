@@ -8,8 +8,10 @@ export {
   descendantIdsOf,
   wouldCreateCycle,
   focusedRelations,
+  flowsThrough,
+  flowsUsing,
   potentialImpact,
 } from './graph.js';
 export { resultStatus, testAssurance, behaviorAssurance, entityAssurance, computeAssurance } from './assurance.js';
 export { diffContracts } from './diff.js';
-export { generateId, allIds, referencesTo, removeEntity, removeTest } from './edit.js';
+export { generateId, allIds, referencesTo, removeEntity, removeRelationship, removeTest } from './edit.js';

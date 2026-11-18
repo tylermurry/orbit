@@ -1,4 +1,4 @@
-import type { OrbitContract } from './types.js';
+import type { Flow, OrbitContract } from './types.js';
 
 function slug(name: string): string {
   const s = name
@@ -26,12 +26,14 @@ export function allIds(contract: OrbitContract): {
   behaviors: Set<string>;
   relationships: Set<string>;
   tests: Set<string>;
+  flows: Set<string>;
 } {
   return {
     entities: new Set(contract.entities.map((e) => e.id)),
     behaviors: new Set(contract.entities.flatMap((e) => e.behaviors.map((b) => b.id))),
     relationships: new Set(contract.relationships.map((r) => r.id)),
     tests: new Set(contract.tests.map((t) => t.id)),
+    flows: new Set((contract.flows ?? []).map((f) => f.id)),
   };
 }
 
@@ -46,6 +48,16 @@ export function referencesTo(contract: OrbitContract, kind: 'entity' | 'behavior
     for (const r of contract.relationships) {
       if (r.sourceId === id) out.push(`Relationship '${r.id}': ${r.type} ${name(r.targetId)}`);
       else if (r.targetId === id) out.push(`Relationship '${r.id}': ${name(r.sourceId)} ${r.type} this`);
+    }
+    for (const f of contract.flows ?? []) {
+      if (f.capabilityId === id) out.push(`Owns flow '${f.name}' (deleted with it)`);
+      else {
+        const lost = f.steps.filter((s) => {
+          const r = contract.relationships.find((x) => x.id === s.relationshipId);
+          return r && (r.sourceId === id || r.targetId === id);
+        }).length;
+        if (lost) out.push(`Flow '${f.name}' loses ${lost} step${lost === 1 ? '' : 's'}`);
+      }
     }
   } else if (kind === 'test') {
     for (const e of contract.entities) {
@@ -64,13 +76,29 @@ export function removeEntity(contract: OrbitContract, id: string, opts: { childr
   if (kids.length > 0 && opts.children === 'block') {
     throw new Error(`Entity '${id}' still has ${kids.length} child ${kids.length === 1 ? 'entity' : 'entities'}; move or delete them first.`);
   }
-  return {
+  const gone = new Set(contract.relationships.filter((r) => r.sourceId === id || r.targetId === id).map((r) => r.id));
+  const next: OrbitContract = {
     ...contract,
     entities: contract.entities
       .filter((e) => e.id !== id)
       .map((e) => (e.parentId === id ? { ...e, parentId: target.parentId } : e)),
-    relationships: contract.relationships.filter((r) => r.sourceId !== id && r.targetId !== id),
+    relationships: contract.relationships.filter((r) => !gone.has(r.id)),
   };
+  if (contract.flows) next.flows = contract.flows.filter((f) => f.capabilityId !== id).map((f) => dropSteps(f, gone));
+  return next;
+}
+
+function dropSteps(f: Flow, relationshipIds: ReadonlySet<string>): Flow {
+  return f.steps.some((s) => relationshipIds.has(s.relationshipId)) ? { ...f, steps: f.steps.filter((s) => !relationshipIds.has(s.relationshipId)) } : f;
+}
+
+/** Remove a relationship and every flow step that travels along it. Throws when unknown. */
+export function removeRelationship(contract: OrbitContract, id: string): OrbitContract {
+  if (!contract.relationships.some((r) => r.id === id)) throw new Error(`Relationship '${id}' does not exist.`);
+  const gone = new Set([id]);
+  const next: OrbitContract = { ...contract, relationships: contract.relationships.filter((r) => r.id !== id) };
+  if (contract.flows) next.flows = contract.flows.map((f) => dropSteps(f, gone));
+  return next;
 }
 
 /** Remove a test definition; optionally unmap it from behaviors. */

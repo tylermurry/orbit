@@ -13,7 +13,7 @@ export function EngineeringView() {
     }}>
       <Tabs.List size="1" aria-label="System views" className="engineering-tabs">
         <Tabs.Trigger value="systems">Systems</Tabs.Trigger>
-        <Tabs.Trigger value="architecture">Overview</Tabs.Trigger>
+        <Tabs.Trigger value="architecture">Topology</Tabs.Trigger>
       </Tabs.List>
       <Tabs.Content value="systems" className="engineering-tab-content" forceMount hidden={tab !== 'systems'}>
         <ExplorerView kind="system" />

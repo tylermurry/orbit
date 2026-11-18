@@ -7,7 +7,7 @@ if (!/^[1-9]\d*$/.test(version ?? '') || !base || new URL(base).protocol !== 'ht
   process.exit(1);
 }
 const files = {};
-for (const name of ['orbit-plan', 'orbit-sync']) {
+for (const name of ['orbit-plan', 'orbit-sync', 'orbit-implement']) {
   const path = `${name}/SKILL.md`;
   const bytes = await readFile(new URL(`../skills/claude/${path}`, import.meta.url));
   files[name] = { url: new URL(path, base.endsWith('/') ? base : `${base}/`).href, sha256: createHash('sha256').update(bytes).digest('hex') };

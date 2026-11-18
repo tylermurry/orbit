@@ -4,7 +4,7 @@ import type { JUnitCase } from '../lib/junit';
 import type { WalkthroughReport } from '../lib/walkthrough';
 import type { PlanFile } from './plan';
 
-export type ViewId = 'product' | 'engineering' | 'impact';
+export type ViewId = 'product' | 'engineering' | 'flows' | 'impact';
 export type EngineeringTab = 'systems' | 'architecture';
 
 /** `baseline` = merge-base of HEAD and the base branch (resolved on every comparison). */
@@ -114,6 +114,12 @@ export interface AppState {
   explorerView: Exclude<ViewId, 'impact'>;
   engineeringTab: EngineeringTab;
   architectureFocusId: string | null;
+  /** The flow shown in the Flows view. */
+  flowId: string | null;
+  /** Selected message of the flow: 0 is the trigger, n is the n-th step. */
+  flowStep: number;
+  /** Relationship ids to select on the Topology map; consumed once by ArchitectureView. */
+  architectureHighlight: string[] | null;
   rawMode: boolean;
   selected: Record<EntityKind, string | null>;
   focusBehaviorId: string | null;

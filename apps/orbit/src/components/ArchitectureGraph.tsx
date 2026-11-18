@@ -4,7 +4,13 @@ import { architectureEdgeCurve, DEFAULT_CAMERA, drawArchitectureCurve, mixBoxes,
 import type { ArchitectureEdge, ArchitectureScene, Box, Camera } from '../lib/architecture';
 import { REL_INFO } from '../lib/model';
 
-export type ArchitectureSelection = { type: 'node' | 'edge'; id: string } | null;
+export type ArchitectureSelection =
+  | { type: 'node' | 'edge'; id: string }
+  | { type: 'edges'; ids: string[]; relationshipIds: string[] }
+  | null;
+
+const isSelectedEdge = (selection: ArchitectureSelection, id: string) =>
+  selection?.type === 'edge' ? selection.id === id : selection?.type === 'edges' ? selection.ids.includes(id) : false;
 
 interface Frame {
   scene: ArchitectureScene;
@@ -41,9 +47,10 @@ interface Props {
   parents: ReadonlySet<string>;
   onSelect: (selection: ArchitectureSelection) => void;
   onOpen: (id: string) => void;
+  onOpenEdge: (id: string) => void;
 }
 
-export function ArchitectureGraph({ scene, camera, destination, progress, size, selection, parents, onSelect, onOpen }: Props) {
+export function ArchitectureGraph({ scene, camera, destination, progress, size, selection, parents, onSelect, onOpen, onOpenEdge }: Props) {
   const arrow = useId();
   const before = { scene, project: projectArchitecture(scene, size, camera) };
   const after = destination ? { scene: destination, project: projectArchitecture(destination, size, DEFAULT_CAMERA) } : null;
@@ -64,7 +71,7 @@ export function ArchitectureGraph({ scene, camera, destination, progress, size, 
     const groupByNode = new Map(frame.scene.groups.flatMap((group) => group.nodeIds.map((id) => [id, group.id] as const)));
     const relatedEdges = selection?.type === 'node'
       ? frame.scene.edges.filter((edge) => edge.sourceId === selection.id || edge.targetId === selection.id)
-      : frame.scene.edges.filter((edge) => selection?.type === 'edge' && edge.id === selection.id);
+      : frame.scene.edges.filter((edge) => isSelectedEdge(selection, edge.id));
     const activeNodes = new Set(relatedEdges.flatMap((edge) => [edge.sourceId, edge.targetId]));
     if (selection?.type === 'node') activeNodes.add(selection.id);
     const activeEdges = new Set(relatedEdges.map((edge) => edge.id));
@@ -80,10 +87,10 @@ export function ArchitectureGraph({ scene, camera, destination, progress, size, 
       const target = frame.scene.nodes.get(edge.targetId)!.entity;
       const types = new Set(edge.relationships.map(({ type }) => type));
       const verb = types.size === 1 ? REL_INFO[edge.relationships[0].type].verb : 'connects to';
-      const label = `${source.name} ${verb} ${target.name}${edge.relationships.length > 1 ? ` (${edge.relationships.length} relationships)` : ''}`;
-      const selected = selection?.type === 'edge' && selection.id === edge.id;
+      const label = `${source.name} ${verb} ${target.name}${types.size > 1 ? ` (${types.size} links)` : ''}`;
+      const selected = isSelectedEdge(selection, edge.id);
       const external = groupByNode.get(edge.sourceId) !== groupByNode.get(edge.targetId);
-      const edgeLabel = edge.relationships.length > 1 ? `${edge.relationships.length} links` : verb;
+      const edgeLabel = types.size > 1 ? `${types.size} links` : verb;
       const select = () => onSelect({ type: 'edge', id: edge.id });
       return (
         <g
@@ -95,6 +102,7 @@ export function ArchitectureGraph({ scene, camera, destination, progress, size, 
           aria-label={interactive ? label : undefined}
           aria-pressed={interactive ? selected : undefined}
           onClick={interactive ? select : undefined}
+          onDoubleClick={interactive ? () => onOpenEdge(edge.id) : undefined}
           onKeyDown={interactive ? (event) => keyAction(event, select) : undefined}
         >
           <title>{label}</title>

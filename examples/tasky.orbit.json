@@ -768,6 +768,94 @@
       "location": "apps/tasky/tests/e2e/views.spec.ts › Today re-evaluates when the local date rolls over on focus"
     }
   ],
+  "flows": [
+    {
+      "id": "flow.create-a-task",
+      "name": "Create a task",
+      "summary": "What happens between typing a title and the task appearing in a list.",
+      "capabilityId": "cap.task-management.create-edit",
+      "trigger": "Types a title in the task dialog and presses Add.",
+      "steps": [
+        {
+          "id": "save",
+          "relationshipId": "rel.create-edit.implemented-by.task-repository",
+          "label": "Save task",
+          "description": "Create and Edit Tasks hands the validated task to the Task Repository, which assigns it an id and writes it to local storage."
+        },
+        {
+          "id": "saved",
+          "relationshipId": "rel.create-edit.implemented-by.task-repository",
+          "reply": true,
+          "label": "Saved",
+          "description": "The repository returns the stored task, so the dialog closes and the new task shows up immediately."
+        }
+      ]
+    },
+    {
+      "id": "flow.see-todays-tasks",
+      "name": "See today's tasks",
+      "summary": "How the Today view decides which tasks are due or overdue.",
+      "capabilityId": "cap.task-discovery.today-overdue",
+      "trigger": "Opens the Today view.",
+      "steps": [
+        {
+          "id": "filter",
+          "relationshipId": "rel.today-overdue.implemented-by.filtering-sorting",
+          "label": "Get due tasks",
+          "description": "Today and Overdue asks Task Filtering and Sorting for the tasks that are due today or earlier and not yet completed."
+        },
+        {
+          "id": "ask-date",
+          "relationshipId": "rel.filtering-sorting.uses.local-date",
+          "label": "Ask for today",
+          "description": "Filtering needs to know what today is, so it asks Local Date Evaluation for the current local date."
+        },
+        {
+          "id": "date",
+          "relationshipId": "rel.filtering-sorting.uses.local-date",
+          "reply": true,
+          "label": "Local date",
+          "description": "Local Date Evaluation answers with the date in the person's own time zone, not UTC."
+        },
+        {
+          "id": "tasks",
+          "relationshipId": "rel.today-overdue.implemented-by.filtering-sorting",
+          "reply": true,
+          "label": "Matching tasks",
+          "description": "Filtering returns the matching tasks with overdue ones first, and the view renders them."
+        }
+      ]
+    },
+    {
+      "id": "flow.delete-a-list",
+      "name": "Delete a list",
+      "summary": "What happens to a list and the tasks assigned to it when the list is deleted.",
+      "capabilityId": "cap.task-organization.custom-lists",
+      "trigger": "Confirms deleting a list from the sidebar.",
+      "steps": [
+        {
+          "id": "remove",
+          "relationshipId": "rel.custom-lists.implemented-by.list-repository",
+          "label": "Delete list",
+          "description": "Custom Lists asks the List Repository to remove the list."
+        },
+        {
+          "id": "removed",
+          "relationshipId": "rel.custom-lists.implemented-by.list-repository",
+          "reply": true,
+          "label": "Deleted",
+          "description": "The repository confirms the list is gone."
+        },
+        {
+          "id": "release",
+          "relationshipId": "rel.assignment.depends-on.custom-lists",
+          "reply": true,
+          "label": "Tasks to Inbox",
+          "description": "Task Assignment learns the list no longer exists and returns its tasks to the inbox instead of losing them."
+        }
+      ]
+    }
+  ],
   "validation": {
     "command": "npm run validate -w @orbit/tasky",
     "results": "apps/tasky/test-results/junit.xml"

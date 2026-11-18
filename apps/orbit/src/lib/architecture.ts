@@ -106,7 +106,7 @@ export function architectureEdgeCurve(a: Box, b: Box, reverseEdge: boolean): Cur
 const NODE_WIDTH = 232;
 const NODE_HEIGHT = 54;
 const GROUP_WIDTH = 272;
-const COLUMN_GAP = 76;
+const COLUMN_GAP = 160;
 const ROW_GAP = 26;
 
 export function indexArchitecture(contract: OrbitContract) {
